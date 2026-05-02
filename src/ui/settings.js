@@ -64,6 +64,7 @@ async function _render() {
     <section class="settings">
       <div class="settings__column">
         ${_cloudSectionHtml(settings, status)}
+        ${_dataSectionHtml(settings)}
       </div>
     </section>
   `);
@@ -179,6 +180,79 @@ function _cloudUnavailableFileProtocolHtml() {
         Local-only operation works fine without cloud sync — you just won't
         get automatic backup or cross-device sync.
       </p>
+    </section>
+  `;
+}
+
+// -----------------------------------------------------------------------------
+// Data backup section — manual export/import
+// -----------------------------------------------------------------------------
+// Independent of cloud sync. Works on any origin including file://. Provides
+// the only recovery path when cloud sync isn't configured.
+//
+// Export: builds the snapshot, triggers a download via a transient anchor.
+//   Logs a 'data_export' audit entry BEFORE building the snapshot so the
+//   entry is present in the export itself — the file self-documents when it
+//   was created.
+//
+// Import: destructive. Wipes operational data and replaces it with the
+//   snapshot. Same OVERWRITE-typed confirmation as cloud load, then a file
+//   picker, then importAll. After success, force a reload so every page
+//   picks up the new data and the audit key change.
+//
+// Both operations can take a few seconds on large datasets (lots of photos);
+// buttons are disabled while in progress.
+// -----------------------------------------------------------------------------
+
+function _dataSectionHtml(settings) {
+  const unitCode = settings.unitCode || '';
+  const unitName = settings.unitName || '';
+  const lastExport = settings['data.lastExport'] || null;
+  const lastImport = settings['data.lastImport'] || null;
+
+  const unitLabel = (unitCode || unitName)
+    ? `<span class="settings__section-meta">${esc(unitCode || unitName)}</span>`
+    : '';
+
+  return `
+    <section class="settings__section" data-section="data">
+      <header class="settings__section-header">
+        <h2 class="settings__section-title">Data backup &amp; restore ${unitLabel}</h2>
+        <p class="settings__section-hint">
+          Export a complete snapshot of this Q-Store to a file you can keep
+          off-device, or restore from a previously exported file. Use this
+          for end-of-cycle archives, transferring to a new computer, or as a
+          fallback when cloud sync isn't available.
+        </p>
+      </header>
+
+      <div class="modal__warn" style="margin-bottom:12px">
+        <strong>The export contains sensitive data.</strong>
+        Cadet personal details, audit log, and (hashed) user PINs are all
+        included. Treat the file as PROTECTED — store it on encrypted media
+        or a secure unit drive, not on personal cloud storage.
+      </div>
+
+      <div class="form__row">
+        <div class="form__field form__field--grow">
+          <span class="form__label">Last export</span>
+          <span class="settings__data-meta">${esc(fmtDate(lastExport))}</span>
+        </div>
+        <div class="form__field form__field--grow">
+          <span class="form__label">Last import</span>
+          <span class="settings__data-meta">${esc(fmtDate(lastImport))}</span>
+        </div>
+      </div>
+
+      <div class="form__actions">
+        <button type="button" class="btn btn--primary"
+                data-action="export-data">Download backup file</button>
+        <button type="button" class="btn btn--danger"
+                data-action="import-data">Restore from backup file&hellip;</button>
+      </div>
+
+      <input type="file" data-target="import-file"
+             accept="application/json,.json" hidden>
     </section>
   `;
 }
@@ -308,6 +382,8 @@ async function _onRootClick(e) {
     case 'sign-out':        await _doSignOut();      break;
     case 'sync-now':        await _doSyncNow();      break;
     case 'load-from-cloud': await _doLoadFromCloud(); break;
+    case 'export-data':     await _doExportData(e.target.closest('button')); break;
+    case 'import-data':     await _doImportData(e.target.closest('button')); break;
   }
 }
 
@@ -397,6 +473,161 @@ async function _doLoadFromCloud() {
       });
     },
   });
+}
+
+// -----------------------------------------------------------------------------
+// Data backup / restore handlers
+// -----------------------------------------------------------------------------
+// These run from the data section buttons. Each disables its trigger button
+// while running so a frantic double-click can't kick off two exports or two
+// imports racing each other through the same IndexedDB transaction queue.
+
+async function _doExportData(btn) {
+  if (btn) btn.disabled = true;
+  try {
+    // Audit BEFORE building the snapshot, so the export self-documents.
+    // The audit entry will be inside the snapshot we hand the user.
+    await Storage.audit.append({
+      action: 'data_export',
+      user:   AUTH.getSession()?.name || 'unknown',
+      desc:   'Manual data export to file.',
+    });
+
+    const snapshot = await Storage.exportAll();
+    const blob = new Blob([JSON.stringify(snapshot)], { type: 'application/json' });
+
+    const settings = await Storage.settings.getAll();
+    const unitTag = (settings.unitCode || settings.unitName || 'qstore')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'qstore';
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    const filename = `qstore-backup-${unitTag}-${stamp}.json`;
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    // Revoke after a tick — some browsers need the URL to still be valid
+    // when the click handler returns.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+    await Storage.settings.set('data.lastExport', new Date().toISOString());
+    await _render();
+    _flashSuccess(`Backup saved as ${filename}.`);
+  } catch (err) {
+    console.error('Export failed:', err);
+    alert('Export failed: ' + (err.message || err));
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function _doImportData(btn) {
+  // Step 1 — typed-OVERWRITE confirmation dialog. Same pattern as cloud load.
+  // Only after the user types OVERWRITE do we open the file picker. This
+  // keeps the destructive action behind a deliberate gate.
+  openModal({
+    titleHtml: 'Restore from backup — confirm',
+    size: 'sm',
+    bodyHtml: `
+      <div class="modal__warn">
+        <strong>This will replace ALL local data</strong> with the contents of
+        the backup file you select. Local changes since that backup was made
+        will be lost. This cannot be undone.
+      </div>
+      <p>The backup file's user accounts will replace the current ones — make
+      sure you know the PINs for the accounts in the backup before continuing,
+      or you may lock yourself out.</p>
+      <p>Type the word <strong>OVERWRITE</strong> to confirm.</p>
+      <form class="form" data-form="confirm-restore">
+        <label class="form__field">
+          <input type="text" name="confirm" autocomplete="off" placeholder="OVERWRITE">
+        </label>
+        <div class="form__error" role="alert"></div>
+        <div class="form__actions">
+          <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
+          <button type="submit" class="btn btn--danger">Choose file&hellip;</button>
+        </div>
+      </form>
+    `,
+    onMount(panel, close) {
+      const form  = $('form[data-form="confirm-restore"]', panel);
+      const errEl = $('.form__error', panel);
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        errEl.textContent = '';
+        const value = String(new FormData(form).get('confirm') || '').trim();
+        if (value !== 'OVERWRITE') {
+          errEl.textContent = 'Type OVERWRITE in capitals to confirm.';
+          return;
+        }
+        close();
+        // Trigger the hidden file input. The file picker dialog itself
+        // serves as the second-stage gate — cancelling it cancels the
+        // operation cleanly.
+        const fileInput = $('input[data-target="import-file"]', _root);
+        if (!fileInput) {
+          alert('Internal error: file input missing.');
+          return;
+        }
+        // One-shot listener so repeated imports don't stack handlers.
+        const onChange = async () => {
+          fileInput.removeEventListener('change', onChange);
+          const file = fileInput.files && fileInput.files[0];
+          fileInput.value = ''; // allow re-selecting the same file later
+          if (!file) return;
+          await _performImport(file, btn);
+        };
+        fileInput.addEventListener('change', onChange);
+        fileInput.click();
+      });
+    },
+  });
+}
+
+async function _performImport(file, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const text = await file.text();
+    let snapshot;
+    try {
+      snapshot = JSON.parse(text);
+    } catch {
+      alert('That file is not valid JSON. Choose a backup file produced by QStore.');
+      return;
+    }
+    if (!snapshot || typeof snapshot !== 'object' || !snapshot.schemaVersion) {
+      alert('That file is not a QStore backup (missing schemaVersion).');
+      return;
+    }
+    // Storage.importAll throws on schema mismatch; we surface that cleanly.
+    await Storage.importAll(snapshot);
+
+    // Log AFTER importAll because importAll wipes the audit store and
+    // replaces it with the snapshot's chain. Logging before the import
+    // would put the entry into a chain that's about to be discarded.
+    // The post-import audit append uses the freshly-loaded auditKey from
+    // the snapshot's meta, so it extends the imported chain correctly.
+    await Storage.audit.append({
+      action: 'data_imported',
+      user:   AUTH.getSession()?.name || 'unknown',
+      desc:   `Manual restore from backup file: ${file.name} (snapshot exported ${snapshot.exportedAt || 'unknown date'}).`,
+    });
+    await Storage.settings.set('data.lastImport', new Date().toISOString());
+
+    // Force a reload — the current page state is now stale, and the
+    // session may also be invalid (the imported users table might not
+    // contain the currently-logged-in user).
+    alert('Backup restored. The page will now reload.');
+    location.reload();
+  } catch (err) {
+    console.error('Import failed:', err);
+    alert('Restore failed: ' + (err.message || err));
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 // -----------------------------------------------------------------------------
