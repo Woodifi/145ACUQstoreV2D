@@ -40,15 +40,16 @@
 //
 // DEPENDENCIES
 //   hash-wasm 4.11+ for argon2id.
-//     Dev/test: loaded from esm.sh CDN by URL import below — needs network
-//     access on first run; subsequent runs hit the browser cache.
-//     Production: once package.json + esbuild are set up, replace the URL
-//     import with bare `import { argon2id, argon2Verify } from 'hash-wasm'`
-//     which esbuild will bundle from npm.
+//     The bare 'hash-wasm' import is resolved two different ways:
+//       Dev:  index.html provides an importmap pointing at the esm.sh CDN,
+//             so the browser fetches it at runtime. No build step needed.
+//       Prod: build.js bundles hash-wasm from node_modules into the single
+//             output HTML. The WASM payload is base64-inlined inside
+//             hash-wasm's own JS, so no separate .wasm file is emitted.
 // =============================================================================
 
 import * as Storage from './storage.js';
-import { argon2id, argon2Verify } from 'https://esm.sh/hash-wasm@4.11.0';
+import { argon2id, argon2Verify } from 'hash-wasm';
 
 // -----------------------------------------------------------------------------
 // Constants — exported so other modules can reference role labels and the

@@ -71,6 +71,27 @@ async function buildOnce() {
   const result = await esbuild.build(ESBUILD_OPTS);
   const jsBundle = result.outputFiles[0].text;
 
+  // Sanity check — the IIFE format does NOT support runtime require(), so
+  // any URL import that survived bundling will throw "Dynamic require of
+  // <url> is not supported" at load time in a browser. esbuild generates
+  // a __require shim for these and they only show up at runtime.
+  // Catching this here gives a clear failure with the offending URL
+  // instead of a baffling browser console error.
+  if (jsBundle.includes('Dynamic require of ')) {
+    const match = jsBundle.match(/Dynamic require of\s*"\s*\+\s*[A-Za-z_]\w*\s*\+\s*"\)?[^\n]*/);
+    const allUrls = [...jsBundle.matchAll(/['"`](https?:\/\/[^'"`\s]+)['"`]/g)]
+      .map(m => m[1])
+      .filter(u => /(esm\.sh|cdn\.|unpkg|jsdelivr|skypack)/i.test(u));
+    const offenders = [...new Set(allUrls)];
+    throw new Error(
+      'Build produced a bundle with unresolved URL imports. ' +
+      'esbuild can\'t bundle remote modules — change the import to a bare ' +
+      'package name (e.g. "hash-wasm") and let npm resolve it.' +
+      (offenders.length ? `\nLikely culprits:\n  - ${offenders.join('\n  - ')}` : '') +
+      '\nCheck src/*.js for any import statements with "https://" URLs.'
+    );
+  }
+
   const cssSource = await readFile(CSS_FILE, 'utf8');
   const indexHtml = await readFile(HTML_IN,  'utf8');
 
