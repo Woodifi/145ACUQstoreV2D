@@ -1,0 +1,22 @@
+{
+  "name": "qstore-ims",
+  "version": "2.0.0-alpha",
+  "description": "QStore Inventory Management System — defence-themed Q-Store tool for Australian Army Cadets",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build":  "node build.js",
+    "dev":    "node build.js --dev",
+    "watch":  "node build.js --watch"
+  },
+  "dependencies": {
+    "hash-wasm": "^4.11.0",
+    "@azure/msal-browser": "2.38.3"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}
