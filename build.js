@@ -100,6 +100,32 @@ async function buildOnce() {
   await mkdir(dirname(HTML_OUT), { recursive: true });
   await writeFile(HTML_OUT, html);
 
+  // Sanity check — verify the argon2 encoded-output template literal survived
+  // the inline step intact. The literal in hash-wasm's bundled output looks
+  // like `$argon2${...}$v=19$${...}$${...}$${...}` and produces strings of
+  // the form "$argon2id$v=19$m=...$<salt>$<hash>". If the inline step uses
+  // String.prototype.replace with a string replacement (rather than a function
+  // replacement), '$$' inside the bundle gets collapsed to '$', destroying the
+  // separator dollars and silently corrupting every argon2 hash this build
+  // ever produces. See the comment in inlineIntoHtml above.
+  const argonTemplate = html.match(/`\$argon2\$\{[^`]*?`/);
+  if (argonTemplate) {
+    const tpl = argonTemplate[0];
+    // Each substitution after $v=19 should be preceded by a literal $.
+    // We expect at least three '$$' sequences inside the template body.
+    const dollarSubs = (tpl.match(/\$\$\{/g) || []).length;
+    if (dollarSubs < 3) {
+      throw new Error(
+        'Build sanity check failed: hash-wasm argon2 template literal is corrupted.\n' +
+        '  Expected at least 3 "$${" sequences (separator dollars before substitutions).\n' +
+        '  Found: ' + dollarSubs + '\n' +
+        '  Template: ' + tpl + '\n' +
+        'This is almost certainly the String.prototype.replace "$$ collapses to $" trap.\n' +
+        'Verify that inlineIntoHtml uses a function replacer, not a string replacer.'
+      );
+    }
+  }
+
   // Wire up the IIFE entry call. The bundled IIFE assigns its exports to
   // the global QStoreApp; we then call boot() on document load.
   const ms = Date.now() - start;
@@ -120,7 +146,10 @@ function inlineIntoHtml(html, css, js) {
   if (!linkRe.test(html)) {
     throw new Error('Expected <link rel="stylesheet" href="qstore.css"> in index.html — build cannot proceed.');
   }
-  html = html.replace(linkRe, `<style>\n${css}\n</style>`);
+  // Use a function replacer to avoid String.prototype.replace's $-pattern
+  // interpretation. CSS rarely contains '$' but a function replacer is safer
+  // and the cost is zero.
+  html = html.replace(linkRe, () => `<style>\n${css}\n</style>`);
 
   // 2) Strip the dev importmap. After bundling, no bare imports remain;
   //    the importmap only exists to make the dev HTML work without a build.
@@ -134,7 +163,14 @@ function inlineIntoHtml(html, css, js) {
     throw new Error('Expected <script type="module"> entry in index.html — build cannot proceed.');
   }
   const inlineScript = `<script>\n${js}\nQStoreApp.boot(document.getElementById('app'));\n</script>`;
-  html = html.replace(moduleRe, inlineScript);
+  // CRITICAL: Use a function replacer (not a string replacer) so that '$' in
+  // the bundled JS is treated literally. String.prototype.replace interprets
+  // '$$' / '$&' / '$1' / etc. in replacement strings as special patterns; this
+  // mangles template literals like `$${X}$${Y}` (which appear in hash-wasm's
+  // argon2 encoded-output builder) into `${X}${Y}` — silently corrupting every
+  // generated argon2 hash. We hit this on PIN hashes; debugging took hours.
+  // See: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/replace#specifying_a_string_as_the_replacement
+  html = html.replace(moduleRe, () => inlineScript);
 
   return html;
 }
