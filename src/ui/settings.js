@@ -29,6 +29,7 @@ import { getProvider } from '../cloud.js';
 import { openModal }   from './modal.js';
 import { esc, $, $$, render, fmtDate } from './util.js';
 import { STAFF_RANKS_CANONICAL, CADET_RANKS } from '../ranks.js';
+import * as Recovery from '../recovery.js';
 
 let _root = null;
 let _statusListener = null;
@@ -58,13 +59,22 @@ export async function mount(rootEl) {
 // -----------------------------------------------------------------------------
 
 async function _render() {
-  const settings = await Storage.settings.getAll();
-  const status   = Sync.getStatus();
+  const settings       = await Storage.settings.getAll();
+  const status         = Sync.getStatus();
+  // Recovery status is per-user. The settings page already requires the OC
+  // role at mount time, so the session userId is the OC's. If somehow we
+  // end up with no session here we render a 'no code' state — defensive,
+  // shouldn't happen in practice.
+  const sess           = AUTH.getSession();
+  const recoveryStatus = sess?.userId
+    ? await Recovery.statusForUser(sess.userId)
+    : { exists: false, createdAt: null };
 
   render(_root, `
     <section class="settings">
       <div class="settings__column">
         ${_unitSectionHtml(settings)}
+        ${_recoverySectionHtml(recoveryStatus)}
         ${_cloudSectionHtml(settings, status)}
         ${_dataSectionHtml(settings)}
       </div>
@@ -209,6 +219,61 @@ function _unitSectionHtml(settings) {
   `;
 }
 
+// -----------------------------------------------------------------------------
+// Recovery code section — OC-only PIN reset coverage
+// -----------------------------------------------------------------------------
+// The settings page is gated by AUTH.requireCO at mount time, so every
+// visitor here is an OC. Each OC's recovery code is bound to their own
+// user record — if the unit has multiple OC accounts, each has their own
+// independent code.
+//
+// "Retrievable while logged in" semantics: because we only store the
+// argon2id hash, we cannot show the plaintext of an existing code. The
+// retrieve flow is therefore actually a regenerate flow: pressing the
+// button generates a new code, invalidates the old one, and shows the
+// new code in a one-shot display modal. This is the honest behaviour
+// given the storage choice — pretending we can "show" an existing code
+// would require storing it reversibly, which would mean the recovery
+// code has weaker protection at rest than the PIN it recovers. Not an
+// acceptable trade.
+
+function _recoverySectionHtml(recoveryStatus) {
+  const exists = recoveryStatus.exists;
+  const createdAt = exists && recoveryStatus.createdAt
+    ? fmtDate(recoveryStatus.createdAt)
+    : null;
+
+  const statusBlock = exists
+    ? `<div class="settings__status settings__status--ok">
+         <strong>Active.</strong> Generated ${esc(createdAt)}.
+       </div>`
+    : `<div class="settings__status settings__status--warn">
+         <strong>No active recovery code.</strong>
+         If you forget your PIN there is no in-app recovery path. Generate
+         one now.
+       </div>`;
+
+  const buttonLabel = exists ? 'Regenerate recovery code' : 'Generate recovery code';
+
+  return `
+    <section class="settings__section" data-section="recovery">
+      <header class="settings__section-header">
+        <h2 class="settings__section-title">OC PIN recovery</h2>
+        <p class="settings__section-hint">
+          A 12-character one-shot code that resets your PIN from the login
+          screen if you forget it. Store it off this device &mdash; a
+          printed copy in the unit safe or key cabinet is appropriate.
+        </p>
+      </header>
+      ${statusBlock}
+      <div class="form__actions">
+        <button type="button" class="btn btn--primary"
+                data-action="recovery-generate">${esc(buttonLabel)}</button>
+      </div>
+    </section>
+  `;
+}
+
 function _cloudSectionHtml(settings, status) {
   // Cloud sync requires a stable HTTP(S) origin for the OAuth redirect URI.
   // file:// origins can't be registered in Azure, so we disable the config
@@ -224,6 +289,13 @@ function _cloudSectionHtml(settings, status) {
   const lastSync = settings['cloud.lastSync'] || null;
   const redirect = status.redirectUri;
 
+  // Cloud-disabled toggle: when true, the cloud sync UI collapses to just
+  // the policy notice + the toggle itself, and Sync.notifyChanged is a
+  // no-op. Useful for deployments where cloud sync is policy-prohibited
+  // (e.g. defence-issued laptops where ITSO has restricted it) or where
+  // the QM simply doesn't want it.
+  const cloudDisabled = settings['cloud.disabled'] === true;
+
   return `
     <section class="settings__section" data-section="cloud">
       <header class="settings__section-header">
@@ -235,6 +307,31 @@ function _cloudSectionHtml(settings, status) {
         </p>
       </header>
 
+      <div class="settings__notice settings__notice--policy">
+        <strong>Use unit-owned cloud storage only.</strong>
+        Australian Army Cadet units are permitted to use their own
+        OneDrive accounts (personal Microsoft, family, or unit-purchased
+        Microsoft 365 Business) for Q-Store data. <strong>Do not sign in
+        with a defence-issued account</strong> &mdash; defence M365
+        tenants are not approved for this tool. If you're unsure which
+        account is which, check with your unit's IT contact or the
+        brigade ITSO before signing in.
+      </div>
+
+      <label class="form__field form__check">
+        <input type="checkbox" name="cloudDisabled"
+               data-action="toggle-cloud-disabled"
+               ${cloudDisabled ? 'checked' : ''}>
+        <span>Disable cloud sync entirely (sign out and hide the rest of this section)</span>
+      </label>
+
+      ${cloudDisabled ? `
+        <p class="settings__section-hint">
+          Cloud sync is off. Local data continues to work normally, and
+          you can still use manual export/import below to back up the
+          database to a file.
+        </p>
+      ` : `
       <div class="settings__cloud-status" data-target="sync-block">
         ${_syncBlockHtml(status, lastSync)}
       </div>
@@ -289,6 +386,7 @@ function _cloudSectionHtml(settings, status) {
           </p>
         </div>
       </details>
+      `}
     </section>
   `;
 }
@@ -475,6 +573,55 @@ function _wireEventListeners() {
   const unitForm = $('form[data-form="unit-config"]', _root);
   if (unitForm) unitForm.addEventListener('submit', _onSaveUnit);
   _root.addEventListener('click', _onRootClick);
+
+  // Cloud-disabled toggle. The checkbox lives outside any <form>, so we
+  // listen for the change event directly on the root and dispatch from
+  // the data-action attribute. Saving the setting is async — we mark
+  // the checkbox disabled while the save runs to prevent rapid-fire
+  // toggling that could leave settings and runtime out of step.
+  const cloudToggle = $('input[data-action="toggle-cloud-disabled"]', _root);
+  if (cloudToggle) {
+    cloudToggle.addEventListener('change', _onToggleCloudDisabled);
+  }
+}
+
+async function _onToggleCloudDisabled(e) {
+  const checkbox = e.target;
+  const desiredDisabled = checkbox.checked;
+  checkbox.disabled = true;
+  try {
+    await Storage.settings.set('cloud.disabled', desiredDisabled);
+    if (desiredDisabled) {
+      // If the user is currently signed in, sign them out so the
+      // disabled state is genuinely "no cloud activity". This also
+      // clears any cached MSAL tokens. Errors from sign-out are
+      // non-fatal — the setting is still applied.
+      try {
+        const provider = getProvider();
+        if (provider && provider.isSignedIn && provider.isSignedIn()) {
+          await provider.signOut();
+        }
+      } catch (err) {
+        console.warn('Sign-out during cloud-disable failed:', err);
+      }
+    }
+    await Storage.audit.append({
+      action: 'settings_change',
+      user:   AUTH.getSession()?.name || 'unknown',
+      desc:   desiredDisabled
+        ? 'Cloud sync disabled (UI hidden, sync engine stopped, signed out).'
+        : 'Cloud sync re-enabled.',
+    });
+    Sync.notifyChanged();   // trigger a status emit so the sync block
+                            // updates if it's now visible
+    await _render();
+  } catch (err) {
+    alert('Failed to update cloud-disabled setting: ' + (err.message || err));
+    // Roll back the visual state so the UI matches storage.
+    checkbox.checked = !desiredDisabled;
+  } finally {
+    checkbox.disabled = false;
+  }
 }
 
 async function _onSaveUnit(e) {

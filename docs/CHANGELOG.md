@@ -145,9 +145,11 @@ test-export-import.mjs:   23/23 ✓
 test-recovery.mjs:        86/86 ✓
 test-cadets.mjs:          37/37 ✓
 test-loans.mjs:           33/33 ✓
-test-audit.mjs:           22/22 ✓ (new)
+test-audit.mjs:           22/22 ✓
+test-pdf.mjs:             21/21 ✓
+test-cloud-disable.mjs:    3/3 ✓ (new)
 ─────────────────────────────────
-                         248/248 ✓ across seven suites
+                         272/272 ✓ across nine suites
 ```
 
 ---

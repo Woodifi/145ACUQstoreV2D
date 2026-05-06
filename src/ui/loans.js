@@ -47,6 +47,7 @@
 import * as Storage from '../storage.js';
 import * as AUTH    from '../auth.js';
 import * as Sync    from '../sync.js';
+import { generateIssueVoucher, downloadPdf } from '../pdf.js';
 import { openModal }                       from './modal.js';
 import { esc, $, $$, render, fmtDateOnly } from './util.js';
 
@@ -515,6 +516,9 @@ async function _submitIssue(body) {
   Sync.notifyChanged();
 
   // Confirmation modal — list the created refs so the user can copy them.
+  // The "Print voucher" button generates a PDF of THIS batch (all loans
+  // share borrowerSvc + issueDate by construction here, since we just
+  // created them in one transaction).
   openModal({
     titleHtml: `Issued ${created.length} ${created.length === 1 ? 'item' : 'items'}`,
     size:      'sm',
@@ -528,8 +532,27 @@ async function _submitIssue(body) {
         ).join('')}
       </ul>
       <div class="form__actions">
+        <button type="button" class="btn btn--ghost" data-action="print-batch-voucher">
+          Print voucher
+        </button>
         <button type="button" class="btn btn--primary" data-action="modal-close">OK</button>
       </div>`,
+    onMount(panel, close) {
+      const printBtn = panel.querySelector('[data-action="print-batch-voucher"]');
+      printBtn?.addEventListener('click', async () => {
+        printBtn.disabled = true;
+        printBtn.textContent = 'Building PDF…';
+        try {
+          await _printVoucherForLoans(created);
+          printBtn.textContent = 'Print voucher';
+          printBtn.disabled = false;
+        } catch (err) {
+          printBtn.textContent = 'Print voucher';
+          printBtn.disabled = false;
+          alert('Voucher generation failed: ' + (err.message || err));
+        }
+      });
+    },
   });
 
   _issueState = _freshIssueState();
@@ -846,6 +869,7 @@ function _allTableHtml(loans, today, canReturn) {
           <th>Purpose</th>
           <th>Due</th>
           <th>Status</th>
+          <th class="loan__col-actions">Voucher</th>
         </tr>
       </thead>
       <tbody>
@@ -883,6 +907,14 @@ function _allRowHtml(loan, today, canReturn) {
       <td>${esc(loan.purpose || '')}</td>
       <td class="loan__date">${esc(loan.dueDate || '')}</td>
       <td>${statusBadge}</td>
+      <td class="loan__col-actions">
+        <button type="button" class="btn btn--sm btn--ghost"
+                data-action="print-row-voucher"
+                data-loan-ref="${esc(loan.ref)}"
+                title="Print issue voucher for this loan and any others issued in the same batch">
+          ⎙ PDF
+        </button>
+      </td>
     </tr>
   `;
 }
@@ -898,6 +930,25 @@ function _wireAllTab(body) {
       _allFilter = btn.dataset.filter;
       _renderAllTab(body);
       _wireAllTab(body);
+    });
+  });
+  // Per-row "Print voucher" buttons. Each finds the loan's batch (other
+  // loans sharing borrowerSvc + issueDate) and renders the whole batch
+  // to one PDF — same as the issue-time confirmation flow.
+  $$('[data-action="print-row-voucher"]', body).forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const ref = btn.dataset.loanRef;
+      btn.disabled = true;
+      const orig = btn.textContent;
+      btn.textContent = '…';
+      try {
+        await _printVoucherForLoanRef(ref);
+      } catch (err) {
+        alert('Voucher generation failed: ' + (err.message || err));
+      } finally {
+        btn.textContent = orig;
+        btn.disabled = false;
+      }
     });
   });
 }
@@ -977,4 +1028,52 @@ function _defaultDueDate() {
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
+}
+
+// =============================================================================
+// VOUCHER PRINTING
+// =============================================================================
+// Two entry points:
+//   _printVoucherForLoans(loans)  — caller already has the list (issue
+//                                   confirmation modal: pass `created`).
+//   _printVoucherForLoanRef(ref)  — caller has only a ref (All-loans row
+//                                   action: looks up the loan, finds its
+//                                   batch, then prints).
+//
+// "Batch" = all loans sharing borrowerSvc + issueDate. The voucher PDF
+// represents one paper handover; in real-unit practice that's one paper
+// per borrower per day, regardless of how many items changed hands.
+
+async function _printVoucherForLoans(loans) {
+  if (!Array.isArray(loans) || loans.length === 0) {
+    throw new Error('No loans provided to print.');
+  }
+  // Pull unit branding from settings — used in the PDF header and the
+  // pre-filled "Issued by" signature block.
+  const unit = await Storage.settings.getAll();
+  const issuedByName = AUTH.getSession()?.name || '';
+  const result = await generateIssueVoucher(loans, { unit, issuedByName });
+  downloadPdf(result);
+}
+
+async function _printVoucherForLoanRef(ref) {
+  const loan = await Storage.loans.get(ref);
+  if (!loan) throw new Error(`Loan ${ref} not found.`);
+
+  // Find the whole batch — all loans for this borrower on this day.
+  // listForCadet uses the borrowerSvc index; we filter for the issueDate.
+  const allForBorrower = await Storage.loans.listForCadet(loan.borrowerSvc);
+  const batch = allForBorrower
+    .filter((l) => l.issueDate === loan.issueDate)
+    // Sort by ref so the voucher rows appear in issue order, which is
+    // what the user expects when they look at LN-1043 through LN-1047
+    // and compare to the printed paper.
+    .sort((a, b) => (a.ref || '').localeCompare(b.ref || ''));
+
+  if (batch.length === 0) {
+    // Shouldn't happen — `loan` itself is in the listForCadet result.
+    // Defensive in case of storage anomaly.
+    throw new Error(`Could not find any loans for ${loan.borrowerSvc} on ${loan.issueDate}.`);
+  }
+  await _printVoucherForLoans(batch);
 }

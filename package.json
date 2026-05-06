@@ -8,15 +8,17 @@
     "node": ">=18.0.0"
   },
   "scripts": {
-    "build":  "node build.js",
-    "dev":    "node build.js --dev",
-    "watch":  "node build.js --watch"
+    "build": "node build.js",
+    "dev": "node build.js --dev",
+    "watch": "node build.js --watch"
   },
   "dependencies": {
+    "@azure/msal-browser": "2.38.3",
     "hash-wasm": "^4.11.0",
-    "@azure/msal-browser": "2.38.3"
+    "jspdf": "^4.2.1"
   },
   "devDependencies": {
-    "esbuild": "^0.25.0"
+    "esbuild": "^0.25.0",
+    "fake-indexeddb": "^6.2.5"
   }
 }

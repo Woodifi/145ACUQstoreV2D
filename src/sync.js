@@ -189,9 +189,16 @@ export function getStatus() {
 // -----------------------------------------------------------------------------
 
 async function _shouldAutoSync() {
+  const settings = await Storage.settings.getAll();
+  // The 'cloud.disabled' kill-switch trumps everything. When the user has
+  // explicitly disabled cloud sync (e.g. for defence-environment policy
+  // reasons), notifyChanged becomes a no-op even if there's a stale
+  // signed-in MSAL session lurking. The settings UI also signs out on
+  // toggle-on, so this should be belt-and-braces, but the check is cheap.
+  if (settings['cloud.disabled'] === true) return false;
+
   const provider = getProvider();
   if (!provider.isSignedIn()) return false;
-  const settings = await Storage.settings.getAll();
   return settings['cloud.autoSync'] !== false;  // default true
 }
 
