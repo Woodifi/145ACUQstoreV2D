@@ -249,6 +249,10 @@ async function _onKeypadClick(e) {
     _refreshPinDisplay();
     return;
   }
+  if (action === 'forgot-pin') {
+    _openRecoveryFlowModal();
+    return;
+  }
 
   const digit = e.target.closest('[data-digit]')?.dataset.digit;
   if (digit !== undefined) {
@@ -340,4 +344,117 @@ function _teardownKeypad() {
     _root.__loginKeydownUnbind();
     delete _root.__loginKeydownUnbind;
   }
+}
+
+
+// -----------------------------------------------------------------------------
+// Recovery-flow modal (Forgot PIN)
+// -----------------------------------------------------------------------------
+// Two-step modal:
+//   Step 1: enter recovery code.
+//   Step 2: enter new PIN (twice, must match, must not be 0000).
+//
+// On success, dismisses with a confirmation that the PIN has been reset and
+// returns the user to the keypad to log in normally with the new PIN. We
+// deliberately don't auto-login from here — the user just typed the new
+// PIN so we know they have it; making them enter it again at the keypad
+// is a small confirmation that nothing typoed in the modal.
+
+function _openRecoveryFlowModal() {
+  const userId = _selectedUserId;
+
+  openModal({
+    titleHtml: 'Reset PIN with recovery code',
+    size:      'sm',
+    bodyHtml:  `
+      <p class="modal__body">
+        Enter your recovery code to set a new PIN. The code will be consumed
+        on success &mdash; you'll need to generate a new one from Settings
+        after you next log in if you want continued recovery coverage.
+      </p>
+      <form class="form" data-form="recovery-flow" autocomplete="off">
+        <label class="form__field">
+          <span class="form__label">Recovery code</span>
+          <input type="text" name="code" required spellcheck="false"
+                 autocapitalize="characters" inputmode="text"
+                 placeholder="XXXX-XXXX-XXXX"
+                 class="form__input--code">
+        </label>
+        <label class="form__field">
+          <span class="form__label">New PIN</span>
+          <input type="password" name="newPin" inputmode="numeric"
+                 pattern="\\d{4}" maxlength="4" required
+                 autocomplete="new-password" class="form__input--pin">
+        </label>
+        <label class="form__field">
+          <span class="form__label">Confirm new PIN</span>
+          <input type="password" name="confirmPin" inputmode="numeric"
+                 pattern="\\d{4}" maxlength="4" required
+                 autocomplete="new-password" class="form__input--pin">
+        </label>
+        <div class="form__error" role="alert"></div>
+        <div class="form__actions">
+          <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
+          <button type="submit" class="btn btn--primary">Reset PIN</button>
+        </div>
+      </form>
+    `,
+    onMount(panel, close) {
+      const form  = $('form[data-form="recovery-flow"]', panel);
+      const errEl = $('.form__error', panel);
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        errEl.textContent = '';
+        const fd = new FormData(form);
+        const code       = String(fd.get('code')       || '');
+        const newPin     = String(fd.get('newPin')     || '');
+        const confirmPin = String(fd.get('confirmPin') || '');
+
+        if (!/^\d{4}$/.test(newPin)) {
+          errEl.textContent = 'PIN must be exactly 4 digits.';
+          return;
+        }
+        if (newPin !== confirmPin) {
+          errEl.textContent = 'PINs do not match.';
+          return;
+        }
+        if (newPin === '0000') {
+          errEl.textContent = '0000 is the default. Choose a different PIN.';
+          return;
+        }
+
+        let result;
+        try {
+          result = await AUTH.resetPinWithRecoveryCode(userId, code, newPin);
+        } catch (err) {
+          errEl.textContent = err.message || 'Reset failed.';
+          return;
+        }
+
+        if (result?.ok) {
+          close();
+          // Clear the PIN buffer and re-render the keypad so the user can
+          // log in normally with the new PIN.
+          _pinBuffer = '';
+          _refreshPinDisplay();
+          // Show a one-line flash via the keypad's existing error slot,
+          // styled neutrally — we reuse the alert region for both errors
+          // and confirmations because the keypad doesn't have its own
+          // toast component yet (v2.1 backlog item).
+          const flashEl = $('.login__error', _root);
+          if (flashEl) {
+            flashEl.textContent = 'PIN reset. Enter your new PIN to sign in.';
+          }
+          return;
+        }
+
+        const reasonMsg = {
+          invalid_code: 'Recovery code is incorrect.',
+          invalid_pin:  'New PIN is invalid.',
+          no_recovery:  'No active recovery code for this user. The code may have already been used.',
+        }[result?.reason] || 'Reset failed.';
+        errEl.textContent = reasonMsg;
+      });
+    },
+  });
 }

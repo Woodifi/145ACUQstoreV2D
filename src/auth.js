@@ -50,6 +50,7 @@
 
 import * as Storage from './storage.js';
 import { argon2id, argon2Verify } from 'hash-wasm';
+import * as Recovery from './recovery.js';
 
 // -----------------------------------------------------------------------------
 // Constants — exported so other modules can reference role labels and the
@@ -57,7 +58,7 @@ import { argon2id, argon2Verify } from 'hash-wasm';
 // -----------------------------------------------------------------------------
 
 export const ROLES = Object.freeze({
-  co:    { label: 'CO / OC',    short: 'CO'  },
+  co:    { label: 'OC',         short: 'OC'  },
   qm:    { label: 'QM Staff',   short: 'QM'  },
   staff: { label: 'Staff',      short: 'STF' },
   cadet: { label: 'Cadet',      short: 'CDT' },
@@ -320,7 +321,7 @@ export function requireRole(role) {
 export function requireCO() {
   if (!isCO()) {
     const cur = _session?.role || 'unauthenticated';
-    throw new Error(`CO/OC role required (current role: ${cur})`);
+    throw new Error(`OC role required (current role: ${cur})`);
   }
 }
 
@@ -342,7 +343,7 @@ export function requireCO() {
  * Note: callers wanting the user to set their own PIN should verify the
  * user is logged in as that account, or the caller is a CO.
  */
-export async function setPin(userId, pin) {
+export async function setPin(userId, pin, options = {}) {
   if (!/^\d{4}$/.test(String(pin))) {
     throw new Error('PIN must be exactly 4 digits.');
   }
@@ -360,6 +361,24 @@ export async function setPin(userId, pin) {
     desc:   `PIN updated for ${user.username}.`,
   });
 
+  // Optional recovery-code generation. The caller opts in explicitly;
+  // routine PIN rotation should NOT regenerate (and so invalidate) an
+  // existing code. The default-PIN flow sets generateRecovery: true so a
+  // recovery code is produced the first time an OC sets a real PIN.
+  //
+  // OC-only — Recovery.generateForUser enforces the role check, but we
+  // also short-circuit here so non-OC callers don't pay for a wasted
+  // hash operation.
+  let recoveryCode = null;
+  if (options.generateRecovery && user.role === 'co') {
+    recoveryCode = await Recovery.generateForUser(userId);
+    await Storage.audit.append({
+      action: 'recovery_set',
+      user:   _session?.name || 'system',
+      desc:   `Recovery code generated for ${user.username}.`,
+    });
+  }
+
   // If the caller updated the currently-logged-in user and they moved off
   // the default, sync the session state. This is the only place the
   // pinIsDefault flag transitions from true to false post-login.
@@ -371,6 +390,81 @@ export async function setPin(userId, pin) {
       _notify();
     }
   }
+
+  return { recoveryCode };
+}
+
+// -----------------------------------------------------------------------------
+// Recovery-code reset (OC PIN reset without an authenticated session)
+// -----------------------------------------------------------------------------
+
+/**
+ * Reset an OC user's PIN using their recovery code. Intended to be called
+ * from the login screen when an OC has forgotten their PIN.
+ *
+ * SUCCESS PATH
+ *   - Verifies the supplied code against the user's stored recoveryHash.
+ *   - Hashes the new PIN with argon2id and writes it.
+ *   - Consumes (clears) the recovery hash. The OC must regenerate a code
+ *     after they next log in if they want recovery coverage again.
+ *   - Audits as 'recovery_reset' (distinct from 'pin_change' so the audit
+ *     log clearly shows when a credential was reset via recovery rather
+ *     than by the user knowing their old PIN).
+ *
+ * FAILURE PATHS
+ *   - User not found, not OC, or no recovery code set: reason 'no_recovery'
+ *   - Code does not verify: reason 'invalid_code', audited as a failed
+ *     attempt so brute-force attempts leave a trace
+ *   - New PIN not 4 digits / is the default '0000': reason 'invalid_pin'
+ *
+ * Note: this function does NOT establish a session. The caller still has
+ * to call login() with the new PIN. We deliberately don't auto-login from
+ * here — keeping reset and login as separate steps means the recovery
+ * flow leaves the user at the login screen, where they'll see their
+ * normal PIN prompt and can confirm the new PIN works.
+ */
+export async function resetPinWithRecoveryCode(userId, code, newPin) {
+  if (!/^\d{4}$/.test(String(newPin))) {
+    return { ok: false, reason: 'invalid_pin' };
+  }
+  if (String(newPin) === '0000') {
+    return { ok: false, reason: 'invalid_pin' };
+  }
+
+  const user = await Storage.users.get(userId);
+  if (!user || user.role !== 'co' || !user.recoveryHash) {
+    await Storage.audit.append({
+      action: 'recovery_reset_failed',
+      user:   user?.name || user?.username || 'unknown',
+      desc:   `Recovery reset attempted for ${userId}; user has no active recovery code.`,
+    });
+    return { ok: false, reason: 'no_recovery' };
+  }
+
+  const ok = await Recovery.verifyForUser(userId, code).catch(() => false);
+  if (!ok) {
+    await Storage.audit.append({
+      action: 'recovery_reset_failed',
+      user:   user.name || user.username,
+      desc:   `Recovery reset attempted for ${user.username}; code did not verify.`,
+    });
+    return { ok: false, reason: 'invalid_code' };
+  }
+
+  // Code verified. Apply the new PIN and consume the recovery hash.
+  user.pinHash          = await _argonHash(newPin);
+  user.pinHashAlgorithm = 'argon2id';
+  delete user.legacyPinHash;
+  await Storage.users.put(user);
+  await Recovery.consumeForUser(userId);
+
+  await Storage.audit.append({
+    action: 'recovery_reset',
+    user:   user.name || user.username,
+    desc:   `PIN reset for ${user.username} via recovery code. Recovery code consumed; the OC should generate a new one after next login.`,
+  });
+
+  return { ok: true };
 }
 
 // -----------------------------------------------------------------------------

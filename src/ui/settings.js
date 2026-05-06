@@ -28,6 +28,7 @@ import * as Sync    from '../sync.js';
 import { getProvider } from '../cloud.js';
 import { openModal }   from './modal.js';
 import { esc, $, $$, render, fmtDate } from './util.js';
+import { STAFF_RANKS_CANONICAL, CADET_RANKS } from '../ranks.js';
 
 let _root = null;
 let _statusListener = null;
@@ -63,6 +64,7 @@ async function _render() {
   render(_root, `
     <section class="settings">
       <div class="settings__column">
+        ${_unitSectionHtml(settings)}
         ${_cloudSectionHtml(settings, status)}
         ${_dataSectionHtml(settings)}
       </div>
@@ -70,6 +72,141 @@ async function _render() {
   `);
 
   _wireEventListeners();
+}
+
+// -----------------------------------------------------------------------------
+// Unit branding section
+// -----------------------------------------------------------------------------
+// Surfaces the unit identity fields that v1 carried but v2 had no UI for.
+// All values flow into the same flat 'settings' KV that the migration writes
+// to, so a v1-migrated unit's existing values populate this form on first
+// load. Keys consumed elsewhere:
+//   - unitName / unitCode  → shell.js header, login.js title
+//   - qmName / qmRank      → AB189 signature block (when that lands)
+//   - coName (OC/QM)       → AB189 approver name + reports
+//   - state                → AB189 (form footer)
+//   - qmEmail / coEmail    → reserved for future notifications
+//
+// QM AND APPROVER ROLES
+//   The QM may be either staff OR a cadet. Cadet QMs are a designed-in
+//   role: cadets run day-to-day operations under staff oversight. The
+//   rank datalist therefore offers BOTH staff ranks and cadet ranks as
+//   suggestions, with staff ranks listed first since they remain the
+//   more common arrangement. The field accepts any value regardless —
+//   datalist is suggestions, not a constraint.
+//
+//   The approver field is labelled "OC/QM" because either the OC or a
+//   staff QM can be the in-unit approving authority on AB189s. AB189s
+//   are in-unit only — battalion Q-Store requests go through CadetNet
+//   pro-formas, outside this app's scope. Two signatures (issuer + OC/QM
+//   approver) are sufficient; no third signatory field is needed.
+//
+// SCHEMA KEY vs LABEL
+//   The settings KV keys 'coName' and 'coEmail' predate the OC/QM
+//   labelling decision and remain unchanged to avoid a migration step
+//   for what is a cosmetic relabel. Treat them as 'approver name/email'
+//   internally; only the visible label matters to the user.
+//
+// The state field is a fixed dropdown of AU codes; the AB189 form needs an
+// exact match.
+// -----------------------------------------------------------------------------
+
+const AU_STATES = ['ACT', 'NSW', 'NT', 'QLD', 'SA', 'TAS', 'VIC', 'WA'];
+
+function _unitSectionHtml(settings) {
+  const unitName = settings.unitName || '';
+  const unitCode = settings.unitCode || '';
+  const state    = settings.state    || '';
+  const qmName   = settings.qmName   || '';
+  const qmRank   = settings.qmRank   || '';
+  const qmEmail  = settings.qmEmail  || '';
+  const coName   = settings.coName   || '';
+  const coEmail  = settings.coEmail  || '';
+
+  const stateOptions = ['', ...AU_STATES].map((code) => {
+    const label = code || '— Select —';
+    const sel   = code === state ? ' selected' : '';
+    return `<option value="${esc(code)}"${sel}>${esc(label)}</option>`;
+  }).join('');
+
+  // Staff ranks first (more common QM arrangement), cadet ranks after.
+  // The full list is suggestions only — the field accepts any value.
+  const rankOptions = [...STAFF_RANKS_CANONICAL, ...CADET_RANKS].map((r) =>
+    `<option value="${esc(r)}">`
+  ).join('');
+
+  return `
+    <section class="settings__section" data-section="unit">
+      <header class="settings__section-header">
+        <h2 class="settings__section-title">Unit details</h2>
+        <p class="settings__section-hint">
+          These fields appear in the app header, on the login screen, and on
+          generated AB189 forms and reports. Only the OC can edit them.
+        </p>
+      </header>
+
+      <form class="form" data-form="unit-config" autocomplete="off">
+        <div class="form__row">
+          <label class="form__field form__field--grow">
+            <span class="form__label">Unit name</span>
+            <input type="text" name="unitName" value="${esc(unitName)}" maxlength="80"
+                   placeholder="1 Australian Cadet Training Unit">
+            <span class="form__hint">Full name shown in the app header and login screen</span>
+          </label>
+          <label class="form__field">
+            <span class="form__label">Unit code</span>
+            <input type="text" name="unitCode" value="${esc(unitCode)}" maxlength="16"
+                   placeholder="1 ACTU" spellcheck="false">
+            <span class="form__hint">Short code (e.g. 145 ACU)</span>
+          </label>
+        </div>
+
+        <div class="form__row">
+          <label class="form__field">
+            <span class="form__label">State</span>
+            <select name="state">${stateOptions}</select>
+            <span class="form__hint">Used on AB189 form footer</span>
+          </label>
+          <label class="form__field form__field--grow">
+            <span class="form__label">OC/QM name</span>
+            <input type="text" name="coName" value="${esc(coName)}" maxlength="80"
+                   placeholder="Surname, Given names">
+          </label>
+          <label class="form__field form__field--grow">
+            <span class="form__label">OC/QM email</span>
+            <input type="email" name="coEmail" value="${esc(coEmail)}" maxlength="120"
+                   placeholder="co@example.com" spellcheck="false">
+          </label>
+        </div>
+
+        <div class="form__row">
+          <label class="form__field">
+            <span class="form__label">QM rank</span>
+            <input type="text" name="qmRank" value="${esc(qmRank)}" maxlength="16"
+                   placeholder="e.g. CAPT-AAC, CDTWO1, DAH"
+                   list="qm-rank-options" spellcheck="false">
+            <datalist id="qm-rank-options">${rankOptions}</datalist>
+            <span class="form__hint">Staff or cadet rank — choose from list or type</span>
+          </label>
+          <label class="form__field form__field--grow">
+            <span class="form__label">QM name</span>
+            <input type="text" name="qmName" value="${esc(qmName)}" maxlength="80"
+                   placeholder="Surname, Given names">
+          </label>
+          <label class="form__field form__field--grow">
+            <span class="form__label">QM email</span>
+            <input type="email" name="qmEmail" value="${esc(qmEmail)}" maxlength="120"
+                   placeholder="qm@example.com" spellcheck="false">
+          </label>
+        </div>
+
+        <div class="form__error" role="alert"></div>
+        <div class="form__actions">
+          <button type="submit" class="btn btn--primary">Save unit details</button>
+        </div>
+      </form>
+    </section>
+  `;
 }
 
 function _cloudSectionHtml(settings, status) {
@@ -333,9 +470,77 @@ async function _refreshSyncBlock(status) {
 // -----------------------------------------------------------------------------
 
 function _wireEventListeners() {
-  const form = $('form[data-form="cloud-config"]', _root);
-  if (form) form.addEventListener('submit', _onSaveConfig);
+  const cloudForm = $('form[data-form="cloud-config"]', _root);
+  if (cloudForm) cloudForm.addEventListener('submit', _onSaveConfig);
+  const unitForm = $('form[data-form="unit-config"]', _root);
+  if (unitForm) unitForm.addEventListener('submit', _onSaveUnit);
   _root.addEventListener('click', _onRootClick);
+}
+
+async function _onSaveUnit(e) {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const errEl = $('.form__error', form);
+  errEl.textContent = '';
+
+  const fd = new FormData(form);
+  // Trim everything; empty strings are valid (clears the field).
+  const fields = {
+    unitName: String(fd.get('unitName') || '').trim(),
+    unitCode: String(fd.get('unitCode') || '').trim(),
+    state:    String(fd.get('state')    || '').trim(),
+    qmName:   String(fd.get('qmName')   || '').trim(),
+    qmRank:   String(fd.get('qmRank')   || '').trim().toUpperCase(),
+    qmEmail:  String(fd.get('qmEmail')  || '').trim(),
+    coName:   String(fd.get('coName')   || '').trim(),
+    coEmail:  String(fd.get('coEmail')  || '').trim(),
+  };
+
+  // Light validation only — emails optional, but if present must look like one.
+  // We are deliberately permissive on rank: free text with a datalist of
+  // suggestions is enough; AB189 generation can validate strictly at use.
+  for (const key of ['qmEmail', 'coEmail']) {
+    if (fields[key] && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fields[key])) {
+      errEl.textContent = `${key === 'qmEmail' ? 'QM' : 'OC/QM'} email is not in a valid format.`;
+      return;
+    }
+  }
+
+  try {
+    await Storage.settings.setMany(fields);
+    await Storage.audit.append({
+      action: 'settings_change',
+      user:   AUTH.getSession()?.name || 'unknown',
+      desc:   `Unit details updated (name: ${fields.unitName || '(empty)'}, code: ${fields.unitCode || '(empty)'}).`,
+    });
+    // Soft-update the shell brand without a re-render so we don't lose the
+    // settings page's open state. We deliberately don't try to update the
+    // login screen because the user is logged in — login screen's values
+    // refresh next time it mounts.
+    // Soft-update the shell brand. The brand-code element is conditionally
+    // rendered (only present if it was non-empty at last shell render), so
+    // we have to inject it if the user just set a code where there wasn't
+    // one. Removing it when cleared is symmetric.
+    const brand = document.querySelector('.shell__brand');
+    const brandName = brand && brand.querySelector('.shell__brand-name');
+    if (brandName) brandName.textContent = fields.unitName || 'QStore IMS';
+    if (brand) {
+      let brandCode = brand.querySelector('.shell__brand-code');
+      if (fields.unitCode) {
+        if (!brandCode) {
+          brandCode = document.createElement('div');
+          brandCode.className = 'shell__brand-code';
+          brand.appendChild(brandCode);
+        }
+        brandCode.textContent = fields.unitCode;
+      } else if (brandCode) {
+        brandCode.remove();
+      }
+    }
+    _flashSuccess('Unit details saved.');
+  } catch (err) {
+    errEl.textContent = err.message || 'Could not save unit details.';
+  }
 }
 
 async function _onSaveConfig(e) {
@@ -384,6 +589,7 @@ async function _onRootClick(e) {
     case 'load-from-cloud': await _doLoadFromCloud(); break;
     case 'export-data':     await _doExportData(e.target.closest('button')); break;
     case 'import-data':     await _doImportData(e.target.closest('button')); break;
+    case 'recovery-generate': await _doGenerateRecovery(e.target.closest('button')); break;
   }
 }
 
@@ -643,4 +849,113 @@ function _flashSuccess(message) {
   document.body.appendChild(flash);
   setTimeout(() => flash.classList.add('is-leaving'), 2000);
   setTimeout(() => flash.remove(), 2600);
+}
+
+
+// -----------------------------------------------------------------------------
+// Recovery-code generation handler
+// -----------------------------------------------------------------------------
+// Generates (or regenerates — same flow) a recovery code for the currently-
+// logged-in OC. Disables the button during the argon2 hash to prevent
+// double-submit (which would otherwise generate two codes and invalidate
+// the first immediately).
+//
+// We use the existing setPin pathway? — No. setPin is for changing the PIN
+// itself; here we want to replace JUST the recovery hash without touching
+// the PIN. Recovery.generateForUser handles the storage write directly.
+//
+// Audit: 'recovery_set' for fresh generation, 'recovery_rotated' for
+// regeneration of an existing code. Distinguishing them in the audit log
+// helps a future investigator answer "when was this code last refreshed".
+
+async function _doGenerateRecovery(button) {
+  const sess = AUTH.getSession();
+  if (!sess?.userId) {
+    alert('No active session — cannot generate recovery code.');
+    return;
+  }
+
+  // Confirm if we're about to overwrite an existing code.
+  const before = await Recovery.statusForUser(sess.userId);
+  if (before.exists) {
+    const ok = confirm(
+      'Generating a new recovery code will invalidate the existing one.\n\n' +
+      'Make sure you can update or replace any printed copy of the previous code.\n\n' +
+      'Continue?'
+    );
+    if (!ok) return;
+  }
+
+  if (button) button.disabled = true;
+  try {
+    const formattedCode = await Recovery.generateForUser(sess.userId);
+    await Storage.audit.append({
+      action: before.exists ? 'recovery_rotated' : 'recovery_set',
+      user:   sess.name || 'unknown',
+      desc:   before.exists
+        ? `Recovery code regenerated for ${sess.username || sess.userId} from settings.`
+        : `Recovery code generated for ${sess.username || sess.userId} from settings.`,
+    });
+    // Re-render the section so the status block updates from "no active code"
+    // to "active, generated <date>". Quickest way: re-render the whole page.
+    // It's cheap because we're already on the settings page.
+    await _render();
+    // Show the code AFTER the re-render so the modal sits on top of the
+    // updated status block — gives the user feedback that something changed
+    // even before they read the code.
+    _openRecoveryFromSettings(formattedCode, before.exists);
+  } catch (err) {
+    alert('Failed to generate recovery code: ' + (err.message || err));
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+// Local copy of the recovery-display modal — settings.js can't import from
+// shell.js without a circular dependency (shell.js mounts pages including
+// settings). The modal content is similar but the framing text differs:
+// settings-initiated regeneration emphasises the off-device storage rule
+// and the fact that the previous code is now invalid.
+function _openRecoveryFromSettings(formattedCode, wasRotation) {
+  const headline = wasRotation
+    ? 'New recovery code generated'
+    : 'Your recovery code';
+  const intro = wasRotation
+    ? 'Your previous recovery code is no longer valid. Replace any printed copy with this new one.'
+    : 'Write this down and store it OFF this device. You will not see it again — generating another code from this page invalidates this one.';
+
+  openModal({
+    titleHtml: esc(headline),
+    size:      'sm',
+    bodyHtml:  `
+      <p class="modal__body">${esc(intro)}</p>
+      <div class="recovery-code__display" role="textbox" aria-readonly="true"
+           aria-label="Recovery code">${esc(formattedCode)}</div>
+      <div class="modal__warn">
+        <strong>Store this code OFF this device.</strong> A printed copy in a
+        sealed envelope in the unit safe is appropriate. Anyone with this
+        code can reset the OC PIN and gain administrative access.
+      </div>
+      <form class="form" data-form="ack-recovery-settings">
+        <label class="form__field">
+          <input type="checkbox" name="ack" required>
+          I have stored this code somewhere safe.
+        </label>
+        <div class="form__actions">
+          <button type="submit" class="btn btn--primary" disabled
+                  data-action="ack-submit">Done</button>
+        </div>
+      </form>
+    `,
+    onMount(panel, close) {
+      const form = $('form[data-form="ack-recovery-settings"]', panel);
+      const cb   = $('input[name="ack"]', panel);
+      const btn  = $('button[data-action="ack-submit"]', panel);
+      cb.addEventListener('change', () => { btn.disabled = !cb.checked; });
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        if (cb.checked) close();
+      });
+    },
+  });
 }

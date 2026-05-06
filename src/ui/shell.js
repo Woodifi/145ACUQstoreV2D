@@ -25,14 +25,18 @@ import * as AUTH      from '../auth.js';
 import * as Sync      from '../sync.js';
 import * as Login     from './login.js';
 import * as Inventory from './inventory.js';
+import * as Loans     from './loans.js';
+import * as Cadets    from './cadets.js';
 import * as Settings  from './settings.js';
 import { openModal }  from './modal.js';
 import { esc, $, render } from './util.js';
 
 const PAGES = {
   inventory: { label: 'Inventory', perm: 'view',     mount: Inventory.mount },
+  loans:     { label: 'Loans',     perm: 'view',     mount: Loans.mount     },
+  cadets:    { label: 'Cadets',    perm: 'view',     mount: Cadets.mount    },
   settings:  { label: 'Settings',  coOnly: true,     mount: Settings.mount  },
-  // More pages land here as we build them: loans, cadets, audit.
+  // More pages land here as we build them: audit, reports.
 };
 
 const DEFAULT_PAGE = 'inventory';
@@ -326,7 +330,13 @@ function _openSetPinModal() {
           return;
         }
         try {
-          await AUTH.setPin(_session.userId, newPin);
+          // Ask AUTH to generate a recovery code as part of the PIN-set.
+          // For OC accounts replacing the default PIN, this is the only
+          // recovery path back if they later forget the new PIN. The flag
+          // is harmless for non-OC users — AUTH ignores it for them.
+          const result = await AUTH.setPin(_session.userId, newPin, {
+            generateRecovery: true,
+          });
           // AUTH.setPin updated session state for us — pull the fresh copy.
           _session = AUTH.getSession();
           Sync.notifyChanged();
@@ -335,9 +345,81 @@ function _openSetPinModal() {
           // user keeps their current page and scroll position.
           const banner = $('.shell__banner', _root);
           if (banner) banner.remove();
+          // If a recovery code was generated, show it in a follow-up modal.
+          // The user MUST acknowledge they have stored it before the modal
+          // closes — the code is shown only here and in settings; we don't
+          // store the plaintext anywhere.
+          if (result?.recoveryCode) {
+            _openRecoveryCodeModal(result.recoveryCode, { reason: 'initial' });
+          }
         } catch (err) {
           errEl.textContent = err.message || 'Failed to set PIN.';
         }
+      });
+    },
+  });
+}
+
+// -----------------------------------------------------------------------------
+// Recovery code display modal
+// -----------------------------------------------------------------------------
+// Shown once after PIN-set generates a recovery code, and on demand from
+// settings (with reason: 'manual'). The code is plaintext and we make NO
+// effort to obscure it on screen — the whole point is for the user to
+// read and write it down. We do strongly emphasise the off-device storage
+// guidance, because writing it on a sticky note next to the laptop
+// defeats the entire mechanism.
+
+function _openRecoveryCodeModal(formattedCode, { reason } = {}) {
+  const headline = reason === 'rotated'
+    ? 'New recovery code generated'
+    : reason === 'manual'
+    ? 'Your recovery code'
+    : 'Save your recovery code';
+
+  const intro = reason === 'rotated'
+    ? `Your previous recovery code is no longer valid. Use the new code below.`
+    : reason === 'manual'
+    ? `This is your current recovery code. If you've lost the previous copy, write this one down and discard the old.`
+    : `Now that you've set a real PIN, here's your one-shot recovery code. Use it from the login screen if you ever forget your PIN.`;
+
+  openModal({
+    titleHtml: esc(headline),
+    size:      'sm',
+    bodyHtml:  `
+      <p class="modal__body">\${esc(intro)}</p>
+      <div class="recovery-code__display" role="textbox" aria-readonly="true"
+           aria-label="Recovery code">\${esc(formattedCode)}</div>
+      <div class="modal__warn">
+        <strong>Store this code OFF this device.</strong> A printed copy in a
+        sealed envelope in the unit safe, or on a key cabinet, is appropriate.
+        Anyone with this code can reset the OC PIN and gain administrative
+        access &mdash; treat it with the same care as the safe combination.
+      </div>
+      <p class="modal__body modal__body--small">
+        Using the code resets your PIN and consumes the code. You'll need to
+        generate a new one from Settings afterwards if you want continued
+        recovery coverage.
+      </p>
+      <form class="form" data-form="ack-recovery">
+        <label class="form__field">
+          <input type="checkbox" name="ack" required>
+          I have stored this code somewhere safe.
+        </label>
+        <div class="form__actions">
+          <button type="submit" class="btn btn--primary" disabled
+                  data-action="ack-submit">Done</button>
+        </div>
+      </form>
+    `,
+    onMount(panel, close) {
+      const form = $('form[data-form="ack-recovery"]', panel);
+      const cb   = $('input[name="ack"]', panel);
+      const btn  = $('button[data-action="ack-submit"]', panel);
+      cb.addEventListener('change', () => { btn.disabled = !cb.checked; });
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        if (cb.checked) close();
       });
     },
   });

@@ -1418,3 +1418,687 @@ input {
   font-size: 12px;
   color: var(--text-muted);
 }
+
+/* =============================================================================
+ * RECOVERY CODE display + status (settings + modal + login)
+ * ============================================================================= */
+
+/* The big plaintext code box shown in the modal. Monospace so each glyph is
+ * unambiguous; large so the user can read it across a desk. Selectable so a
+ * paranoid user can copy-paste into their password manager. */
+.recovery-code__display {
+  display: block;
+  margin: 12px 0 16px;
+  padding: 18px 16px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 22px;
+  letter-spacing: 0.15em;
+  text-align: center;
+  color: var(--gold);
+  user-select: all;
+  -webkit-user-select: all;
+  word-break: break-all;
+}
+
+/* Status pill in the settings recovery section. Two flavours: ok (active)
+ * and warn (no code yet). Same shape, different colour. */
+.settings__status {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  line-height: 1.4;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text-primary);
+}
+
+.settings__status--ok {
+  border-color: rgba(196, 169, 107, 0.35);
+  background:   rgba(196, 169, 107, 0.06);
+}
+
+.settings__status--warn {
+  border-color: rgba(255, 184, 107, 0.35);
+  background:   rgba(255, 184, 107, 0.08);
+}
+
+/* "Forgot PIN?" link beneath the keypad on the login screen, OC-only. */
+.login__recovery-link {
+  margin-top: 14px;
+  text-align: center;
+}
+
+.login__link {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+
+.login__link:hover {
+  color: var(--gold);
+}
+
+.login__link:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Recovery-code input field — like the PIN field but accepts the full
+ * formatted code (XXXX-XXXX-XXXX). Monospace, slightly tighter spacing. */
+.form__input--code {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 16px;
+  letter-spacing: 0.15em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+/* Smaller body paragraph used inside modals when the main paragraph above
+ * carries the load. Lighter colour, smaller, tighter. */
+.modal__body--small {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+
+/* =============================================================================
+ * CADETS page — toolbar, table, badges
+ * Mirrors the inventory page conventions (.inv__*) so the two list views
+ * feel like siblings. Rules duplicated rather than aliased so future
+ * tweaks to one don't accidentally drag the other along.
+ * ============================================================================= */
+
+.cad__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.cad__filters {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.cad__search {
+  flex: 1;
+  min-width: 220px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  padding: 9px 12px;
+  font-size: 14px;
+}
+
+.cad__plt-filter {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  padding: 9px 12px;
+  font-size: 14px;
+  min-width: 140px;
+}
+
+.cad__inactive-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+  padding: 4px 8px;
+}
+
+.cad__inactive-toggle input { accent-color: var(--gold); }
+
+.cad__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.cad__meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.cad__meta-of { color: var(--text-dim); }
+
+.cad__table-wrap {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: auto;
+}
+
+.cad__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.cad__table thead th {
+  background: var(--bg-input);
+  color: var(--text-muted);
+  text-align: left;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.cad__table tbody td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.cad__row:hover td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* Inactive rows are visually de-emphasised — they're still listed for
+ * historical loan integrity, but the muted text signals they shouldn't
+ * appear in active workflows. */
+.cad__row--inactive td {
+  opacity: 0.55;
+}
+
+.cad__col-rank    { width: 90px; }
+.cad__col-surname { width: 180px; }
+.cad__col-givens  { width: 180px; }
+.cad__col-svc     { width: 110px; font-family: 'SF Mono', Consolas, monospace; }
+.cad__col-plt     { width: 60px; }
+.cad__col-status  { width: 100px; }
+.cad__col-actions { width: 130px; text-align: right; }
+
+.cad__rank,
+.cad__surname {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.cad__svc {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+}
+
+.cad__row-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+/* Badge in the status column. Same shape as inventory's .inv__cond badge. */
+.cad__badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.cad__badge--staff    { background: rgba(196, 169, 107, 0.15); color: var(--gold);   }
+.cad__badge--inactive { background: rgba(136, 147, 160, 0.15); color: var(--text-muted); }
+
+.cad__empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.cad__empty p { margin: 0 0 12px; }
+.cad__empty-hint {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+/* The Status field in the add/edit modal is narrower than the email
+ * field next to it but should align to the same row baseline. */
+.cad__active-field { flex: 0 0 140px; }
+
+/* Inline checkbox label inside form fields. Used for the "Active"
+ * checkbox in the cadet form. */
+.form__checkbox-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--text-primary);
+  cursor: pointer;
+  padding: 8px 0;
+}
+
+/* =============================================================================
+ * LOANS page — tabs, issue/return forms, all-loans listing
+ * ============================================================================= */
+
+/* Tab bar across the top of the page. */
+.loan__tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.loan__tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s;
+}
+
+.loan__tab:hover { color: var(--text-primary); }
+
+.loan__tab--active {
+  color: var(--gold);
+  border-bottom-color: var(--gold);
+}
+
+/* Tab body container — no special styling, just layout for kids. */
+.loan__body { padding-top: 4px; }
+
+/* Section heading inside Issue/Return tabs, used for the "1. Borrower",
+ * "2. Items" steps. Smaller than page H1, less heavy than h2. */
+.loan__heading {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin: 20px 0 8px;
+}
+
+.loan__heading:first-child { margin-top: 0; }
+
+/* -----------------------------------------------------------------------------
+ * Issue tab — form + sidebar layout
+ * ----------------------------------------------------------------------------- */
+
+.loan__issue {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 800px) {
+  .loan__issue { grid-template-columns: 1fr; }
+}
+
+.loan__issue-form { min-width: 0; }
+
+/* Per-line item row inside the batch-issue list. Item search takes most
+ * of the width; qty is narrow; remove button is a square. */
+.loan__lines { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+
+.loan__line {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.loan__qty-field { flex: 0 0 80px; }
+.loan__qty-field input { text-align: right; }
+
+.loan__line-remove {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 36px;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+  align-self: flex-end;
+  margin-bottom: 0;
+}
+
+.loan__line-spacer { flex: 0 0 32px; }
+
+.loan__item-search {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  padding: 9px 12px;
+  font-size: 14px;
+  width: 100%;
+}
+
+.loan__borrower-search {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  padding: 9px 12px;
+  font-size: 14px;
+  width: 100%;
+  max-width: 460px;
+}
+
+/* Sidebar showing the borrower's existing active loans. Sticks to the
+ * right side of the form on wide screens, drops below on narrow. */
+.loan__sidebar {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+}
+
+.loan__sidebar-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 4px;
+}
+
+.loan__sidebar-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0 0 12px;
+}
+
+.loan__sidebar-subhead {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin: 0 0 6px;
+}
+
+.loan__sidebar-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.loan__sidebar-list li {
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.loan__sidebar-list li:first-child { border-top: none; }
+
+.loan__sidebar-ref {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  color: var(--gold);
+}
+
+.loan__sidebar-due {
+  width: 100%;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.loan__sidebar-empty {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  margin: 0;
+}
+
+/* -----------------------------------------------------------------------------
+ * Return tab — borrower picker + checkbox list
+ * ----------------------------------------------------------------------------- */
+
+.loan__return-list {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 8px;
+  margin-bottom: 8px;
+}
+
+.loan__return-row {
+  display: grid;
+  grid-template-columns: 24px 90px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.loan__return-row:hover { background: rgba(255, 255, 255, 0.03); }
+
+.loan__return-row--overdue { color: var(--danger); }
+
+.loan__return-ref {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+  color: var(--gold);
+}
+
+.loan__return-due {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.loan__return-row--overdue .loan__return-due { color: var(--danger); font-weight: 600; }
+
+.loan__return-actions {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+
+/* -----------------------------------------------------------------------------
+ * All loans tab — pill filters + table
+ * ----------------------------------------------------------------------------- */
+
+.loan__all-toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.loan__all-filters {
+  display: flex;
+  gap: 12px;
+  flex: 1;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.loan__all-search {
+  flex: 1;
+  min-width: 220px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  padding: 9px 12px;
+  font-size: 14px;
+}
+
+.loan__all-pills {
+  display: flex;
+  gap: 4px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 3px;
+}
+
+.loan__pill {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: 3px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.loan__pill:hover { color: var(--text-primary); }
+
+.loan__pill--active {
+  background: var(--bg-panel);
+  color: var(--gold);
+}
+
+.loan__pill-count {
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 1px 6px;
+  border-radius: 8px;
+  color: var(--text-muted);
+}
+
+.loan__pill--active .loan__pill-count { color: var(--gold); }
+
+.loan__meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.loan__meta-of { color: var(--text-dim); }
+
+.loan__table-wrap {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: auto;
+}
+
+.loan__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.loan__table thead th {
+  background: var(--bg-input);
+  color: var(--text-muted);
+  text-align: left;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.loan__table tbody td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.loan__row:hover td { background: rgba(255, 255, 255, 0.02); }
+
+.loan__row--returned td { opacity: 0.55; }
+
+.loan__ref,
+.loan__date {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.loan__ref { color: var(--gold); }
+
+.loan__qty {
+  text-align: right;
+  font-weight: 600;
+  width: 50px;
+}
+
+.loan__nsn {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: 'SF Mono', Consolas, monospace;
+}
+
+/* Status badges in the loans table — same shape as cadet/inv badges. */
+.loan__badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+.loan__badge--active   { background: rgba(106, 224, 122, 0.15); color: var(--good);   }
+.loan__badge--overdue  { background: rgba(255, 107, 107, 0.15); color: var(--danger); }
+.loan__badge--returned { background: rgba(136, 147, 160, 0.15); color: var(--text-muted); }
+
+.loan__empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.loan__empty p { margin: 0; }
+
+/* Confirmation modal — list of just-issued loans. */
+.loan__confirm-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+  background: var(--bg-input);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+.loan__confirm-list li {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.loan__confirm-list li:first-child { border-top: none; }
+
+.loan__confirm-ref {
+  font-family: 'SF Mono', Consolas, monospace;
+  color: var(--gold);
+  margin-right: 8px;
+}
