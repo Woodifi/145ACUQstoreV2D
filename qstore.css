@@ -2102,3 +2102,200 @@ input {
   color: var(--gold);
   margin-right: 8px;
 }
+
+/* =============================================================================
+ * AUDIT log viewer — toolbar, verify block, table
+ * ============================================================================= */
+
+.aud__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.aud__filters {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.aud__search {
+  flex: 1;
+  min-width: 220px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  padding: 9px 12px;
+  font-size: 14px;
+}
+
+.aud__action-filter {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  padding: 9px 12px;
+  font-size: 14px;
+  min-width: 200px;
+}
+
+.aud__actions { display: flex; gap: 8px; }
+
+/* Verify-chain banner — shown after the user clicks the verify button.
+ * Two flavours: ok (green tint) and bad (danger tint). Both span the
+ * full width of the toolbar/table area. */
+.aud__verify {
+  margin: 0 0 12px;
+  padding: 12px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  line-height: 1.5;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text-primary);
+}
+
+.aud__verify code {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+}
+
+.aud__verify--ok {
+  border-color: rgba(106, 224, 122, 0.35);
+  background:   rgba(106, 224, 122, 0.06);
+}
+
+.aud__verify--bad {
+  border-color: rgba(255, 107, 107, 0.45);
+  background:   rgba(255, 107, 107, 0.08);
+}
+
+.aud__meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.aud__meta-of { color: var(--text-dim); }
+
+.aud__table-wrap {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: auto;
+}
+
+.aud__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.aud__table thead th {
+  background: var(--bg-input);
+  color: var(--text-muted);
+  text-align: left;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.aud__table tbody td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.aud__row:hover td { background: rgba(255, 255, 255, 0.02); }
+
+/* Rows past the chain-break get a red left border + faint red background,
+ * making it visually clear which entries are no longer trustworthy. */
+.aud__row--broken td {
+  background: rgba(255, 107, 107, 0.05);
+  border-left: 2px solid var(--danger);
+}
+
+.aud__col-seq    { width: 64px; }
+.aud__col-time   { width: 160px; }
+.aud__col-action { width: 220px; }
+.aud__col-user   { width: 140px; }
+.aud__col-desc   { /* takes remaining space */ }
+
+.aud__seq {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.aud__time {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.aud__user {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.aud__desc {
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+/* Action category badges. Same shape as cadet/loan/inv badges. */
+.aud__badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  margin-right: 4px;
+}
+
+.aud__badge--mutation { background: rgba(196, 169, 107, 0.15); color: var(--gold);   }
+.aud__badge--security { background: rgba(107, 176, 255, 0.15); color: var(--info);   }
+.aud__badge--auth     { background: rgba(106, 224, 122, 0.15); color: var(--good);   }
+.aud__badge--failure  { background: rgba(255, 107, 107, 0.15); color: var(--danger); }
+.aud__badge--other    { background: rgba(136, 147, 160, 0.15); color: var(--text-muted); }
+.aud__badge--imported {
+  background: rgba(136, 147, 160, 0.15);
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.aud__empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.aud__empty p { margin: 0; }
+
+.aud__loadmore {
+  display: flex;
+  justify-content: center;
+  margin: 16px 0;
+}
+
+.aud__loadmore-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: 8px;
+  font-weight: 400;
+}
