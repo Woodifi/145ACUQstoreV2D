@@ -30,6 +30,7 @@ import { openModal }   from './modal.js';
 import { esc, $, $$, render, fmtDate } from './util.js';
 import { STAFF_RANKS_CANONICAL, CADET_RANKS } from '../ranks.js';
 import * as Recovery from '../recovery.js';
+import * as Migration from '../migration.js';
 
 let _root = null;
 let _statusListener = null;
@@ -486,7 +487,32 @@ function _dataSectionHtml(settings) {
                 data-action="import-data">Restore from backup file&hellip;</button>
       </div>
 
+      <details class="settings__details">
+        <summary>Import data from a v1 backup file</summary>
+        <div class="settings__details-body">
+          <p>
+            One-time migration from a QStore v1 backup file (filename pattern
+            <code>qstore_&lt;unitcode&gt;_&lt;date&gt;.json</code>). This is a
+            destructive operation: it clears the v2 database first, then
+            imports the v1 contents through a schema migration. Use this when
+            transitioning a unit from v1 to v2 for the first time.
+          </p>
+          <p>
+            <strong>Not the same as Restore from backup file</strong> above —
+            that's the v2-to-v2 path. Picking the wrong button is rejected
+            by a file-shape sanity check, but the buttons are kept distinct
+            for clarity.
+          </p>
+          <div class="form__actions">
+            <button type="button" class="btn btn--danger"
+                    data-action="import-v1">Import from v1 backup file&hellip;</button>
+          </div>
+        </div>
+      </details>
+
       <input type="file" data-target="import-file"
+             accept="application/json,.json" hidden>
+      <input type="file" data-target="import-v1-file"
              accept="application/json,.json" hidden>
     </section>
   `;
@@ -736,6 +762,7 @@ async function _onRootClick(e) {
     case 'load-from-cloud': await _doLoadFromCloud(); break;
     case 'export-data':     await _doExportData(e.target.closest('button')); break;
     case 'import-data':     await _doImportData(e.target.closest('button')); break;
+    case 'import-v1':       await _doImportV1(e.target.closest('button')); break;
     case 'recovery-generate': await _doGenerateRecovery(e.target.closest('button')); break;
   }
 }
@@ -1105,4 +1132,182 @@ function _openRecoveryFromSettings(formattedCode, wasRotation) {
       });
     },
   });
+}
+
+// =============================================================================
+// v1 backup file import
+// =============================================================================
+// Distinct from _doImportData (the v2-to-v2 restore). v1 import takes a
+// QStore v1 export file, wipes the v2 db, and runs schema migration. The
+// wipe is irrevocable; the confirmation gate is intentionally explicit.
+//
+// FLOW
+//   1. Confirmation modal (typed OVERWRITE — matches v2 restore)
+//   2. File picker (hidden input data-target="import-v1-file")
+//   3. _performV1Import: read file → JSON.parse → Migration.runFromObject
+//   4. Final modal showing what came through
+//
+// AUDIT
+//   Migration.runFromObject appends 'v1_import' to the v2 audit log on
+//   success. We don't append a second entry from the UI.
+
+async function _doImportV1(btn) {
+  openModal({
+    titleHtml: 'Import v1 backup — confirm',
+    size:      'sm',
+    bodyHtml: `
+      <div class="modal__warn">
+        <strong>This will replace ALL local data</strong> with the contents of
+        the v1 backup file you select. This cannot be undone. Use this only
+        when transitioning a unit from QStore v1 to v2 for the first time.
+      </div>
+      <p>
+        The v1 backup's user accounts will replace the current ones &mdash;
+        make sure you know the PINs from your v1 install before continuing,
+        or you will lock yourself out.
+      </p>
+      <p>
+        Your v1 OneDrive sync configuration will <strong>not</strong> be
+        carried over (v1 stored it in a separate place that's not in the
+        backup file). You'll re-enter cloud sync settings in v2 if you want
+        to use them.
+      </p>
+      <p>Type the word <strong>OVERWRITE</strong> to confirm.</p>
+      <form class="form" data-form="confirm-v1">
+        <label class="form__field">
+          <input type="text" name="confirm" autocomplete="off" placeholder="OVERWRITE">
+        </label>
+        <div class="form__error" role="alert"></div>
+        <div class="form__actions">
+          <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
+          <button type="submit" class="btn btn--danger">Choose v1 file&hellip;</button>
+        </div>
+      </form>
+    `,
+    onMount(panel, close) {
+      const form  = $('form[data-form="confirm-v1"]', panel);
+      const errEl = $('.form__error', panel);
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        errEl.textContent = '';
+        const value = String(new FormData(form).get('confirm') || '').trim();
+        if (value !== 'OVERWRITE') {
+          errEl.textContent = 'Type OVERWRITE in capitals to confirm.';
+          return;
+        }
+        close();
+        const fileInput = $('input[data-target="import-v1-file"]', _root);
+        if (!fileInput) {
+          alert('Internal error: v1 file input missing.');
+          return;
+        }
+        const onChange = async () => {
+          fileInput.removeEventListener('change', onChange);
+          const file = fileInput.files && fileInput.files[0];
+          fileInput.value = '';
+          if (!file) return;
+          await _performV1Import(file, btn);
+        };
+        fileInput.addEventListener('change', onChange);
+        fileInput.click();
+      });
+    },
+  });
+}
+
+async function _performV1Import(file, btn) {
+  if (btn) btn.disabled = true;
+
+  // Read + parse first, before opening the progress modal — if the file
+  // is malformed we'd rather show the error inline than open a "0%
+  // Migrating…" modal then immediately abort.
+  let parsed;
+  try {
+    const text = await file.text();
+    parsed = JSON.parse(text);
+  } catch (err) {
+    alert('Could not read the v1 file: ' + (err.message || err) +
+          '\n\nThe file may be corrupted or not a valid JSON export.');
+    if (btn) btn.disabled = false;
+    return;
+  }
+
+  // Open a progress modal. The migration itself reports progress via
+  // onProgress(msg, pct); we update the modal's body in place.
+  let progressClose = null;
+  let progressBody  = null;
+  openModal({
+    titleHtml: 'Importing v1 data…',
+    size:      'sm',
+    bodyHtml: `
+      <p class="modal__body" data-target="v1-progress-msg">Starting…</p>
+      <div class="settings__progress" aria-live="polite">
+        <div class="settings__progress-bar" data-target="v1-progress-bar"
+             style="width: 0%"></div>
+      </div>
+      <p class="modal__body modal__body--small">
+        Do not close this tab until the import completes.
+      </p>
+    `,
+    onMount(panel, close) {
+      progressClose = close;
+      progressBody  = panel;
+    },
+  });
+
+  const onProgress = (msg, pct) => {
+    if (!progressBody) return;
+    const m = $('[data-target="v1-progress-msg"]', progressBody);
+    const b = $('[data-target="v1-progress-bar"]', progressBody);
+    if (m) m.textContent = msg;
+    if (b) b.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+  };
+
+  let result;
+  try {
+    result = await Migration.runFromObject(parsed, { wipeFirst: true, onProgress });
+  } catch (err) {
+    if (progressClose) progressClose();
+    alert('v1 import failed: ' + (err.message || err) +
+          '\n\nThe database may be in a partially-migrated state. ' +
+          'Restore from a v2 backup file, or re-run the v1 import after ' +
+          'the issue is resolved.');
+    if (btn) btn.disabled = false;
+    return;
+  }
+
+  if (progressClose) progressClose();
+
+  // Summary modal — shows the counts the migration reports back. The user
+  // can use these to spot-check that nothing was silently dropped.
+  const c = result.counts || {};
+  openModal({
+    titleHtml: 'v1 import complete',
+    size:      'sm',
+    bodyHtml: `
+      <p class="modal__body">
+        v1 backup imported successfully. Reload the page or navigate to a
+        page (Inventory, Cadets, Loans) to see the migrated data.
+      </p>
+      <ul class="settings__import-summary">
+        <li>${esc(String(c.items     || 0))} inventory items</li>
+        <li>${esc(String(c.cadets    || 0))} cadets / staff</li>
+        <li>${esc(String(c.loans     || 0))} loan records</li>
+        <li>${esc(String(c.users     || 0))} user accounts</li>
+        <li>${esc(String(c.auditEntries || 0))} audit entries (re-chained, marked imported)</li>
+      </ul>
+      <p class="modal__body modal__body--small">
+        Cloud sync settings were not carried over. If you want OneDrive
+        sync, configure it in the Cloud sync section above. The v1 import
+        action has been audited.
+      </p>
+      <div class="form__actions">
+        <button type="button" class="btn btn--primary" data-action="modal-close">OK</button>
+      </div>
+    `,
+  });
+
+  // Re-render so the data section's "last import" timestamp updates.
+  await _render();
+  if (btn) btn.disabled = false;
 }

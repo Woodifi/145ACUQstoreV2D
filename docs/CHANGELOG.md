@@ -146,10 +146,11 @@ test-recovery.mjs:        86/86 ✓
 test-cadets.mjs:          37/37 ✓
 test-loans.mjs:           33/33 ✓
 test-audit.mjs:           22/22 ✓
-test-pdf.mjs:             21/21 ✓
-test-cloud-disable.mjs:    3/3 ✓ (new)
+test-pdf.mjs:             32/32 ✓
+test-cloud-disable.mjs:    3/3 ✓
+test-v1-import.mjs:       36/36 ✓ (new)
 ─────────────────────────────────
-                         272/272 ✓ across nine suites
+                         319/319 ✓ across ten suites
 ```
 
 ---

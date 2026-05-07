@@ -33,6 +33,13 @@
 // =============================================================================
 
 import * as Storage from './storage.js';
+import {
+  OFFICER_RANK_BASES,
+  STAFF_RANKS_RECOGNISED,
+  normaliseRankInput,
+  normalizeRank,
+  inferPersonType,
+} from './ranks.js';
 
 const V1_DATA_KEY    = 'qstore_data';
 const V1_OD_CFG_KEY  = 'qstore_od_cfg';
@@ -184,6 +191,124 @@ export async function run({ onProgress = () => {} } = {}) {
   return { ok: true, counts: status.v1Stats };
 }
 
+/**
+ * Migrate v1 data from a parsed JSON object (typically read from a file the
+ * user uploaded) rather than from localStorage. This is the path used for
+ * cross-machine v1 → v2 transitions: the user exports their v1 data on the
+ * old machine, copies the file across, and imports it here.
+ *
+ * Differs from run() in three ways:
+ *   - Source is the `v1` argument, not localStorage.
+ *   - OneDrive config is not migrated (it lives in a separate localStorage
+ *     key in v1 and isn't part of the exported file). User re-enters cloud
+ *     settings in v2.
+ *   - Optional pre-wipe of v2 stores so a clean replace is straightforward.
+ *     The keepMeta=true preserves the audit HMAC key (so going-forward
+ *     audit verification still works); keepUsers=false replaces v2 user
+ *     records with whatever v1 had.
+ *
+ * IMPORTANT
+ *   The migration flag is set after success. After this call returns ok,
+ *   the same-origin run() will refuse to run again with reason
+ *   'already_migrated'. This is intentional: a v1 import IS a migration,
+ *   and re-running risks duplicating data. The flag can be cleared from
+ *   the meta store manually if a re-import is needed.
+ *
+ * @param {Object} v1               Parsed v1 export JSON (the same shape
+ *                                  v1 wrote to localStorage as 'qstore_data').
+ * @param {Object} opts
+ * @param {boolean} opts.wipeFirst  When true, calls Storage.wipe() before
+ *                                  migrating. Defaults true. Caller MUST
+ *                                  have user confirmation before invoking
+ *                                  with wipeFirst=true.
+ * @param {Function} opts.onProgress (msg, pct) => void
+ * @returns {Promise<{ok:true, counts:object}>}
+ */
+export async function runFromObject(v1, { wipeFirst = true, onProgress = () => {} } = {}) {
+  await Storage.init();
+
+  if (!v1 || typeof v1 !== 'object') {
+    throw new Error('v1 import requires a parsed JSON object.');
+  }
+  // Sanity check on shape — v1's export contains `items` and `cadets` at
+  // minimum. If we don't see at least one of those it's almost certainly
+  // a v2 backup file or a different system entirely. Refuse rather than
+  // silently destroying the existing v2 db.
+  if (!Array.isArray(v1.items) && !Array.isArray(v1.cadets)) {
+    throw new Error(
+      'File does not look like a v1 backup. Expected fields "items" and/or ' +
+      '"cadets" not found. Did you mean Restore from backup file (v2 path)?'
+    );
+  }
+
+  if (wipeFirst) {
+    onProgress('Clearing existing data…', 2);
+    // keepMeta: true preserves the audit HMAC key. keepUsers: false replaces
+    // any test/dev user records with the v1 user set.
+    await Storage.wipe({ keepMeta: true, keepUsers: false });
+  }
+
+  // Compose stats now (matches the shape check() returns) so we can attach
+  // them to the migration flag and return them to the caller for display.
+  const v1Stats = {
+    items:           (v1.items           || []).length,
+    cadets:          (v1.cadets          || []).length,
+    loans:           (v1.loans           || []).length,
+    auditEntries:    (v1.auditLog        || []).length,
+    users:           (v1.users           || []).length,
+    pendingRequests: (v1.pendingRequests || []).length,
+    photoBytes:      _estimatePhotoBytes(v1.items || []),
+  };
+
+  onProgress('Importing settings…', 8);
+  await _migrateSettings(v1);
+
+  onProgress('Importing inventory items and photos…', 25);
+  await _migrateItemsAndPhotos(v1);
+
+  onProgress('Importing personnel register…', 45);
+  const cadetStats = await _migrateCadets(v1);
+
+  onProgress('Importing loans…', 60);
+  await _migrateLoans(v1);
+
+  onProgress('Importing users…', 70);
+  await _migrateUsers(v1);
+
+  onProgress('Importing pending requests…', 78);
+  await _migrateRequests(v1);
+
+  onProgress('Importing stocktake counts…', 84);
+  await _migrateStocktake(v1);
+
+  onProgress('Restoring loan counter…', 88);
+  // v1 stored the next-id directly; v2 counters store it the same way.
+  await Storage.counters.set('loanCounter', v1.loanCounter || 1000);
+
+  onProgress('Re-chaining audit log…', 92);
+  await _migrateAuditLog(v1, { cadetStats });
+
+  onProgress('Finalising migration…', 98);
+  await Storage.meta.set(MIGRATION_FLAG, {
+    completedAt: new Date().toISOString(),
+    source:      'v1_file_import',
+    counts:      v1Stats,
+  });
+
+  // Audit the migration itself so the v2 audit log carries a clear record
+  // of when v1 data landed (and how much). This entry is NOT marked
+  // imported — it's a real v2-side action.
+  await Storage.audit.append({
+    action: 'v1_import',
+    user:   'system',
+    desc:   `v1 backup imported: ${v1Stats.items} items, ${v1Stats.cadets} cadets, ` +
+            `${v1Stats.loans} loans, ${v1Stats.auditEntries} audit entries.`,
+  });
+
+  onProgress('Migration complete.', 100);
+  return { ok: true, counts: v1Stats };
+}
+
 // -----------------------------------------------------------------------------
 // Per-entity migration
 // -----------------------------------------------------------------------------
@@ -282,55 +407,6 @@ async function _migrateItemsAndPhotos(v1) {
 // the v1-page refactor need it for form dropdowns and validation.
 // =============================================================================
 
-// Officer rank bases (no suffix). Used to detect legacy v1 records that
-// need the -AAC suffix added during migration.
-const OFFICER_RANK_BASES = new Set([
-  '2LT', 'LT', 'CAPT', 'MAJ', 'LTCOL', 'COL',
-]);
-
-// Canonical v2 staff rank codes — the only forms allowed going forward.
-const STAFF_RANKS_CANONICAL = new Set([
-  '2LT-AAC', 'LT-AAC', 'CAPT-AAC', 'MAJ-AAC', 'LTCOL-AAC', 'COL-AAC',
-  'DAH',
-]);
-
-// All recognised staff rank forms (canonical + legacy bare officer ranks).
-// Used for personType classification on input; the rank field itself is
-// always rewritten to canonical form by _normalizeRank.
-const STAFF_RANKS_RECOGNISED = new Set([
-  ...STAFF_RANKS_CANONICAL,
-  ...OFFICER_RANK_BASES,
-]);
-
-function _normaliseRankInput(rank) {
-  return String(rank || '').toUpperCase().replace(/[\s.]/g, '');
-}
-
-/**
- * Rewrite a rank to its canonical v2 form. Officer ranks without the -AAC
- * suffix get the suffix added; everything else is returned as the
- * uppercase, whitespace/dot-stripped input.
- *
- *   'CAPT'      → 'CAPT-AAC'
- *   'capt.'     → 'CAPT-AAC'
- *   'CAPT-AAC'  → 'CAPT-AAC'  (idempotent)
- *   'DAH'       → 'DAH'       (no suffix; DAH is non-ranking staff)
- *   'WO2'       → 'WO2'       (cadet rank; no suffix)
- *   'cadet'     → 'CADET'     (unknown — preserved, user fixes manually)
- */
-function _normalizeRank(rank) {
-  if (!rank) return rank;
-  const norm = _normaliseRankInput(rank);
-  if (OFFICER_RANK_BASES.has(norm)) return norm + '-AAC';
-  return norm;
-}
-
-function _inferPersonType(rank) {
-  if (!rank) return 'cadet';
-  const norm = _normaliseRankInput(rank);
-  return STAFF_RANKS_RECOGNISED.has(norm) ? 'staff' : 'cadet';
-}
-
 async function _migrateCadets(v1) {
   const stats = {
     inferredStaff:  0,
@@ -344,10 +420,10 @@ async function _migrateCadets(v1) {
       personType = c.personType;
       stats.explicit++;
     } else {
-      personType = _inferPersonType(c.rank);
+      personType = inferPersonType(c.rank);
       if (personType === 'staff') stats.inferredStaff++; else stats.inferredCadet++;
     }
-    const newRank = _normalizeRank(c.rank);
+    const newRank = normalizeRank(c.rank);
     if (newRank !== c.rank) stats.rankNormalised++;
     await Storage.cadets.put({ ...c, rank: newRank, personType });
   }

@@ -42,7 +42,7 @@ src/
 ├── migration.js        v1 (localStorage JSON) → v2 (IndexedDB) migration
 ├── sync.js             Cloud sync orchestration (MSAL + Graph + storage merge)
 ├── cloud.js            MSAL/Graph implementation behind sync.js
-├── pdf.js              jsPDF-based document generation (Issue Voucher today)
+├── pdf.js              jsPDF-based document generation (Issue Voucher + reports)
 └── ui/
     ├── shell.js        App shell — boot, login gating, page registry, nav
     ├── login.js        User picker + PIN keypad + Forgot PIN flow
@@ -217,17 +217,34 @@ session derived from `sessionStorage`.
 
 ## Migration: v1 → v2
 
-`src/migration.js` runs once on first v2 launch when v1 localStorage
-data is detected. It reads the v1 JSON, converts it to the v2 schema,
-writes through the Storage API, then renames the v1 key (does not
-delete) so it's recoverable if migration goes wrong.
+`src/migration.js` exposes two paths from v1:
 
-The migration is idempotent — re-running it on an already-migrated DB
-is a no-op (the v1 key is gone after first success).
+**`runFromObject(v1, opts)`** — file-based import. Takes a parsed v1 export
+JSON object (the same shape v1 wrote to localStorage as `qstore_data`),
+optionally wipes existing v2 stores, then runs per-entity migration:
+items+photos, cadets, loans, users, requests, stocktake, audit log. The
+audit log entries get re-chained under v2's HMAC key and flagged
+`imported: true`. Triggered from the Settings → Data → "Import data from
+a v1 backup file" UI. **This is the supported v2.1 path.**
 
-Rank canonicalisation during migration uses `normalizeRank` from
-`ranks.js`. The cadets page form uses the same function so manual entry
-and migrated entries produce identical canonical forms.
+**`run()` + `check()` + `exportV1Backup()`** — same-origin/same-browser
+auto-migration. Reads from `localStorage`, including the OneDrive config
+that lives under a separate key. Code is present and tested at the unit
+level but is **not wired into the boot flow** — no UI calls these. Kept
+for a possible future "auto-detect v1 on boot" feature; not deletable
+without losing capability we may want.
+
+Both paths share the same `_migrate*` per-entity helpers, so behaviour is
+identical regardless of which entry point is used. Rank canonicalisation
+during migration uses `normalizeRank` from `ranks.js`. The cadets page
+form uses the same function so manual entry and migrated entries produce
+identical canonical forms.
+
+The migration writes a flag (`migrationFromV1`) into the meta store on
+success. `check()` short-circuits on that flag. `runFromObject` writes
+the flag too (with `source: 'v1_file_import'`) but does not refuse to
+re-run — re-running with `wipeFirst: true` is a deliberate clean-slate
+re-import, which we don't want to block.
 
 ---
 
@@ -516,7 +533,7 @@ cloud.disabled        (new in v2.1 — kill-switch, see Deployment notes)
 
 ### Build
 
-`node build.js` → `dist/qstore.html` (single file, ~1352 KB at v2.1 with jsPDF; was ~540 KB before Item 7). The size is dominated by jsPDF; everything else is small.
+`node build.js` → `dist/qstore.html` (single file, ~1370 KB at v2.1 with jsPDF; was ~540 KB before Item 7). The size is dominated by jsPDF; everything else is small.
 
 The build inlines:
 - All JS modules into one IIFE script (esbuild bundle, minified for prod)

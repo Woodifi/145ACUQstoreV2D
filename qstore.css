@@ -2332,3 +2332,52 @@ input {
   border-color: rgba(107, 176, 255, 0.35);
   background:   rgba(107, 176, 255, 0.06);
 }
+
+/* Loans All-tab toolbar — Print outstanding button placement. The
+ * filters block grows to fill, the actions block hugs the right edge. */
+.loan__all-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* =============================================================================
+ * SETTINGS — v1 import progress + summary
+ * ============================================================================= */
+
+/* Slim progress track for the v1 migration modal. The modal body is
+ * narrow so the bar sits comfortably across most of the available width. */
+.settings__progress {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  height: 8px;
+  overflow: hidden;
+  margin: 8px 0 12px;
+}
+
+.settings__progress-bar {
+  height: 100%;
+  background: var(--gold);
+  width: 0%;
+  transition: width 200ms ease-out;
+}
+
+/* Summary bullets after a successful import. Compact. */
+.settings__import-summary {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+
+.settings__import-summary li {
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+.settings__import-summary li:first-child { border-top: none; }
