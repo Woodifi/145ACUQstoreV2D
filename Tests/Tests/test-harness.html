@@ -1,0 +1,1206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>QStore v2 — Storage & Migration Test Harness</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px;
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #1a1d21; color: #e0e0e0;
+    display: grid; grid-template-columns: 360px 1fr; gap: 24px;
+    min-height: 100vh;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; color: #c4a96b; }
+  h2 { font-size: 13px; margin: 16px 0 6px; color: #8aa; text-transform: uppercase; letter-spacing: 0.5px; }
+  .controls { padding-right: 12px; border-right: 1px solid #333; }
+  .meta { color: #888; font-size: 12px; margin-bottom: 16px; }
+  button {
+    display: block; width: 100%; margin: 4px 0; padding: 8px 12px;
+    background: #2a2f36; color: #e0e0e0; border: 1px solid #3a4048;
+    border-radius: 4px; cursor: pointer; font: inherit; text-align: left;
+  }
+  button:hover    { background: #343a42; border-color: #5a6068; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.primary  { background: #3b4a2f; border-color: #5a7042; }
+  button.primary:hover { background: #4a5d3b; }
+  button.danger   { background: #4a2828; border-color: #6a3838; }
+  button.danger:hover  { background: #5a3232; }
+  #out {
+    background: #0c0e10; padding: 16px; border-radius: 4px;
+    font: 12px/1.5 'SF Mono', Consolas, monospace;
+    white-space: pre-wrap; overflow: auto; max-height: calc(100vh - 80px);
+    border: 1px solid #2a2f36;
+  }
+  .pass { color: #6ae07a; }
+  .fail { color: #ff6b6b; }
+  .info { color: #6bb0ff; }
+  .warn { color: #ffb86b; }
+  .dim  { color: #666; }
+  hr { border: none; border-top: 1px solid #2a2f36; margin: 12px 0; }
+</style>
+</head>
+<body>
+
+<div class="controls">
+  <h1>QStore v2 Test Harness</h1>
+  <div class="meta">Verifies storage.js + migration.js end-to-end. Open DevTools console for full stack traces on failure.</div>
+
+  <h2>Smoke</h2>
+  <button onclick="runAll()" class="primary">▶ Run all tests</button>
+  <button onclick="run([t_init])">Init &amp; meta bootstrap</button>
+  <button onclick="run([t_settings])">Settings KV</button>
+  <button onclick="run([t_counters])">Atomic counters</button>
+
+  <h2>Entities</h2>
+  <button onclick="run([t_items])">Items CRUD</button>
+  <button onclick="run([t_photos])">Photos (Blob)</button>
+  <button onclick="run([t_cadets])">Cadets CRUD</button>
+  <button onclick="run([t_loans])">Loans CRUD</button>
+  <button onclick="run([t_users])">Users CRUD</button>
+
+  <h2>Audit chain</h2>
+  <button onclick="run([t_auditAppend])">Append &amp; verify</button>
+  <button onclick="run([t_auditTamper])">Tamper detection</button>
+  <button onclick="run([t_auditRace])">Concurrent-append safety</button>
+
+  <h2>Maintenance</h2>
+  <button onclick="run([t_exportImport])">Export → wipe → import</button>
+
+  <h2>Migration (v1 → v2)</h2>
+  <button onclick="seedV1()">Seed sample v1 in localStorage</button>
+  <button onclick="run([t_migrate])" class="primary">▶ Run migration</button>
+  <button onclick="run([t_migrateIdempotent])">Verify idempotency guard</button>
+  <button onclick="diagnoseMigration()" class="danger">🔬 Diagnose migration state</button>
+
+  <h2>AUTH</h2>
+  <button onclick="run([t_authBootstrap])">Default admin bootstrap</button>
+  <button onclick="run([t_authLogin])">Login / logout / session</button>
+  <button onclick="run([t_authLegacyRehash])" class="primary">▶ Legacy-SHA → argon2id rehash</button>
+  <button onclick="run([t_authPermissions])">Roles &amp; permissions</button>
+  <button onclick="run([t_authSetPin])">Set / reset PIN</button>
+  <button onclick="run([t_authForceInvalidate])">Force-invalidate sessions</button>
+
+  <h2>Reset</h2>
+  <button onclick="resetAll()" class="danger">⚠ Drop DB &amp; clear v1 LS</button>
+
+  <hr>
+  <button onclick="document.getElementById('out').textContent = ''">Clear output</button>
+</div>
+
+<pre id="out"></pre>
+
+<script type="importmap">
+  {
+    "imports": {
+      "hash-wasm": "https://esm.sh/hash-wasm@4.11.0",
+      "@azure/msal-browser": "https://esm.sh/@azure/[email protected]"
+    }
+  }
+</script>
+
+<script type="module">
+import * as Storage   from './src/storage.js';
+import * as Migration from './src/migration.js';
+import * as AUTH      from './src/auth.js';
+
+// IMPORTANT: tests use a SEPARATE IndexedDB database from the real app at
+// index.html. This prevents the test harness from leaving the real app's
+// users, audit log, or session in a strange state. The first call to
+// Storage.init below establishes the test database name; all subsequent
+// init() calls in tests reuse it.
+await Storage.init({ dbName: 'qstore_test' });
+
+// Make modules available to inline handlers below
+window.Storage   = Storage;
+window.Migration = Migration;
+window.AUTH      = AUTH;
+
+// -------- Output helpers --------
+const out = document.getElementById('out');
+function log(line, cls = '') {
+  const span = document.createElement('span');
+  if (cls) span.className = cls;
+  span.textContent = line + '\n';
+  out.appendChild(span);
+  out.scrollTop = out.scrollHeight;
+}
+function pass(msg) { log('PASS  ' + msg, 'pass'); }
+function fail(msg, err) {
+  log('FAIL  ' + msg + (err ? ': ' + (err.message || err) : ''), 'fail');
+  if (err && err.stack) console.error(err);
+}
+function info(msg)  { log('      ' + msg, 'info'); }
+function dim(msg)   { log('      ' + msg, 'dim'); }
+function header(t)  { log('\n── ' + t + ' ' + '─'.repeat(Math.max(0, 60 - t.length)), 'warn'); }
+
+// -------- Test runner --------
+let passed = 0, failed = 0;
+async function check(label, fn) {
+  try {
+    await fn();
+    pass(label);
+    passed++;
+  } catch (e) {
+    fail(label, e);
+    failed++;
+  }
+}
+async function run(tests) {
+  passed = 0; failed = 0;
+  for (const t of tests) {
+    try { await t(); }
+    catch (e) { fail('UNCAUGHT in ' + t.name, e); failed++; }
+  }
+  log(`\n${passed} passed, ${failed} failed.`, failed ? 'fail' : 'pass');
+}
+async function runAll() {
+  out.textContent = '';
+  log('Resetting DB before full run…', 'dim');
+  await resetAll(true);
+  await run([
+    t_init, t_settings, t_counters,
+    t_items, t_photos, t_cadets, t_loans, t_users,
+    t_auditAppend, t_auditTamper, t_auditRace,
+    t_exportImport,
+  ]);
+}
+window.runAll = runAll;
+window.run = run;
+
+async function resetAll(quiet = false) {
+  if (!quiet) header('Reset');
+  try {
+    await Storage.dropDatabase();
+    if (!quiet) info('IndexedDB dropped.');
+  } catch (e) { if (!quiet) fail('dropDatabase', e); }
+  localStorage.removeItem('qstore_data');
+  localStorage.removeItem('qstore_od_cfg');
+  localStorage.removeItem('qstore_session_invalidated_at');
+  if (!quiet) info('v1 localStorage cleared.');
+}
+window.resetAll = resetAll;
+
+function expect(cond, msg) {
+  if (!cond) throw new Error('expectation failed: ' + msg);
+}
+function expectEq(a, b, msg) {
+  if (a !== b) throw new Error(`expected ${JSON.stringify(b)}, got ${JSON.stringify(a)} (${msg})`);
+}
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+async function t_init() {
+  header('Init & meta bootstrap');
+  await check('init() opens DB', async () => {
+    await Storage.init();
+  });
+  await check('install ID is generated', async () => {
+    const id = await Storage.meta.get('installId');
+    expect(typeof id === 'string' && id.length >= 8, 'installId looks ok');
+  });
+  await check('audit key is generated', async () => {
+    const k = await Storage.meta.get('auditKey');
+    expect(typeof k === 'string' && k.length > 20, 'auditKey is base64 string');
+  });
+  await check('schema version recorded', async () => {
+    const v = await Storage.meta.get('schemaVersion');
+    expectEq(v, 1, 'schemaVersion');
+  });
+  await check('repeat init() is idempotent', async () => {
+    const id1 = await Storage.meta.get('installId');
+    await Storage.init();
+    const id2 = await Storage.meta.get('installId');
+    expectEq(id1, id2, 'install ID stable across init calls');
+  });
+}
+
+async function t_settings() {
+  header('Settings KV');
+  await check('set & get scalar', async () => {
+    await Storage.settings.set('unitName', '1 ACTU');
+    expectEq(await Storage.settings.get('unitName'), '1 ACTU');
+  });
+  await check('set & get nested object', async () => {
+    await Storage.settings.set('printer.config', { dpi: 300, paper: 'A4' });
+    const v = await Storage.settings.get('printer.config');
+    expectEq(v.dpi, 300);
+    expectEq(v.paper, 'A4');
+  });
+  await check('setMany & getAll', async () => {
+    await Storage.settings.setMany({ qmName: 'Smith', qmRank: 'WO2' });
+    const all = await Storage.settings.getAll();
+    expectEq(all.qmName, 'Smith');
+    expectEq(all.qmRank, 'WO2');
+  });
+  await check('missing key returns null', async () => {
+    const v = await Storage.settings.get('nope.never.set');
+    expectEq(v, null);
+  });
+}
+
+async function t_counters() {
+  header('Atomic counters');
+  await check('first call returns startAt', async () => {
+    const n = await Storage.counters.next('test_counter', 1000);
+    expectEq(n, 1000);
+  });
+  await check('subsequent calls increment', async () => {
+    const a = await Storage.counters.next('test_counter');
+    const b = await Storage.counters.next('test_counter');
+    expectEq(a, 1001);
+    expectEq(b, 1002);
+  });
+  await check('100 concurrent calls produce 100 unique values', async () => {
+    await Storage.counters.set('race', 0);
+    const calls = Array.from({ length: 100 }, () => Storage.counters.next('race', 1));
+    const results = await Promise.all(calls);
+    const unique = new Set(results);
+    expectEq(unique.size, 100, 'all values unique');
+  });
+}
+
+async function t_items() {
+  header('Items CRUD');
+  await check('put & get item', async () => {
+    await Storage.items.put({
+      id: 'I1', nsn: '8470-66-001-0001', cat: 'Uniform', name: 'Slouch hat',
+      authQty: 100, onHand: 95, onLoan: 0, unsvc: 0,
+      condition: 'serviceable', loc: 'Bay 1', notes: ''
+    });
+    const got = await Storage.items.get('I1');
+    expectEq(got.name, 'Slouch hat');
+    expectEq(got.onHand, 95);
+  });
+  await check('list filters by category and search', async () => {
+    await Storage.items.put({ id: 'I2', nsn: 'X', cat: 'Equipment', name: 'Compass', authQty: 10, onHand: 10, onLoan: 0, unsvc: 0, condition: 'serviceable' });
+    await Storage.items.put({ id: 'I3', nsn: 'Y', cat: 'Uniform',   name: 'Shirt',   authQty: 50, onHand: 40, onLoan: 0, unsvc: 0, condition: 'serviceable' });
+    const uniforms = await Storage.items.list({ category: 'Uniform' });
+    expect(uniforms.every(i => i.cat === 'Uniform'), 'category filter');
+    const search = await Storage.items.list({ search: 'comp' });
+    expect(search.some(i => i.id === 'I2'), 'search match');
+    expect(!search.some(i => i.id === 'I3'), 'search exclude');
+  });
+  await check('delete cascades to photo store', async () => {
+    await Storage.items.put({ id: 'I4', nsn: 'Z', cat: 'Safety', name: 'Helmet', authQty: 1, onHand: 1, onLoan: 0, unsvc: 0, condition: 'serviceable' });
+    await Storage.photos.put('I4', new Blob(['fake'], { type: 'image/jpeg' }));
+    expectEq(await Storage.photos.has('I4'), true);
+    await Storage.items.delete('I4');
+    expectEq(await Storage.items.get('I4'), null);
+    expectEq(await Storage.photos.has('I4'), false);
+  });
+  await check('count() reflects current state', async () => {
+    const n = await Storage.items.count();
+    expect(n >= 3, 'at least three items remain');
+  });
+}
+
+async function t_photos() {
+  header('Photos (Blob storage)');
+  await check('put & get returns same bytes', async () => {
+    const bytes = new Uint8Array([1, 2, 3, 4, 5]);
+    await Storage.photos.put('photo_test', new Blob([bytes], { type: 'image/png' }));
+    const got = await Storage.photos.get('photo_test');
+    expect(got instanceof Blob, 'returned a Blob');
+    expectEq(got.type, 'image/png');
+    const arr = new Uint8Array(await got.arrayBuffer());
+    expectEq(arr.length, 5);
+    expectEq(arr[2], 3);
+  });
+  await check('getURL returns object URL & revoke works', async () => {
+    const url = await Storage.photos.getURL('photo_test');
+    expect(url.startsWith('blob:'), 'object URL');
+    URL.revokeObjectURL(url);
+  });
+  await check('delete removes blob', async () => {
+    await Storage.photos.delete('photo_test');
+    expectEq(await Storage.photos.get('photo_test'), null);
+  });
+}
+
+async function t_cadets() {
+  header('Cadets CRUD');
+  await check('put & get by svcNo', async () => {
+    await Storage.cadets.put({
+      svcNo: '1234567', rank: 'CDT', surname: 'SMITH', given: 'Joe',
+      plt: 'A', shirt: 'M', trouser: '32', boot: '9', personType: 'cadet'
+    });
+    const c = await Storage.cadets.get('1234567');
+    expectEq(c.surname, 'SMITH');
+  });
+  await check('list returns all', async () => {
+    await Storage.cadets.put({ svcNo: '7654321', rank: 'CPL', surname: 'JONES', given: 'Sue', plt: 'B', personType: 'cadet' });
+    const all = await Storage.cadets.list();
+    expect(all.length >= 2);
+  });
+  await check('delete removes cadet', async () => {
+    await Storage.cadets.delete('7654321');
+    expectEq(await Storage.cadets.get('7654321'), null);
+  });
+}
+
+async function t_loans() {
+  header('Loans CRUD');
+  await check('put & list active', async () => {
+    await Storage.loans.put({
+      ref: 'LN-9001', itemId: 'I1', itemName: 'Slouch hat', nsn: '8470-66-001-0001',
+      qty: 1, borrowerSvc: '1234567', borrowerName: 'CDT SMITH',
+      purpose: 'Initial Issue', issueDate: '2025-01-01', dueDate: '2025-12-31',
+      condition: 'serviceable', active: true
+    });
+    const active = await Storage.loans.listActive();
+    expect(active.some(l => l.ref === 'LN-9001'));
+  });
+  await check('listForCadet uses index', async () => {
+    const list = await Storage.loans.listForCadet('1234567');
+    expect(list.some(l => l.ref === 'LN-9001'));
+  });
+  await check('update by re-put', async () => {
+    const l = await Storage.loans.get('LN-9001');
+    l.active = false; l.returnDate = '2025-06-01';
+    await Storage.loans.put(l);
+    const l2 = await Storage.loans.get('LN-9001');
+    expectEq(l2.active, false);
+    expectEq(l2.returnDate, '2025-06-01');
+  });
+}
+
+async function t_users() {
+  header('Users CRUD');
+  await check('put & getByUsername', async () => {
+    await Storage.users.put({
+      id: 'usr-1', name: 'WO2 Smith', username: 'smith',
+      role: 'qm', svcNo: '1234567',
+      pinHash: 'fake-sha-hash', createdAt: new Date().toISOString()
+    });
+    const u = await Storage.users.getByUsername('smith');
+    expectEq(u.id, 'usr-1');
+    expectEq(u.role, 'qm');
+  });
+  await check('username unique constraint enforced', async () => {
+    let threw = false;
+    try {
+      await Storage.users.put({ id: 'usr-2', name: 'Other', username: 'smith', role: 'staff', pinHash: 'x' });
+    } catch (e) { threw = true; }
+    expect(threw, 'duplicate username rejected by unique index');
+  });
+}
+
+async function t_auditAppend() {
+  header('Audit append & verify');
+  await check('three sequential appends produce a valid chain', async () => {
+    await Storage.audit.append({ action: 'add',    user: 'WO2 Smith', desc: 'Item A added' });
+    await Storage.audit.append({ action: 'issue',  user: 'WO2 Smith', desc: 'Item A × 1 issued' });
+    await Storage.audit.append({ action: 'return', user: 'WO2 Smith', desc: 'Item A × 1 returned' });
+    const v = await Storage.audit.verify();
+    expectEq(v.ok, true, 'chain verifies — broken at ' + (v.brokenAt || 'n/a'));
+    expect(v.count >= 3, 'count >= 3');
+  });
+  await check('list newest-first', async () => {
+    const l = await Storage.audit.list({ limit: 3 });
+    expect(l.length >= 1);
+    expect(l[0].seq >= l[l.length - 1].seq, 'descending order');
+  });
+}
+
+async function t_auditTamper() {
+  header('Audit tamper detection');
+  await check('editing an entry breaks verify()', async () => {
+    // Open IDB directly, mutate a desc, verify chain breaks.
+    // IMPORTANT: use Storage.getDbName() rather than a hardcoded 'qstore'
+    // string. The test harness uses a separate qstore_test database; if
+    // we open 'qstore' here we'd tamper with the real app's data and
+    // verify() (which runs against qstore_test) would still pass.
+    const db = await new Promise((res, rej) => {
+      const r = indexedDB.open(Storage.getDbName());
+      r.onsuccess = () => res(r.result);
+      r.onerror   = () => rej(r.error);
+    });
+    await new Promise((res, rej) => {
+      const tx = db.transaction('audit', 'readwrite');
+      const store = tx.objectStore('audit');
+      const req = store.openCursor(null, 'prev');
+      req.onsuccess = () => {
+        const cur = req.result;
+        if (cur) {
+          const v = cur.value;
+          v.desc = '*** TAMPERED ***';
+          cur.update(v);
+        }
+      };
+      tx.oncomplete = () => res();
+      tx.onerror    = () => rej(tx.error);
+    });
+    db.close();
+    const v = await Storage.audit.verify();
+    expectEq(v.ok, false, 'tamper detected');
+    info('chain broken at seq ' + v.brokenAt + ' — reason: ' + v.reason);
+  });
+  await check('repair: append a new entry, chain extends from last good entry', async () => {
+    // After tampering above, the chain is broken at the tampered entry.
+    // New appends compute prevHash from whatever the cursor says is most
+    // recent — which is the tampered entry. So new entries chain off the
+    // tampered (now-stored) hash. Verify will still report broken at the
+    // ORIGINAL tampered seq, since that entry's stored hash != HMAC of its
+    // mutated content. This is correct behaviour: tamper detection is
+    // permanent once chain is broken; you can't paper over it.
+    await Storage.audit.append({ action: 'adjust', user: 'system', desc: 'Post-tamper entry' });
+    const v = await Storage.audit.verify();
+    expectEq(v.ok, false, 'still broken (tamper is permanent)');
+    info('confirmed: tamper marker persists after subsequent appends');
+  });
+}
+
+async function t_auditRace() {
+  header('Audit concurrent-append safety');
+  await check('20 parallel appends produce a valid chain', async () => {
+    // Reset state to a known-good chain. Wipe rather than dropDatabase to
+    // avoid the deleteDatabase-vs-close race that bites in browsers.
+    await Storage.init();
+    await Storage.wipe({ keepUsers: false, keepMeta: true });
+    const promises = Array.from({ length: 20 }, (_, i) =>
+      Storage.audit.append({ action: 'add', user: 'system', desc: 'parallel ' + i }));
+    await Promise.all(promises);
+    const v = await Storage.audit.verify();
+    expectEq(v.ok, true, 'chain ok — broken at ' + (v.brokenAt || 'n/a'));
+    expectEq(v.count, 20, 'all 20 appended');
+  });
+}
+
+async function t_exportImport() {
+  header('Export → wipe → import roundtrip');
+  await check('export captures items, photos, audit', async () => {
+    await Storage.items.put({ id: 'X1', nsn: 'X', cat: 'Equipment', name: 'Test thing', authQty: 1, onHand: 1, onLoan: 0, unsvc: 0, condition: 'serviceable' });
+    await Storage.photos.put('X1', new Blob([new Uint8Array([42, 43, 44])], { type: 'image/jpeg' }));
+    await Storage.audit.append({ action: 'add', user: 'test', desc: 'X1 added' });
+    const dump = await Storage.exportAll();
+    expect(dump.items.some(i => i.id === 'X1'));
+    expect(dump.photos.some(p => p.id === 'X1'));
+    expect(dump.audit.length > 0);
+    // Stash for next step
+    window.__dump = dump;
+  });
+  await check('wipe + import round-trips data', async () => {
+    await Storage.wipe({ keepMeta: true });
+    expectEq(await Storage.items.count(), 0);
+    await Storage.importAll(window.__dump);
+    const item = await Storage.items.get('X1');
+    expectEq(item.name, 'Test thing');
+    const photo = await Storage.photos.get('X1');
+    expect(photo instanceof Blob);
+    const bytes = new Uint8Array(await photo.arrayBuffer());
+    expectEq(bytes[0], 42);
+  });
+  await check('imported audit chain still verifies', async () => {
+    const v = await Storage.audit.verify();
+    expectEq(v.ok, true, 'chain still valid after re-import — broken at ' + (v.brokenAt || 'n/a'));
+  });
+}
+
+// =============================================================================
+// Migration tests
+// =============================================================================
+
+const SAMPLE_V1 = {
+  settings: {
+    unitName: '1 Australian Cadet Training Unit', unitCode: '1 ACTU',
+    qmName: 'Smith', qmRank: 'WO2', coName: 'Jones', state: 'QLD',
+    qmEmail: 'qm@example.com', coEmail: 'co@example.com',
+  },
+  items: [
+    { id: 'I1', nsn: '8470-66-001-0001', cat: 'Uniform', name: 'Slouch hat',
+      authQty: 100, onHand: 95, onLoan: 5, unsvc: 0, condition: 'serviceable',
+      loc: 'Bay 1', notes: '', photoData: null },
+    { id: 'I2', nsn: '8465-66-130-1234', cat: 'Equipment', name: 'Compass',
+      authQty: 30,  onHand: 28, onLoan: 2, unsvc: 0, condition: 'serviceable',
+      loc: 'Bay 2', notes: '',
+      // 1px transparent PNG, base64-encoded — sample photo for migration test
+      photoData: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=' },
+  ],
+  cadets: [
+    { svcNo: '1234567', rank: 'CDT',     surname: 'SMITH',    given: 'Joe',  plt: 'A',  shirt: 'M', trouser: '32', boot: '9'  },
+    { svcNo: '7654321', rank: 'WO2',     surname: 'JONES',    given: 'Sue',  plt: 'HQ', shirt: 'L', trouser: '34', boot: '10' },
+    { svcNo: '8888888', rank: 'CAPT',    surname: 'DAVIS',    given: 'Mike', plt: 'HQ', shirt: 'L', trouser: '36', boot: '11' },
+    { svcNo: '6666666', rank: 'MAJ-AAC', surname: 'TAYLOR',   given: 'Pat',  plt: 'HQ', shirt: 'M', trouser: '34', boot: '10' },
+    { svcNo: '9999999', rank: 'DAH',     surname: 'NGUYEN',   given: 'Anh',  plt: 'HQ', shirt: 'M', trouser: '32', boot: '9'  },
+    { svcNo: '5555555', rank: 'CDTLCPL', surname: 'WILLIAMS', given: 'Tom',  plt: 'B',  shirt: 'S', trouser: '30', boot: '8'  },
+    // No personType on any. Migration should infer + normalise:
+    //   CDT      → personType:'cadet',  rank unchanged
+    //   WO2      → personType:'cadet',  rank unchanged (AAC senior cadet)
+    //   CAPT     → personType:'staff',  rank rewritten to 'CAPT-AAC'  ← legacy normalisation
+    //   MAJ-AAC  → personType:'staff',  rank unchanged (already canonical)
+    //   DAH      → personType:'staff',  rank unchanged (no suffix for DAH)
+    //   CDTLCPL  → personType:'cadet',  rank unchanged
+  ],
+  loans: [
+    { ref: 'LN-1000', itemId: 'I1', itemName: 'Slouch hat', nsn: '8470-66-001-0001',
+      qty: 1, borrowerSvc: '1234567', borrowerName: 'CDT SMITH',
+      purpose: 'Initial Issue', issueDate: '2025-01-15', dueDate: '2025-12-31',
+      condition: 'serviceable', active: true },
+  ],
+  auditLog: [
+    { ts: '2025-01-15T10:00:00Z', action: 'add',   desc: 'Item I1 added',    user: 'WO2 Smith' },
+    { ts: '2025-01-15T10:30:00Z', action: 'issue', desc: 'LN-1000 issued',   user: 'WO2 Smith' },
+  ],
+  loanCounter: 1001,
+  users: [
+    { id: 'usr-co',  name: 'CAPT Jones', username: 'jones', role: 'co', svcNo: null,       pinHash: 'sha-old-hash-co',  createdAt: '2024-01-01T00:00:00Z' },
+    { id: 'usr-qm',  name: 'WO2 Smith',  username: 'smith', role: 'qm', svcNo: '7654321',  pinHash: 'sha-old-hash-qm',  createdAt: '2024-01-01T00:00:00Z' },
+  ],
+  pendingRequests: [],
+  stocktakeCounts: {},
+};
+
+function seedV1() {
+  header('Seed sample v1 in localStorage');
+  localStorage.setItem('qstore_data', JSON.stringify(SAMPLE_V1));
+  localStorage.setItem('qstore_od_cfg', JSON.stringify({
+    clientId: 'fake-client-id-uuid', folder: 'QStore',
+    filename: 'qstore_data.json', autoSync: true,
+  }));
+  info('Seeded ' + JSON.stringify(SAMPLE_V1).length + ' bytes of v1 data + OD config.');
+}
+window.seedV1 = seedV1;
+
+/**
+ * Print everything we know about migration state so we can diagnose
+ * unexpected test failures. Reads localStorage, runs migration if not
+ * already done, then dumps the IDB cadet store and audit log.
+ */
+async function diagnoseMigration() {
+  out.textContent = '';
+  header('Migration diagnostic dump');
+
+  // 1. What's in localStorage right now?
+  log('\n[1] localStorage qstore_data:', 'info');
+  const v1raw = localStorage.getItem('qstore_data');
+  if (!v1raw) {
+    log('  (empty — click "Seed sample v1" first)', 'fail');
+    return;
+  }
+  let v1;
+  try {
+    v1 = JSON.parse(v1raw);
+  } catch (e) {
+    log('  PARSE ERROR: ' + e.message, 'fail');
+    return;
+  }
+  log('  byteLength: ' + v1raw.length, 'dim');
+  log('  cadets in localStorage (' + (v1.cadets || []).length + '):', 'dim');
+  for (const c of v1.cadets || []) {
+    log('    svcNo=' + c.svcNo
+      + '  rank=' + JSON.stringify(c.rank)
+      + '  personType=' + (c.personType ? JSON.stringify(c.personType) : '(none)')
+      + '  surname=' + c.surname, 'dim');
+  }
+
+  // 2. What does the classifier say for each rank?
+  log('\n[2] Inference for each cadet rank in localStorage:', 'info');
+  // We can't directly access migration.js's internal _inferPersonType, so
+  // recreate it here. If this disagrees with what the migration actually
+  // does, that's a smoking gun for module caching.
+  const STAFF_LOCAL = new Set([
+    '2LT-AAC', 'LT-AAC', 'CAPT-AAC', 'MAJ-AAC', 'LTCOL-AAC', 'COL-AAC',
+    'DAH', '2LT', 'LT', 'CAPT', 'MAJ', 'LTCOL', 'COL',
+  ]);
+  for (const c of v1.cadets || []) {
+    const norm = String(c.rank || '').toUpperCase().replace(/[\s.]/g, '');
+    const inSet = STAFF_LOCAL.has(norm);
+    log('    ' + (c.rank || '(blank)').padEnd(10)
+      + ' → normalised: ' + JSON.stringify(norm).padEnd(12)
+      + ' in staff set: ' + inSet, inSet ? 'pass' : 'dim');
+  }
+
+  // 3. Run a fresh migration and inspect what landed in IDB.
+  log('\n[3] Running fresh migration…', 'info');
+  await Storage.init();
+  await Storage.wipe({ keepUsers: false, keepMeta: true });
+  await Storage.meta.delete('migrationFromV1');
+  let migrationResult;
+  try {
+    migrationResult = await Migration.run({
+      onProgress: (msg, pct) => log('    ' + pct + '% ' + msg, 'dim'),
+    });
+  } catch (e) {
+    log('  MIGRATION THREW: ' + e.message, 'fail');
+    return;
+  }
+
+  // 4. Dump IDB cadet records.
+  log('\n[4] IDB cadet records after migration:', 'info');
+  const cadetsAfter = await Storage.cadets.list();
+  for (const c of cadetsAfter) {
+    log('    svcNo=' + c.svcNo
+      + '  rank=' + JSON.stringify(c.rank).padEnd(12)
+      + '  personType=' + JSON.stringify(c.personType), 'dim');
+  }
+
+  // 5. Dump audit chain.
+  log('\n[5] IDB audit chain after migration:', 'info');
+  const auditAfter = await Storage.audit.list({ order: 'asc' });
+  log('    total entries: ' + auditAfter.length, auditAfter.length === 4 ? 'pass' : 'fail');
+  for (const e of auditAfter) {
+    log('    seq=' + e.seq
+      + '  action=' + e.action
+      + '  imported=' + (e.imported ? 'true' : 'false')
+      + '  desc=' + (e.desc || '').slice(0, 70), 'dim');
+  }
+
+  // 6. Module identity check — read the actual byte length of the imported
+  //    migration.js module via fetch. This proves which version is loaded.
+  log('\n[6] Module identity check (fetching migration.js fresh):', 'info');
+  try {
+    const resp = await fetch('./src/migration.js?_diag=' + Date.now(), { cache: 'no-store' });
+    const txt = await resp.text();
+    log('    file byteLength: ' + txt.length, 'dim');
+    const hasCanonical = txt.includes('STAFF_RANKS_CANONICAL');
+    const hasOfficerBases = txt.includes('OFFICER_RANK_BASES');
+    const hasMajAac = txt.includes("'MAJ-AAC'");
+    const hasNormalize = txt.includes('_normalizeRank');
+    const hasRankNormalisedStat = txt.includes('rankNormalised');
+    log('    contains STAFF_RANKS_CANONICAL: ' + hasCanonical, hasCanonical ? 'pass' : 'fail');
+    log('    contains OFFICER_RANK_BASES: '    + hasOfficerBases, hasOfficerBases ? 'pass' : 'fail');
+    log("    contains 'MAJ-AAC' literal: "     + hasMajAac, hasMajAac ? 'pass' : 'fail');
+    log('    contains _normalizeRank: '        + hasNormalize, hasNormalize ? 'pass' : 'fail');
+    log('    contains rankNormalised stat: '   + hasRankNormalisedStat, hasRankNormalisedStat ? 'pass' : 'fail');
+    if (!(hasCanonical && hasOfficerBases && hasMajAac && hasNormalize && hasRankNormalisedStat)) {
+      log('\n    ⚠ Some markers missing — the migration.js on disk is older than expected.', 'fail');
+      log('      Compare your /src/migration.js against the latest delivery.', 'warn');
+    } else {
+      log('\n    ✓ migration.js on disk has all expected markers. If tests still', 'pass');
+      log('      fail, the loaded MODULE may differ from disk — try DevTools →',  'pass');
+      log('      Application → Storage → "Clear site data" then hard-refresh.',   'pass');
+    }
+  } catch (e) {
+    log('    fetch failed: ' + e.message, 'fail');
+  }
+
+  log('\nDiagnostic complete. Share this output if results don\'t match expectations.', 'info');
+}
+window.diagnoseMigration = diagnoseMigration;
+
+async function t_migrate() {
+  header('Migration v1 → v2');
+  await check('check() reports needed', async () => {
+    await Storage.init();
+    await Storage.wipe({ keepUsers: false, keepMeta: true });
+    await Storage.meta.delete('migrationFromV1');
+    const status = await Migration.check();
+    expectEq(status.needed, true, 'should be needed');
+    expectEq(status.v1Stats.items, 2);
+    expectEq(status.v1Stats.cadets, 6);
+    expectEq(status.v1Stats.loans, 1);
+    expectEq(status.v1Stats.auditEntries, 2);
+  });
+  await check('exportV1Backup produces a blob', async () => {
+    const { blob, suggestedName } = await Migration.exportV1Backup();
+    expect(blob.size > 100, 'backup is non-trivial size');
+    expect(suggestedName.endsWith('.json'));
+    info('backup name: ' + suggestedName);
+  });
+  await check('run() completes', async () => {
+    const stages = [];
+    const result = await Migration.run({
+      onProgress: (msg, pct) => stages.push(`${pct}% ${msg}`),
+    });
+    expectEq(result.ok, true);
+    info('progress stages: ' + stages.length);
+    stages.forEach(s => dim('  ' + s));
+  });
+  await check('items migrated correctly', async () => {
+    const items = await Storage.items.list();
+    expectEq(items.length, 2);
+    const i1 = await Storage.items.get('I1');
+    expectEq(i1.name, 'Slouch hat');
+    expect(!('photoData' in i1), 'photoData stripped from item record');
+  });
+  await check('photo migrated to photos store', async () => {
+    const blob = await Storage.photos.get('I2');
+    expect(blob instanceof Blob, 'I2 photo present as Blob');
+    expectEq(blob.type, 'image/png');
+    const i2 = await Storage.items.get('I2');
+    expectEq(i2.hasPhoto, true);
+  });
+  await check('cadets migrated, personType inferred + ranks normalised', async () => {
+    const cdt     = await Storage.cadets.get('1234567');
+    const wo2     = await Storage.cadets.get('7654321');
+    const capt    = await Storage.cadets.get('8888888');
+    const majAac  = await Storage.cadets.get('6666666');
+    const dah     = await Storage.cadets.get('9999999');
+    const cdtlcpl = await Storage.cadets.get('5555555');
+
+    // personType inference
+    expectEq(cdt.personType,     'cadet', 'CDT inferred as cadet');
+    expectEq(wo2.personType,     'cadet', 'WO2 inferred as cadet (AAC senior cadet, not ADF warrant officer)');
+    expectEq(capt.personType,    'staff', 'CAPT inferred as staff');
+    expectEq(majAac.personType,  'staff', 'MAJ-AAC inferred as staff');
+    expectEq(dah.personType,     'staff', 'DAH (Defence Approved Helper) inferred as staff');
+    expectEq(cdtlcpl.personType, 'cadet', 'CDTLCPL inferred as cadet');
+
+    // rank normalisation
+    expectEq(cdt.rank,     'CDT',      'CDT rank unchanged');
+    expectEq(wo2.rank,     'WO2',      'WO2 rank unchanged');
+    expectEq(capt.rank,    'CAPT-AAC', 'CAPT (legacy) normalised to CAPT-AAC');
+    expectEq(majAac.rank,  'MAJ-AAC',  'MAJ-AAC (canonical) preserved');
+    expectEq(dah.rank,     'DAH',      'DAH unchanged (no suffix for non-ranking staff)');
+    expectEq(cdtlcpl.rank, 'CDTLCPL',  'CDTLCPL rank unchanged');
+  });
+  await check('users have legacyPinHash for transparent rehash', async () => {
+    const u = await Storage.users.getByUsername('smith');
+    expectEq(u.legacyPinHash, 'sha-old-hash-qm', 'old hash preserved');
+    expectEq(u.pinHashAlgorithm, 'legacy-sha', 'algorithm flagged');
+    expect(!('pinHash' in u), 'pinHash removed to force rehash on login');
+  });
+  await check('loan counter restored', async () => {
+    expectEq(await Storage.counters.peek('loanCounter'), 1001);
+  });
+  await check('settings flattened into KV store', async () => {
+    expectEq(await Storage.settings.get('unitName'), '1 Australian Cadet Training Unit');
+    expectEq(await Storage.settings.get('qmRank'),   'WO2');
+  });
+  await check('OneDrive config moved to cloud.* namespace', async () => {
+    expectEq(await Storage.settings.get('cloud.provider'), 'onedrive');
+    expectEq(await Storage.settings.get('cloud.clientId'), 'fake-client-id-uuid');
+    expectEq(await Storage.settings.get('cloud.autoSync'), true);
+  });
+  await check('audit chain has anchor + inference summary + 2 imported entries', async () => {
+    const all = await Storage.audit.list({ order: 'asc' });
+    expectEq(all.length, 4, 'anchor + inference summary + 2 historical');
+    expectEq(all[0].action, 'migration', 'first entry is the anchor');
+    expect(all[0].desc.includes('historical entries follow'), 'anchor describes the chain start');
+    expectEq(all[1].action, 'migration', 'second entry is the inference summary');
+    expect(all[1].desc.includes('Inferred personType'), 'summary mentions personType inferences');
+    expect(all[1].desc.includes('normalised'),          'summary mentions rank normalisation');
+    expect(!all[1].imported, 'inference summary is v2-era, not imported');
+    expectEq(all[2].imported, true, 'historical entries flagged imported');
+    expectEq(all[2].ts, '2025-01-15T10:00:00Z', 'historical ts preserved');
+    expectEq(all[3].imported, true);
+    const v = await Storage.audit.verify();
+    expectEq(v.ok, true, 'chain verifies — broken at ' + (v.brokenAt || 'n/a'));
+  });
+  await check('migration flag set in meta', async () => {
+    const flag = await Storage.meta.get('migrationFromV1');
+    expect(flag !== null, 'flag exists');
+    expect(typeof flag.completedAt === 'string', 'has completion timestamp');
+  });
+  await check('v1 localStorage backstop is preserved', async () => {
+    expect(localStorage.getItem('qstore_data') !== null, 'v1 still present (recovery backstop)');
+  });
+}
+
+async function t_migrateIdempotent() {
+  header('Migration idempotency guard');
+  await check('second run() throws "already migrated"', async () => {
+    let threw = false;
+    try { await Migration.run(); }
+    catch (e) {
+      threw = true;
+      info('correctly refused: ' + e.message);
+    }
+    expect(threw, 'second migration call should throw');
+  });
+  await check('check() reports not needed', async () => {
+    const status = await Migration.check();
+    expectEq(status.needed, false);
+    expectEq(status.reason, 'already_migrated');
+  });
+}
+
+// =============================================================================
+// AUTH tests
+// =============================================================================
+// These exercise the AUTH module which depends on hash-wasm (loaded from
+// esm.sh). First run needs network access; subsequent runs hit the browser
+// cache. argon2id hashing is intentionally slow (~200ms per hash) so AUTH
+// tests run noticeably slower than storage/migration tests — this is correct
+// behaviour, not a bug.
+//
+// Each test below starts by dropping the DB and seeding the exact state it
+// needs. Tests are independent and can be run in any order. The trade-off
+// is repeated argon2id calls during setup (~6 hashes × 5 tests ≈ 6 seconds
+// of pure setup overhead). Acceptable for a manual test harness.
+
+/**
+ * Reset auth state between tests. Uses Storage.wipe() rather than
+ * dropDatabase() — dropDatabase races with IndexedDB connection close in
+ * browsers and frequently throws "Database delete blocked", which then
+ * leaves the module's _db reference null and cascades into every
+ * subsequent test failing with "Cannot read properties of null".
+ *
+ * wipe({keepUsers: false}) clears users, audit, settings, and all
+ * operational stores while keeping the DB connection open and meta intact
+ * (install ID + audit key preserved so the chain stays verifiable across
+ * tests within a session).
+ */
+async function _resetAuthState() {
+  await Storage.init();
+  await Storage.wipe({ keepUsers: false, keepMeta: true });
+  AUTH.__testing__.resetForTests();
+  sessionStorage.removeItem('qstore_session');
+  await AUTH.ensureDefaultAdmin();
+}
+
+async function t_authBootstrap() {
+  header('AUTH bootstrap (default admin)');
+  await check('fresh DB has no users; ensureDefaultAdmin creates admin/0000', async () => {
+    await Storage.init();
+    await Storage.wipe({ keepUsers: false, keepMeta: true });
+    AUTH.__testing__.resetForTests();
+    sessionStorage.removeItem('qstore_session');
+    expectEq(await Storage.users.count(), 0, 'no users initially');
+    const created = await AUTH.ensureDefaultAdmin();
+    expectEq(created, true, 'default admin created');
+    expectEq(await Storage.users.count(), 1, 'one user now');
+    const u = await Storage.users.getByUsername('admin');
+    expectEq(u.role, 'co');
+    expectEq(u.pinHashAlgorithm, 'argon2id', 'stored with argon2id, not legacy');
+    expect(u.pinHash.startsWith('$argon2id$'), 'encoded argon2 hash format');
+  });
+  await check('ensureDefaultAdmin is idempotent', async () => {
+    const created = await AUTH.ensureDefaultAdmin();
+    expectEq(created, false, 'no-op when users exist');
+    expectEq(await Storage.users.count(), 1, 'still one user');
+  });
+  await check('admin can log in with PIN 0000', async () => {
+    const r = await AUTH.login('usr-default-co', '0000');
+    expectEq(r.ok, true, 'login succeeded — reason: ' + (r.reason || 'n/a'));
+    expectEq(r.session.role, 'co');
+    expect(AUTH.isAuthenticated());
+    expect(AUTH.isCO());
+  });
+  await check('logout clears session', async () => {
+    await AUTH.logout();
+    expectEq(AUTH.getSession(), null);
+    expect(!AUTH.isAuthenticated());
+    expectEq(sessionStorage.getItem('qstore_session'), null);
+  });
+}
+
+async function t_authLogin() {
+  header('AUTH login / failure / session restore');
+  await _resetAuthState();
+  await check('login with wrong PIN fails with invalid_pin', async () => {
+    const r = await AUTH.login('usr-default-co', '9999');
+    expectEq(r.ok, false);
+    expectEq(r.reason, 'invalid_pin');
+    expect(!AUTH.isAuthenticated());
+  });
+  await check('login with unknown user id fails with user_not_found', async () => {
+    const r = await AUTH.login('usr-nonexistent', '0000');
+    expectEq(r.ok, false);
+    expectEq(r.reason, 'user_not_found');
+  });
+  await check('login with empty credentials fails with missing_credentials', async () => {
+    const r = await AUTH.login('', '');
+    expectEq(r.ok, false);
+    expectEq(r.reason, 'missing_credentials');
+  });
+  await check('successful login writes audit entry', async () => {
+    const beforeCount = await Storage.audit.count();
+    await AUTH.login('usr-default-co', '0000');
+    const after = await Storage.audit.list({ limit: 1 });
+    expectEq(after[0].action, 'login');
+    expect(after[0].desc.includes('Login:'));
+    expect((await Storage.audit.count()) > beforeCount);
+  });
+  await check('session persists in sessionStorage', async () => {
+    const raw = sessionStorage.getItem('qstore_session');
+    expect(raw, 'sessionStorage has the session blob');
+    const parsed = JSON.parse(raw);
+    expectEq(parsed.role, 'co');
+    expectEq(parsed.userId, 'usr-default-co');
+  });
+  await check('init() restores session from sessionStorage', async () => {
+    AUTH.__testing__.resetForTests();
+    sessionStorage.setItem('qstore_session', JSON.stringify({
+      userId: 'usr-default-co', username: 'admin', name: 'Administrator (CO)',
+      role: 'co', svcNo: '',
+      loginAt: new Date().toISOString(),
+    }));
+    const restored = await AUTH.init();
+    expect(restored !== null, 'session restored');
+    expectEq(restored.role, 'co');
+    expect(AUTH.isAuthenticated());
+  });
+  await check('restore rejects session for deleted user', async () => {
+    AUTH.__testing__.resetForTests();
+    sessionStorage.setItem('qstore_session', JSON.stringify({
+      userId: 'usr-ghost', username: 'ghost', name: 'Nope', role: 'qm', svcNo: null,
+      loginAt: new Date().toISOString(),
+    }));
+    const restored = await AUTH.init();
+    expectEq(restored, null, 'no session for deleted user');
+    expectEq(sessionStorage.getItem('qstore_session'), null, 'stale blob cleaned up');
+  });
+}
+
+async function t_authLegacyRehash() {
+  header('Legacy SHA → argon2id transparent rehash');
+  await check('_legacyHashV1 reproduces v1 hashPin output exactly', async () => {
+    // Reference values produced by running v1's hashPin function with each
+    // input. If these ever fail, DO NOT update the test — fix the function.
+    // v1's hashPin must reproduce byte-for-byte or migrated user accounts
+    // will be locked out.
+    const cases = [
+      { pin: '0000', expected: 'yhuww5' },
+      { pin: '0001', expected: 'yhuww4' },
+      { pin: '1234', expected: 'yhvold' },
+      { pin: '9999', expected: 'yi1op1' },
+      { pin: '1111', expected: 'yhvpdx' },
+    ];
+    for (const c of cases) {
+      const got = AUTH.__testing__.legacyHashV1(c.pin);
+      expectEq(got, c.expected, `legacyHashV1('${c.pin}')`);
+    }
+  });
+  await check('seed a legacy-sha user (simulating post-migration state)', async () => {
+    await Storage.init();
+    await Storage.wipe({ keepUsers: false, keepMeta: true });
+    AUTH.__testing__.resetForTests();
+    sessionStorage.removeItem('qstore_session');
+    await Storage.users.put({
+      id:                'usr-legacy',
+      name:              'WO2 Legacy',
+      username:          'legacy',
+      role:              'qm',
+      svcNo:             '7654321',
+      legacyPinHash:     AUTH.__testing__.legacyHashV1('1234'),
+      pinHashAlgorithm:  'legacy-sha',
+      lastLogin:         null,
+      createdAt:         '2024-01-01T00:00:00Z',
+    });
+    const u = await Storage.users.get('usr-legacy');
+    expectEq(u.pinHashAlgorithm, 'legacy-sha');
+    expect(!u.pinHash, 'no argon2 hash yet');
+  });
+  await check('login with correct PIN succeeds and triggers rehash', async () => {
+    const r = await AUTH.login('usr-legacy', '1234');
+    expectEq(r.ok, true, 'login succeeded — reason: ' + (r.reason || 'n/a'));
+    const u = await Storage.users.get('usr-legacy');
+    expectEq(u.pinHashAlgorithm, 'argon2id', 'algorithm flipped');
+    expect(u.pinHash?.startsWith('$argon2id$'), 'argon hash stored');
+    expect(!u.legacyPinHash, 'legacy hash removed');
+  });
+  await check('audit log records rehash before login (chronological)', async () => {
+    const recent = await Storage.audit.list({ limit: 5, order: 'desc' });
+    const loginIdx  = recent.findIndex(e => e.action === 'login');
+    const rehashIdx = recent.findIndex(e => e.action === 'rehash');
+    expect(loginIdx  >= 0, 'login entry present');
+    expect(rehashIdx >= 0, 'rehash entry present');
+    expect(rehashIdx > loginIdx, 'rehash older than login (higher idx in desc list)');
+  });
+  await check('subsequent login uses argon2id only (no rehash)', async () => {
+    await AUTH.logout();
+    const before = await Storage.audit.count();
+    const r = await AUTH.login('usr-legacy', '1234');
+    expectEq(r.ok, true);
+    const after = await Storage.audit.count();
+    // logout already counted in `before`; login adds 1 entry; rehash would
+    // add another — so +1 means rehash did NOT run, which is the test.
+    expectEq(after - before, 1, 'one new login entry, no rehash on argon2id user');
+  });
+  await check('login with wrong PIN does NOT rehash or modify the record', async () => {
+    await AUTH.logout();
+    await Storage.users.put({
+      id:                'usr-legacy2',
+      name:              'CDT Wrong',
+      username:          'wrong',
+      role:              'cadet',
+      svcNo:             '1111111',
+      legacyPinHash:     AUTH.__testing__.legacyHashV1('5678'),
+      pinHashAlgorithm:  'legacy-sha',
+      createdAt:         new Date().toISOString(),
+    });
+    const r = await AUTH.login('usr-legacy2', '0000');
+    expectEq(r.ok, false);
+    expectEq(r.reason, 'invalid_pin');
+    const u = await Storage.users.get('usr-legacy2');
+    expectEq(u.pinHashAlgorithm, 'legacy-sha', 'still legacy');
+    expectEq(u.legacyPinHash, AUTH.__testing__.legacyHashV1('5678'), 'hash unchanged');
+  });
+}
+
+async function t_authPermissions() {
+  header('Roles & permissions');
+  await _resetAuthState();
+  // Set up a QM and a Cadet alongside the default CO.
+  await Storage.users.put({
+    id: 'usr-qm', name: 'WO2 Quartermaster', username: 'qm', role: 'qm',
+    svcNo: '2222222', createdAt: new Date().toISOString(),
+  });
+  await AUTH.setPin('usr-qm', '4321');
+  await Storage.users.put({
+    id: 'usr-cdt', name: 'CDT Recruit', username: 'cdt', role: 'cadet',
+    svcNo: '3333333', createdAt: new Date().toISOString(),
+  });
+  await AUTH.setPin('usr-cdt', '1212');
+
+  await check('CO has all permissions via wildcard', async () => {
+    await AUTH.login('usr-default-co', '0000');
+    expect(AUTH.can('view'));
+    expect(AUTH.can('addItem'));
+    expect(AUTH.can('audit'));
+    expect(AUTH.can('any-future-perm'), 'CO wildcard covers unknown perms');
+    expect(AUTH.isAdmin());
+    expect(AUTH.isCO());
+  });
+  await check('QM has admin perms but not all', async () => {
+    await AUTH.logout();
+    const r = await AUTH.login('usr-qm', '4321');
+    expectEq(r.ok, true);
+    expect(AUTH.can('view'));
+    expect(AUTH.can('issue'));
+    expect(AUTH.can('addItem'));
+    expect(!AUTH.can('non-existent-perm'), 'no wildcard for QM');
+    expect(AUTH.isAdmin(), 'QM is admin');
+    expect(!AUTH.isCO(), 'QM is not CO');
+  });
+  await check('cadet has read + request perms only', async () => {
+    await AUTH.logout();
+    const r = await AUTH.login('usr-cdt', '1212');
+    expectEq(r.ok, true);
+    expect(AUTH.can('view'));
+    expect(AUTH.can('requestIssue'));
+    expect(!AUTH.can('addItem'),      'cadet cannot add items');
+    expect(!AUTH.can('audit'),        'cadet cannot view audit log');
+    expect(!AUTH.can('manageCadets'), 'cadet cannot manage personnel');
+    expect(!AUTH.isAdmin());
+    expect(!AUTH.isCO());
+  });
+  await check('requirePermission throws for missing perm', async () => {
+    let threw = false;
+    try { AUTH.requirePermission('addItem'); } catch { threw = true; }
+    expect(threw, 'cadet was denied addItem');
+  });
+  await check('requirePermission passes for granted perm', async () => {
+    AUTH.requirePermission('view');  // should not throw
+  });
+  await check('unauthenticated user has no permissions', async () => {
+    await AUTH.logout();
+    expect(!AUTH.can('view'));
+    expect(!AUTH.isAdmin());
+    expect(!AUTH.isCO());
+  });
+}
+
+async function t_authSetPin() {
+  header('Set / reset PIN');
+  await _resetAuthState();
+  await check('setPin rejects non-4-digit input', async () => {
+    let threw = false;
+    try { await AUTH.setPin('usr-default-co', '12345'); } catch { threw = true; }
+    expect(threw, '5-digit rejected');
+    threw = false;
+    try { await AUTH.setPin('usr-default-co', 'abcd'); } catch { threw = true; }
+    expect(threw, 'non-numeric rejected');
+  });
+  await check('setPin updates hash, login works with new PIN', async () => {
+    await AUTH.login('usr-default-co', '0000');
+    await AUTH.setPin('usr-default-co', '5678');
+    await AUTH.logout();
+    const old = await AUTH.login('usr-default-co', '0000');
+    expectEq(old.ok, false, 'old PIN rejected');
+    const fresh = await AUTH.login('usr-default-co', '5678');
+    expectEq(fresh.ok, true, 'new PIN accepted');
+  });
+  await check('setPin works on legacy user (forces argon2id)', async () => {
+    await Storage.users.put({
+      id: 'usr-legacy3', name: 'Old User', username: 'old', role: 'qm',
+      svcNo: '8888888',
+      legacyPinHash: AUTH.__testing__.legacyHashV1('1111'),
+      pinHashAlgorithm: 'legacy-sha',
+      createdAt: new Date().toISOString(),
+    });
+    await AUTH.setPin('usr-legacy3', '2222');
+    const u = await Storage.users.get('usr-legacy3');
+    expectEq(u.pinHashAlgorithm, 'argon2id');
+    expect(!u.legacyPinHash, 'legacy hash removed');
+    expect(u.pinHash.startsWith('$argon2id$'));
+  });
+}
+
+async function t_authForceInvalidate() {
+  header('Force-invalidate all sessions (CO power)');
+  await _resetAuthState();
+  await Storage.users.put({
+    id: 'usr-qm', name: 'WO2 Quartermaster', username: 'qm', role: 'qm',
+    svcNo: '2222222', createdAt: new Date().toISOString(),
+  });
+  await AUTH.setPin('usr-qm', '4321');
+
+  await check('non-CO cannot invalidate', async () => {
+    await AUTH.login('usr-qm', '4321');
+    let threw = false;
+    try { await AUTH.invalidateAllSessions(); } catch { threw = true; }
+    expect(threw, 'QM invalidation refused');
+  });
+  await check('CO can invalidate; cutoff written to settings', async () => {
+    await AUTH.logout();
+    await AUTH.login('usr-default-co', '0000');
+    await AUTH.invalidateAllSessions();
+    const cutoff = await Storage.settings.get('session.invalidatedAt');
+    expect(typeof cutoff === 'string' && cutoff.length > 0, 'cutoff stored');
+  });
+  await check('current CO session survives the invalidation it issued', async () => {
+    expect(AUTH.isCO(), 'still logged in as CO');
+    expect(AUTH.isAuthenticated());
+  });
+  await check('non-CO sessions issued before cutoff are rejected on restore', async () => {
+    await AUTH.logout();
+    AUTH.__testing__.resetForTests();
+    sessionStorage.setItem('qstore_session', JSON.stringify({
+      userId: 'usr-qm', username: 'qm', name: 'WO2 Quartermaster', role: 'qm',
+      svcNo: '2222222',
+      loginAt: '2020-01-01T00:00:00Z',
+    }));
+    const restored = await AUTH.init();
+    expectEq(restored, null, 'stale QM session rejected');
+  });
+  await check('CO sessions issued before cutoff are NOT rejected (exemption)', async () => {
+    AUTH.__testing__.resetForTests();
+    sessionStorage.setItem('qstore_session', JSON.stringify({
+      userId: 'usr-default-co', username: 'admin', name: 'Administrator (CO)',
+      role: 'co', svcNo: '',
+      loginAt: '2020-01-01T00:00:00Z',
+    }));
+    const restored = await AUTH.init();
+    expect(restored !== null, 'CO session exempt from invalidation');
+    expectEq(restored.role, 'co');
+  });
+}
+
+
+window.t_init           = t_init;
+window.t_settings       = t_settings;
+window.t_counters       = t_counters;
+window.t_items          = t_items;
+window.t_photos         = t_photos;
+window.t_cadets         = t_cadets;
+window.t_loans          = t_loans;
+window.t_users          = t_users;
+window.t_auditAppend    = t_auditAppend;
+window.t_auditTamper    = t_auditTamper;
+window.t_auditRace      = t_auditRace;
+window.t_exportImport   = t_exportImport;
+window.t_migrate        = t_migrate;
+window.t_migrateIdempotent = t_migrateIdempotent;
+window.t_authBootstrap     = t_authBootstrap;
+window.t_authLogin         = t_authLogin;
+window.t_authLegacyRehash  = t_authLegacyRehash;
+window.t_authPermissions   = t_authPermissions;
+window.t_authSetPin        = t_authSetPin;
+window.t_authForceInvalidate = t_authForceInvalidate;
+
+log('Test harness loaded. Click "Run all tests" or run individual sections.', 'info');
+log('Using database: qstore_test (separate from real app at index.html)',    'info');
+log('Tip: open DevTools → Application → IndexedDB to inspect the live DB.',  'dim');
+log('Tip: keep DevTools open with Network → "Disable cache" ticked while developing.', 'dim');
+log('Build stamp: 2026-05-02-r9 (tamper test uses test DB, not real DB). If unexpected results,', 'dim');
+log('             hard-refresh the page (Ctrl+Shift+R) to bypass cached modules.',  'dim');
+</script>
+
+</body>
+</html>
