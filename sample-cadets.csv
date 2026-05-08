@@ -1,0 +1,7 @@
+svcNo,surname,given,rank,plt,email,active,notes
+8512345,SMITH,John,CDT,1,john.smith@example.com,true,
+8512346,JONES,Mary,CDTLCPL,2,,true,Section 2IC
+8512347,BROWN,Sarah,CDTCPL,1,,true,
+8512348,GREY,Tim,CDT,1,,false,Resigned 2026-04
+8512349,WHITE,Sue,CAPT-AAC,,,true,OC
+8512350,BLACK,David,LT-AAC,,,true,2IC

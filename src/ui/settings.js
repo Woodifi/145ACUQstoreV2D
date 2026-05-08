@@ -31,6 +31,7 @@ import { esc, $, $$, render, fmtDate } from './util.js';
 import { STAFF_RANKS_CANONICAL, CADET_RANKS } from '../ranks.js';
 import * as Recovery from '../recovery.js';
 import * as Migration from '../migration.js';
+import * as CsvUi from './csv-import.js';
 
 let _root = null;
 let _statusListener = null;
@@ -510,6 +511,46 @@ function _dataSectionHtml(settings) {
         </div>
       </details>
 
+      <details class="settings__details">
+        <summary>Import items from CSV</summary>
+        <div class="settings__details-body">
+          <p>
+            Bulk-import inventory items from a spreadsheet. Useful when
+            transitioning a unit from a non-QStore system (Excel, paper).
+            Existing items match by <code>id</code> or <code>nsn</code> and
+            are updated in place — fields not in the CSV (like
+            <code>onLoan</code>, photos, creation timestamps) are preserved.
+          </p>
+          <p>
+            A preview is shown before any data is written. You can review
+            the column mapping and row counts and cancel without committing.
+          </p>
+          <div class="form__actions">
+            <button type="button" class="btn btn--primary"
+                    data-action="import-items-csv">Import items from CSV&hellip;</button>
+          </div>
+        </div>
+      </details>
+
+      <details class="settings__details">
+        <summary>Import cadets from CSV</summary>
+        <div class="settings__details-body">
+          <p>
+            Bulk-import cadets and staff from a spreadsheet. Existing records
+            match by <code>svcNo</code> and are updated in place.
+          </p>
+          <p>
+            Rank values are normalised — <code>Cdt</code>/<code>cdt</code>/<code>CDT</code>
+            all become <code>CDT</code>. The <code>active</code> flag accepts
+            true/false/yes/no/1/0 as values.
+          </p>
+          <div class="form__actions">
+            <button type="button" class="btn btn--primary"
+                    data-action="import-cadets-csv">Import cadets from CSV&hellip;</button>
+          </div>
+        </div>
+      </details>
+
       <input type="file" data-target="import-file"
              accept="application/json,.json" hidden>
       <input type="file" data-target="import-v1-file"
@@ -763,6 +804,8 @@ async function _onRootClick(e) {
     case 'export-data':     await _doExportData(e.target.closest('button')); break;
     case 'import-data':     await _doImportData(e.target.closest('button')); break;
     case 'import-v1':       await _doImportV1(e.target.closest('button')); break;
+    case 'import-items-csv':  CsvUi.openItemsCsvImport();  break;
+    case 'import-cadets-csv': CsvUi.openCadetsCsvImport(); break;
     case 'recovery-generate': await _doGenerateRecovery(e.target.closest('button')); break;
   }
 }

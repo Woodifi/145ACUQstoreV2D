@@ -859,10 +859,23 @@ input {
   color: var(--good);
 }
 
-.inv__cond--unserviceable    { background: rgba(255, 184, 107, 0.15); color: var(--warn); }
+/* Modifier classes — declared after the base rule so equal specificity
+ * is resolved by source order. The serviceable modifier is explicit
+ * rather than relying on the base rule's default colour, so any future
+ * change to the base doesn't accidentally repaint serviceable items.
+ *
+ * --unserviceable: line is fully unserviceable (line flag OR all units broken)
+ * --partial-unsvc: some but not all units on the line are unserviceable
+ *                  (a derived state from unsvc > 0 with serviceable flag)
+ * --unknown:       legacy/garbage condition value, kept visible but neutral
+ */
+.inv__cond--serviceable      { background: rgba(106, 224, 122, 0.15); color: var(--good); }
+.inv__cond--unserviceable    { background: rgba(255, 107, 107, 0.15); color: var(--danger); }
+.inv__cond--partial-unsvc    { background: rgba(255, 184, 107, 0.15); color: var(--warn); }
 .inv__cond--repair           { background: rgba(107, 176, 255, 0.15); color: var(--info); }
 .inv__cond--calibration-due  { background: rgba(196, 169, 107, 0.15); color: var(--gold); }
 .inv__cond--written-off      { background: rgba(255, 107, 107, 0.15); color: var(--danger); }
+.inv__cond--unknown          { background: rgba(136, 147, 160, 0.15); color: var(--text-muted); }
 
 .inv__row-actions {
   display: flex;
@@ -2381,3 +2394,89 @@ input {
 }
 
 .settings__import-summary li:first-child { border-top: none; }
+
+/* =============================================================================
+ * SETTINGS — CSV import preview modal
+ * ============================================================================= */
+
+/* Counts row at the top of the preview — quick scan for "is this what I
+ * expected" before reading detail. */
+.settings__csv-counts {
+  display: flex;
+  gap: 12px;
+  margin: 12px 0 16px;
+  flex-wrap: wrap;
+}
+
+.settings__csv-count {
+  flex: 1 0 100px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  font-size: 13px;
+}
+
+.settings__csv-count strong {
+  display: block;
+  font-size: 18px;
+  color: var(--text-primary);
+}
+
+.settings__csv-count--new      { border-color: rgba(106, 224, 122, 0.4); }
+.settings__csv-count--update   { border-color: rgba(107, 176, 255, 0.4); }
+.settings__csv-count--invalid  { border-color: rgba(255, 107, 107, 0.4); }
+.settings__csv-count--warn     { border-color: rgba(255, 184, 107, 0.4); }
+
+/* Preview table — narrower than the page table; shrunk for modal context. */
+.settings__csv-preview {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin: 8px 0;
+}
+
+.settings__csv-preview th,
+.settings__csv-preview td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.settings__csv-preview th {
+  background: var(--bg-input);
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.settings__csv-row--invalid td {
+  color: var(--text-muted);
+  background: rgba(255, 107, 107, 0.05);
+}
+
+.settings__csv-status {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.settings__csv-status--new     { background: rgba(106, 224, 122, 0.15); color: var(--good); }
+.settings__csv-status--update  { background: rgba(107, 176, 255, 0.15); color: var(--info); }
+.settings__csv-status--invalid { background: rgba(255, 107, 107, 0.15); color: var(--danger); }
+
+.settings__csv-unrecog {
+  font-family: monospace;
+  color: var(--warn);
+}
+
+.settings__import-empty {
+  font-style: italic;
+  color: var(--text-muted);
+  padding: 8px;
+}

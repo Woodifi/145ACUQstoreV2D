@@ -43,6 +43,9 @@ src/
 ├── sync.js             Cloud sync orchestration (MSAL + Graph + storage merge)
 ├── cloud.js            MSAL/Graph implementation behind sync.js
 ├── pdf.js              jsPDF-based document generation (Issue Voucher + reports)
+├── csv-import.js       CSV bulk import for items + cadets (DOM-free; UI in src/ui/csv-import.js)
+├── conditions.js       Canonical condition list (lifted from ui/inventory.js
+│                       so non-UI modules can read it without DOM deps)
 └── ui/
     ├── shell.js        App shell — boot, login gating, page registry, nav
     ├── login.js        User picker + PIN keypad + Forgot PIN flow
@@ -533,7 +536,7 @@ cloud.disabled        (new in v2.1 — kill-switch, see Deployment notes)
 
 ### Build
 
-`node build.js` → `dist/qstore.html` (single file, ~1370 KB at v2.1 with jsPDF; was ~540 KB before Item 7). The size is dominated by jsPDF; everything else is small.
+`node build.js` → `dist/qstore.html` (single file, ~1410 KB at v2.1 with jsPDF + PapaParse; was ~540 KB before Item 7). The size is dominated by jsPDF; PapaParse adds another ~19 KB.
 
 The build inlines:
 - All JS modules into one IIFE script (esbuild bundle, minified for prod)
@@ -542,6 +545,9 @@ The build inlines:
 - jsPDF (with its bundled font/encoding tables) — this is the largest
   single dependency, ~800 KB of the bundle. Considered worth it because
   it lets the deliverable generate PDFs offline with no extra setup.
+- PapaParse — ~19 KB minified. Used for CSV import. Excel quoting rules
+  and embedded newlines defeat hand-rolled parsers; PapaParse is the
+  smallest reliable option.
 
 Output is loadable via `file://` and runs fully offline once loaded.
 

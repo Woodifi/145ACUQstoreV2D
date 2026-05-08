@@ -148,9 +148,11 @@ test-loans.mjs:           33/33 ✓
 test-audit.mjs:           22/22 ✓
 test-pdf.mjs:             32/32 ✓
 test-cloud-disable.mjs:    3/3 ✓
-test-v1-import.mjs:       36/36 ✓ (new)
+test-v1-import.mjs:       36/36 ✓
+test-inventory.mjs:       18/18 ✓
+test-csv-import.mjs:      68/68 ✓ (new)
 ─────────────────────────────────
-                         319/319 ✓ across ten suites
+                         405/405 ✓ across twelve suites
 ```
 
 ---

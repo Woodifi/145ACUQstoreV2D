@@ -1,0 +1,9 @@
+name,cat,nsn,onHand,unsvc,authQty,condition,loc,notes
+Slouch Hat,Headwear,8470-66-001-0001,80,2,90,serviceable,Bay 1 Shelf A,
+Bush Hat,Headwear,8470-66-001-0003,30,18,30,unserviceable,Bay 1 Shelf B,Pending replacement order
+Beret AAC,Headwear,8470-66-001-0007,40,0,60,serviceable,Bay 1 Shelf C,
+Webbing Belt 4-Pouch,Equipment,8465-66-001-0002,50,5,60,serviceable,Bay 2 Shelf A,
+Bedroll Field Pattern,Equipment,8465-66-001-0004,25,1,30,serviceable,Bay 2 Shelf B,
+Field Pack with Yoke,Equipment,8465-66-001-0005,20,0,25,serviceable,Bay 2 Shelf C,
+Boots Combat Pattern,Footwear,8420-66-100-0010,35,3,40,serviceable,Bay 3,
+Boots Drill Black,Footwear,8420-66-100-0011,20,12,20,unserviceable,Bay 3,Many beyond repair

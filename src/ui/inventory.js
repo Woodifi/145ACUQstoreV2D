@@ -34,6 +34,7 @@ import * as Storage    from '../storage.js';
 import * as AUTH       from '../auth.js';
 import * as Sync       from '../sync.js';
 import { processItemPhoto } from './photo.js';
+import { generateStockReport, downloadPdf } from '../pdf.js';
 import { openModal }   from './modal.js';
 import { esc, $, $$, render, fmtDate, ObjectURLPool } from './util.js';
 
@@ -49,13 +50,10 @@ export const CATEGORIES = [
   'Field Stores', 'Medical', 'ICT',
 ];
 
-export const CONDITIONS = [
-  { value: 'serviceable',      label: 'Serviceable'      },
-  { value: 'unserviceable',    label: 'Unserviceable'    },
-  { value: 'repair',           label: 'In repair'        },
-  { value: 'calibration-due',  label: 'Calibration due'  },
-  { value: 'written-off',      label: 'Written off'      },
-];
+// CONDITIONS lives in src/conditions.js so non-UI modules can import it
+// without pulling DOM-dependent code. Re-exported here so existing
+// callers keep working.
+export { CONDITIONS } from '../conditions.js';
 
 // Standard NSN format: 4-2-3-4 digits with dashes (e.g., 8470-66-001-0001).
 // Items with non-standard local NSNs are still accepted, just flagged.
@@ -137,6 +135,7 @@ async function _render() {
           </select>
         </div>
         <div class="inv__actions">
+          <button type="button" class="btn btn--ghost" data-action="print-stock" title="Print the currently-shown stock list">⎙ Print stock</button>
           ${canAdd ? `<button type="button" class="btn btn--primary" data-action="add">+ Add item</button>` : ''}
         </div>
       </header>
@@ -218,9 +217,18 @@ function _itemRowHtml(item, photoUrl, { canEdit, canDel }) {
   const pct = authQty > 0 ? Math.min(100, Math.round((onHand / authQty) * 100)) : 0;
   const fillClass = pct < 50 ? 'is-low' : pct < 75 ? 'is-mid' : '';
 
-  const condDef = CONDITIONS.find(c => c.value === item.condition);
-  const condLabel = condDef ? condDef.label : (item.condition || '—');
-  const condCss   = `inv__cond inv__cond--${esc((item.condition || 'unknown').replace(/\s+/g, '-'))}`;
+  // Badge derivation: blends the line-level `condition` flag with the
+  // numeric `unsvc`/`onHand` counts so that bumping just the Unsvc count
+  // surfaces visually. Without this, a line with onHand=2/unsvc=2 and
+  // condition='serviceable' would render a green badge despite every
+  // unit being unserviceable.
+  //
+  // Priority order: explicit non-serviceable conditions > derived
+  // unsvc-vs-onHand > serviceable. The Partially U/S state is amber and
+  // exists specifically for the "some but not all units broken" case
+  // that v1 had no visual marker for.
+  const { label: condLabel, modifier: condModifier } = _deriveCondition(item.condition, onHand, unsvc);
+  const condCss = `inv__cond inv__cond--${condModifier}`;
 
   const photoCell = photoUrl
     ? `<img class="inv__thumb" src="${esc(photoUrl)}" alt="" loading="lazy"
@@ -322,6 +330,39 @@ async function _onRootClick(e) {
       _categoryFilter = '';
       await _render();
       break;
+    case 'print-stock':
+      await _doPrintStock(target);
+      break;
+  }
+}
+
+// Print the currently-filtered stock list. Storage.items.list does the
+// filtering for us; we sort by category-then-name to give the printed
+// version a stable, scan-friendly order regardless of how the user is
+// viewing it on screen.
+async function _doPrintStock(button) {
+  if (button) { button.disabled = true; button.textContent = 'Building PDF…'; }
+  try {
+    const items = await Storage.items.list({
+      category: _categoryFilter || undefined,
+      search:   _searchTerm     || undefined,
+    });
+    items.sort((a, b) =>
+      (a.cat  || '').localeCompare(b.cat  || '') ||
+      (a.name || '').localeCompare(b.name || ''));
+
+    const filterParts = [];
+    if (_categoryFilter) filterParts.push(`Category: ${_categoryFilter}`);
+    if (_searchTerm)     filterParts.push(`Search: "${_searchTerm}"`);
+    const subtitle = filterParts.join(' · ');
+
+    const unit = await Storage.settings.getAll();
+    const result = await generateStockReport(items, { unit, subtitle });
+    downloadPdf(result);
+  } catch (err) {
+    alert('Stock report generation failed: ' + (err.message || err));
+  } finally {
+    if (button) { button.disabled = false; button.textContent = '⎙ Print stock'; }
   }
 }
 
@@ -802,4 +843,53 @@ function _flashError(message) {
   // Tiny non-blocking error reporter. For now, alert(); in a future round
   // we'll add a proper toast component.
   alert(message);  // eslint-disable-line no-alert
+}
+
+// -----------------------------------------------------------------------------
+// Badge derivation
+// -----------------------------------------------------------------------------
+// Decides what the inventory list badge should say, given the line-level
+// `condition` flag and the numeric `unsvc`/`onHand` counts. Returns
+// { label, modifier } where modifier is the suffix for inv__cond--XXX.
+//
+// Behaviour matrix:
+//   condition === 'written-off'     → red "Written off"
+//   condition === 'repair'          → blue "In repair"
+//   condition === 'calibration-due' → gold "Calibration due"
+//   condition === 'unserviceable'   → red "Unserviceable" (line-level flag)
+//   unsvc >= onHand && onHand > 0   → red "Unserviceable" (all units)
+//   unsvc > 0                       → amber "Partially U/S"
+//   condition === 'serviceable'     → green "Serviceable"
+//   otherwise (no condition, etc.)  → grey "—"
+//
+// The "all units unsvc" case promotes the badge to red even when the
+// line-level condition says serviceable — because at that point the
+// line-level flag is lying about reality. This catches the common QM
+// pattern of just bumping the Unsvc count when a unit goes bad without
+// also flipping the dropdown.
+//
+// Exported for testability; not part of the public API.
+export function _deriveCondition(condition, onHand, unsvc) {
+  const oh = Number(onHand) || 0;
+  const us = Number(unsvc)  || 0;
+
+  // Explicit non-serviceable line-level flags trump numeric derivation.
+  if (condition === 'written-off')     return { label: 'Written off',     modifier: 'written-off' };
+  if (condition === 'repair')          return { label: 'In repair',       modifier: 'repair' };
+  if (condition === 'calibration-due') return { label: 'Calibration due', modifier: 'calibration-due' };
+  if (condition === 'unserviceable')   return { label: 'Unserviceable',   modifier: 'unserviceable' };
+
+  // Numeric derivation for serviceable-flagged lines.
+  if (oh > 0 && us >= oh) {
+    // Every unit on the line is unserviceable — promote regardless of flag.
+    return { label: 'Unserviceable', modifier: 'unserviceable' };
+  }
+  if (us > 0) {
+    return { label: 'Partially U/S', modifier: 'partial-unsvc' };
+  }
+
+  if (condition === 'serviceable') return { label: 'Serviceable', modifier: 'serviceable' };
+
+  // Unknown condition value (legacy data, typo) — render generically.
+  return { label: condition || '—', modifier: 'unknown' };
 }
