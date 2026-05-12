@@ -649,29 +649,43 @@ async function diagnoseMigration() {
       + '  desc=' + (e.desc || '').slice(0, 70), 'dim');
   }
 
-  // 6. Module identity check — read the actual byte length of the imported
-  //    migration.js module via fetch. This proves which version is loaded.
-  log('\n[6] Module identity check (fetching migration.js fresh):', 'info');
+  // 6. Module identity check — read both migration.js and ranks.js fresh.
+  //    Rank vocabulary lives in ranks.js since v2.1; migration.js imports
+  //    from it. This step proves the on-disk source matches what the test
+  //    harness has loaded into the module graph.
+  log('\n[6] Module identity check (fetching migration.js + ranks.js fresh):', 'info');
   try {
-    const resp = await fetch('./src/migration.js?_diag=' + Date.now(), { cache: 'no-store' });
-    const txt = await resp.text();
-    log('    file byteLength: ' + txt.length, 'dim');
-    const hasCanonical = txt.includes('STAFF_RANKS_CANONICAL');
-    const hasOfficerBases = txt.includes('OFFICER_RANK_BASES');
-    const hasMajAac = txt.includes("'MAJ-AAC'");
-    const hasNormalize = txt.includes('_normalizeRank');
-    const hasRankNormalisedStat = txt.includes('rankNormalised');
-    log('    contains STAFF_RANKS_CANONICAL: ' + hasCanonical, hasCanonical ? 'pass' : 'fail');
-    log('    contains OFFICER_RANK_BASES: '    + hasOfficerBases, hasOfficerBases ? 'pass' : 'fail');
-    log("    contains 'MAJ-AAC' literal: "     + hasMajAac, hasMajAac ? 'pass' : 'fail');
-    log('    contains _normalizeRank: '        + hasNormalize, hasNormalize ? 'pass' : 'fail');
-    log('    contains rankNormalised stat: '   + hasRankNormalisedStat, hasRankNormalisedStat ? 'pass' : 'fail');
-    if (!(hasCanonical && hasOfficerBases && hasMajAac && hasNormalize && hasRankNormalisedStat)) {
-      log('\n    ⚠ Some markers missing — the migration.js on disk is older than expected.', 'fail');
-      log('      Compare your /src/migration.js against the latest delivery.', 'warn');
+    const mResp = await fetch('./src/migration.js?_diag=' + Date.now(), { cache: 'no-store' });
+    const mTxt  = await mResp.text();
+    const rResp = await fetch('./src/ranks.js?_diag=' + Date.now(), { cache: 'no-store' });
+    const rTxt  = await rResp.text();
+    log('    migration.js byteLength: ' + mTxt.length, 'dim');
+    log('    ranks.js byteLength: '     + rTxt.length, 'dim');
+
+    // ranks.js owns the vocabulary now
+    const rHasCanonical    = rTxt.includes('STAFF_RANKS_CANONICAL');
+    const rHasOfficerBases = rTxt.includes('OFFICER_RANK_BASES');
+    const rHasMajAac       = rTxt.includes("'MAJ-AAC'");
+    const rHasNormalize    = rTxt.includes('export function normalizeRank');
+    log('    ranks.js: STAFF_RANKS_CANONICAL: ' + rHasCanonical,    rHasCanonical    ? 'pass' : 'fail');
+    log('    ranks.js: OFFICER_RANK_BASES: '    + rHasOfficerBases, rHasOfficerBases ? 'pass' : 'fail');
+    log("    ranks.js: 'MAJ-AAC' literal: "     + rHasMajAac,       rHasMajAac       ? 'pass' : 'fail');
+    log('    ranks.js: normalizeRank export: '  + rHasNormalize,    rHasNormalize    ? 'pass' : 'fail');
+
+    // migration.js should import from ranks.js and still emit rankNormalised stat
+    const mImportsRanks         = mTxt.includes("from './ranks.js'");
+    const mHasRankNormalisedStat = mTxt.includes('rankNormalised');
+    log('    migration.js: imports ./ranks.js: ' + mImportsRanks,         mImportsRanks         ? 'pass' : 'fail');
+    log('    migration.js: rankNormalised stat: ' + mHasRankNormalisedStat, mHasRankNormalisedStat ? 'pass' : 'fail');
+
+    const allOk = rHasCanonical && rHasOfficerBases && rHasMajAac && rHasNormalize
+               && mImportsRanks && mHasRankNormalisedStat;
+    if (!allOk) {
+      log('\n    ⚠ Some markers missing — sources on disk are older than expected.', 'fail');
+      log('      Compare /src/migration.js and /src/ranks.js against the latest delivery.', 'warn');
     } else {
-      log('\n    ✓ migration.js on disk has all expected markers. If tests still', 'pass');
-      log('      fail, the loaded MODULE may differ from disk — try DevTools →',  'pass');
+      log('\n    ✓ Sources on disk have all expected markers. If tests still', 'pass');
+      log('      fail, the loaded MODULES may differ from disk — try DevTools →',  'pass');
       log('      Application → Storage → "Clear site data" then hard-refresh.',   'pass');
     }
   } catch (e) {

@@ -1,485 +1,363 @@
 // =============================================================================
-// QStore IMS v2 — CSV import (core, DOM-free)
+// QStore IMS v2 — CSV import (UI layer)
 // =============================================================================
-// Pure functions for CSV → typed-rows pipeline. No DOM. No storage writes.
-// The settings UI calls these to: parse the file, build a preview, then
-// (after user confirmation) submit the validated rows back through this
-// module to commit them via Storage.
+// Two public flows: openItemsCsvImport(), openCadetsCsvImport().
 //
-// Two domain functions:
-//   parseItemsCsv(text)   → { rows, columns, errors }
-//   parseCadetsCsv(text)  → { rows, columns, errors }
+// Flow:
+//   1. File picker → read file → call src/csv-import.js parser
+//   2. Preview modal showing column mapping, sample rows, counts, warnings
+//   3. "Import" button on the modal → commit → success summary
 //
-// Each row in `rows` is a normalised object ready for storage.put(), plus
-// metadata: sourceLine, status ('new' | 'update' | 'invalid'), warnings.
+// Why a preview is mandatory:
+// CSV imports are easy to get wrong. A column ordering mistake or a
+// header alias miss can silently produce 200 garbage records. Showing the
+// user what's about to land — and what's been auto-mapped vs not — gives
+// them a chance to bail before the database is touched.
 //
-// Why a separate module from the UI:
-// - Test the parsing without spinning up a browser
-// - Lets a future "watch a OneDrive folder for CSV drops" workflow reuse
-//   the same validators
-// - The UI module is thin glue; this is where the schema decisions live
-//
-// Why we use PapaParse:
-// CSV is a swamp. Quoted fields with embedded newlines, mixed line endings,
-// BOM markers from Excel, locale-specific number formatting. A hand-rolled
-// parser would silently drop rows and frustrate users when their Excel
-// export "doesn't work". PapaParse is 19KB minified, well-tested, and the
-// QM workflow rewards reliability over bundle size.
+// Reuses the existing settings.js modal helper rather than rolling our
+// own, so visual style and dismiss behaviour are consistent.
 // =============================================================================
 
-import Papa from 'papaparse';
-import * as Storage from './storage.js';
-import { normalizeRank } from './ranks.js';
-import { CONDITIONS } from './conditions.js';
+import * as Storage from '../storage.js';
+import * as AUTH    from '../auth.js';
+import * as Sync    from '../sync.js';
+import { openModal } from './modal.js';
+import { esc, $, $$ } from './util.js';
+import * as Csv from '../csv-import.js';
 
 // -----------------------------------------------------------------------------
-// Column-name normalisation
+// Public entry points
 // -----------------------------------------------------------------------------
-// Header rows in the wild are inconsistent ("On Hand", "On hand", "OnHand",
-// "OH"). We map known variants to canonical schema field names. Unknown
-// columns are kept in the parse but ignored for storage — surfaced in the
-// preview so the user knows what was dropped.
 
-const ITEM_COLUMN_ALIASES = {
-  // canonical → list of aliases (lowercased, whitespace stripped)
-  // Field names match the v2 item schema in src/ui/inventory.js — extra
-  // columns in the CSV (e.g. 'unit', 'lastStocktakeDate') are tolerated
-  // but ignored, surfacing in the preview's unrecognised list.
-  id:         ['id', 'itemid', 'sku'],
-  nsn:        ['nsn', 'partnumber', 'pn'],
-  name:       ['name', 'itemname', 'item', 'description', 'desc'],
-  cat:        ['cat', 'category', 'group'],
-  onHand:     ['onhand', 'oh', 'qty', 'quantity', 'stock'],
-  unsvc:      ['unsvc', 'unserviceable', 'unservqty'],
-  authQty:    ['authqty', 'authorised', 'authorized', 'auth', 'maxqty'],
-  condition:  ['condition', 'cond', 'state'],
-  notes:      ['notes', 'comment', 'comments', 'remarks'],
-  loc:        ['loc', 'location', 'shelf', 'bin'],
-};
-
-const CADET_COLUMN_ALIASES = {
-  // Field names match the v2 cadet schema in src/ui/cadets.js. The schema
-  // is intentionally lean (no phone/dob/joinDate) — see cadets.js for the
-  // rationale. CSV columns for those will be tolerated but ignored.
-  svcNo:      ['svcno', 'serviceno', 'servicenumber', 'no', 'number'],
-  surname:    ['surname', 'lastname', 'familyname', 'last'],
-  given:      ['given', 'givenname', 'givennames', 'firstname', 'first'],
-  rank:       ['rank'],
-  plt:        ['plt', 'platoon'],
-  email:      ['email', 'emailaddress'],
-  active:     ['active', 'status'],
-  notes:      ['notes', 'comment', 'comments'],
-};
-
-// Build reverse lookup at module load: alias → canonical.
-function _buildLookup(aliases) {
-  const m = new Map();
-  for (const canonical of Object.keys(aliases)) {
-    m.set(canonical.toLowerCase(), canonical);
-    for (const alias of aliases[canonical]) {
-      m.set(alias, canonical);
-    }
-  }
-  return m;
+export function openItemsCsvImport() {
+  _openCsvFlow({
+    label:   'inventory items',
+    parser:  Csv.parseItemsCsv,
+    commit:  Csv.commitItems,
+    auditAction: 'csv_import_items',
+    schemaHint: `
+      <p><strong>Expected columns:</strong> <code>name</code>, <code>cat</code>
+      (required); <code>nsn</code>, <code>onHand</code>, <code>unsvc</code>,
+      <code>authQty</code>, <code>condition</code>, <code>loc</code>,
+      <code>notes</code>, <code>id</code> (optional).</p>
+      <p>Common variants are auto-mapped: <code>Item</code> → name,
+      <code>Category</code> → cat, <code>Stock</code>/<code>Qty</code> →
+      onHand, <code>Auth</code>/<code>MaxQty</code> → authQty, etc.</p>
+    `,
+    sampleColumns: ['nsn', 'name', 'cat', 'onHand', 'unsvc', 'authQty', 'condition'],
+  });
 }
-const ITEM_LOOKUP  = _buildLookup(ITEM_COLUMN_ALIASES);
-const CADET_LOOKUP = _buildLookup(CADET_COLUMN_ALIASES);
 
-function _normaliseHeader(raw) {
-  return String(raw || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
+export function openCadetsCsvImport() {
+  _openCsvFlow({
+    label:   'cadets',
+    parser:  Csv.parseCadetsCsv,
+    commit:  Csv.commitCadets,
+    auditAction: 'csv_import_cadets',
+    schemaHint: `
+      <p><strong>Expected columns:</strong> <code>svcNo</code>,
+      <code>surname</code> (required); <code>given</code>, <code>rank</code>,
+      <code>plt</code>, <code>email</code>, <code>active</code>,
+      <code>notes</code> (optional).</p>
+      <p>Rank values are normalised — <code>Cdt</code>, <code>cdt</code>,
+      <code>CDT</code> all become <code>CDT</code>. The active flag accepts
+      true/false/yes/no/1/0.</p>
+    `,
+    sampleColumns: ['svcNo', 'surname', 'given', 'rank', 'plt', 'active'],
+  });
 }
 
 // -----------------------------------------------------------------------------
-// Public: parse + validate
+// Flow controller — same shape for items and cadets
 // -----------------------------------------------------------------------------
 
-/**
- * Parse a CSV text blob containing inventory items.
- *
- * @param {string} text  Raw CSV content.
- * @returns {Promise<{rows: Array, columns: ColumnReport, errors: Array}>}
- *
- *   rows: Array of row objects. Each row has:
- *     { _line, _status, _warnings, ...itemFields }
- *     - _line: source line number (2-based — line 1 is header)
- *     - _status: 'new' | 'update' | 'invalid'
- *     - _warnings: Array of human-readable warning strings
- *
- *   columns: { mapped: {canonical: header}, unrecognised: Array<header> }
- *
- *   errors: Array of file-level errors (parse failures, missing required
- *     headers). If errors.length > 0, rows may still be present but should
- *     not be committed.
- */
-export async function parseItemsCsv(text) {
-  const parsed = _parseCsv(text);
-  if (parsed.fatalError) {
-    return { rows: [], columns: { mapped: {}, unrecognised: [] }, errors: [parsed.fatalError] };
-  }
+function _openCsvFlow(spec) {
+  // Build a temporary file input and click it. We don't reuse a hidden
+  // input on the page because the items vs cadets distinction would
+  // require different handlers, and constructing on demand is simpler.
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = '.csv,text/csv';
+  fileInput.style.display = 'none';
+  document.body.appendChild(fileInput);
 
-  const { headers, rows: rawRows } = parsed;
-  const columnMap = _mapHeaders(headers, ITEM_LOOKUP);
-  const errors = [];
+  const cleanup = () => fileInput.remove();
 
-  // Using `== null` because the mapped value is a column INDEX. Index 0
-  // is a valid first column; falsy checks would mistake "name in column 0"
-  // for "name missing".
-  if (columnMap.mapped.name == null) {
-    errors.push('Missing required column: name (also accepts: itemname, item, description).');
-  }
-  if (columnMap.mapped.cat == null) {
-    errors.push('Missing required column: cat (also accepts: category, group).');
-  }
-
-  if (errors.length > 0) {
-    return { rows: [], columns: columnMap, errors };
-  }
-
-  // Pre-fetch existing items so we can mark new vs update.
-  const existing = await Storage.items.list();
-  const byId  = new Map(existing.map((i) => [String(i.id || '').trim(), i]));
-  const byNsn = new Map(existing
-    .filter((i) => i.nsn)
-    .map((i) => [String(i.nsn).trim().toLowerCase(), i]));
-
-  const rows = rawRows.map((raw, idx) => _validateItemRow(raw, idx, columnMap.mapped, byId, byNsn));
-  return { rows, columns: columnMap, errors: [] };
-}
-
-/**
- * Parse a CSV text blob containing cadet records.
- * Same return shape as parseItemsCsv.
- */
-export async function parseCadetsCsv(text) {
-  const parsed = _parseCsv(text);
-  if (parsed.fatalError) {
-    return { rows: [], columns: { mapped: {}, unrecognised: [] }, errors: [parsed.fatalError] };
-  }
-
-  const { headers, rows: rawRows } = parsed;
-  const columnMap = _mapHeaders(headers, CADET_LOOKUP);
-  const errors = [];
-
-  // See comment in parseItemsCsv re: == null vs falsy on column indexes.
-  if (columnMap.mapped.svcNo == null) {
-    errors.push('Missing required column: svcNo (also accepts: serviceNo, number).');
-  }
-  if (columnMap.mapped.surname == null) {
-    errors.push('Missing required column: surname (also accepts: lastName, familyName).');
-  }
-
-  if (errors.length > 0) {
-    return { rows: [], columns: columnMap, errors };
-  }
-
-  const existing = await Storage.cadets.list();
-  const bySvcNo = new Map(existing.map((c) => [String(c.svcNo || '').trim(), c]));
-
-  const rows = rawRows.map((raw, idx) => _validateCadetRow(raw, idx, columnMap.mapped, bySvcNo));
-  return { rows, columns: columnMap, errors: [] };
-}
-
-// -----------------------------------------------------------------------------
-// Commit — caller passes back the validated rows (or a filtered subset)
-// -----------------------------------------------------------------------------
-
-/**
- * Write validated item rows to storage. Skips rows with status 'invalid'.
- * Returns counts so the UI can show a summary.
- */
-export async function commitItems(rows) {
-  let inserted = 0, updated = 0, skipped = 0;
-  for (const row of rows) {
-    if (row._status === 'invalid') { skipped++; continue; }
-    // Strip metadata fields before persisting.
-    const { _line, _status, _warnings, ...payload } = row;
-    if (_status === 'update') {
-      // Merge with existing so derived fields (onLoan, hasPhoto, createdAt)
-      // survive the import. CSV doesn't carry these — overwriting blindly
-      // would zero them out. Set updatedAt to mark the merge.
-      const existing = await Storage.items.get(payload.id);
-      if (existing) {
-        await Storage.items.put({
-          ...existing,
-          ...payload,
-          updatedAt: new Date().toISOString(),
-        });
-      } else {
-        // Row claimed update but the record was deleted between preview
-        // and commit — fall through to insert.
-        await Storage.items.put({
-          ...payload,
-          onLoan:    0,
-          hasPhoto:  false,
-          createdAt: new Date().toISOString(),
-        });
-      }
-      updated++;
-    } else {
-      await Storage.items.put(payload);
-      inserted++;
-    }
-  }
-  return { inserted, updated, skipped };
-}
-
-export async function commitCadets(rows) {
-  let inserted = 0, updated = 0, skipped = 0;
-  for (const row of rows) {
-    if (row._status === 'invalid') { skipped++; continue; }
-    const { _line, _status, _warnings, ...payload } = row;
-    if (_status === 'update') {
-      const existing = await Storage.cadets.get(payload.svcNo);
-      if (existing) {
-        await Storage.cadets.put({
-          ...existing,
-          ...payload,
-          updatedAt: new Date().toISOString(),
-        });
-      } else {
-        await Storage.cadets.put({
-          ...payload,
-          createdAt: new Date().toISOString(),
-        });
-      }
-      updated++;
-    } else {
-      await Storage.cadets.put(payload);
-      inserted++;
-    }
-  }
-  return { inserted, updated, skipped };
-}
-
-// -----------------------------------------------------------------------------
-// Internal: PapaParse wrapper
-// -----------------------------------------------------------------------------
-
-function _parseCsv(text) {
-  // skipEmptyLines: 'greedy' drops rows that are empty OR whitespace-only.
-  // Excel often emits trailing blank lines; without this they'd become
-  // bogus "row 47 is invalid" errors.
-  const result = Papa.parse(text, {
-    header:           false,    // we handle headers manually for alias mapping
-    skipEmptyLines:   'greedy',
-    transform:        (v) => String(v).trim(),
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files && fileInput.files[0];
+    cleanup();
+    if (!file) return;
+    await _handleSelectedFile(file, spec);
   });
 
+  // If the user cancels the picker, the change event never fires. We
+  // schedule a cleanup on focus return as a safety net so we don't leak
+  // detached input elements on the body.
+  setTimeout(() => {
+    if (document.body.contains(fileInput) && (!fileInput.files || fileInput.files.length === 0)) {
+      // Hold off another moment — Chrome fires change a bit late on some
+      // platforms.
+      setTimeout(() => {
+        if (document.body.contains(fileInput) && (!fileInput.files || fileInput.files.length === 0)) {
+          cleanup();
+        }
+      }, 1000);
+    }
+  }, 500);
+
+  fileInput.click();
+}
+
+async function _handleSelectedFile(file, spec) {
+  let text;
+  try {
+    text = await file.text();
+  } catch (err) {
+    alert(`Could not read file: ${err.message || err}`);
+    return;
+  }
+
+  let result;
+  try {
+    result = await spec.parser(text);
+  } catch (err) {
+    alert(`CSV parse failed: ${err.message || err}`);
+    return;
+  }
+
+  // File-level errors (missing required columns, fatal parse issues) —
+  // show a small modal and stop, no preview.
   if (result.errors && result.errors.length > 0) {
-    // Catastrophic errors only — PapaParse reports row-level issues here too,
-    // but we treat them as warnings unless the parse couldn't continue.
-    const fatal = result.errors.find((e) => e.code === 'UndetectableDelimiter' || e.type === 'Quotes');
-    if (fatal) {
-      return { fatalError: `CSV parse failed: ${fatal.message}` };
-    }
+    openModal({
+      titleHtml: `Could not import ${esc(spec.label)}`,
+      size:      'sm',
+      bodyHtml: `
+        <div class="modal__warn">
+          <strong>The CSV file has problems and was not imported.</strong>
+        </div>
+        <ul class="settings__import-summary">
+          ${result.errors.map(e => `<li>${esc(e)}</li>`).join('')}
+        </ul>
+        ${spec.schemaHint}
+        <div class="form__actions">
+          <button type="button" class="btn btn--primary" data-action="modal-close">OK</button>
+        </div>
+      `,
+    });
+    return;
   }
 
-  if (!result.data || result.data.length < 2) {
-    return { fatalError: 'CSV is empty or has no data rows.' };
-  }
-
-  return {
-    headers: result.data[0],
-    rows:    result.data.slice(1),
-  };
+  _showPreview(file.name, result, spec);
 }
 
 // -----------------------------------------------------------------------------
-// Internal: header mapping
+// Preview modal
 // -----------------------------------------------------------------------------
 
-function _mapHeaders(headers, lookup) {
-  const mapped = {};
-  const unrecognised = [];
-  headers.forEach((h, idx) => {
-    const norm = _normaliseHeader(h);
-    const canonical = lookup.get(norm);
-    if (canonical) {
-      // Store column INDEX so row lookup is by position not by original header.
-      mapped[canonical] = idx;
-    } else if (h) {
-      unrecognised.push(h);
-    }
+function _showPreview(filename, parseResult, spec) {
+  const { rows, columns } = parseResult;
+
+  // Tally counts.
+  const newCount      = rows.filter(r => r._status === 'new').length;
+  const updateCount   = rows.filter(r => r._status === 'update').length;
+  const invalidCount  = rows.filter(r => r._status === 'invalid').length;
+  const warningCount  = rows.reduce((n, r) =>
+    n + (r._warnings && r._warnings.length ? 1 : 0), 0);
+  const importable = newCount + updateCount;
+
+  // Up to 5 sample rows for the preview table.
+  const samples = rows.slice(0, 5);
+
+  // Up to 10 invalid rows + 10 warning rows for the issues panel.
+  const invalidRows = rows.filter(r => r._status === 'invalid').slice(0, 10);
+  const warningRows = rows.filter(r => r._status !== 'invalid' && r._warnings.length).slice(0, 10);
+
+  // Column mapping summary
+  const mappedHtml = Object.keys(columns.mapped).map(canonical =>
+    `<li><code>${esc(canonical)}</code> ← column ${columns.mapped[canonical] + 1}</li>`
+  ).join('');
+
+  const unrecognisedHtml = (columns.unrecognised || []).length === 0
+    ? '<li class="settings__import-empty">All columns recognised.</li>'
+    : columns.unrecognised.map(c =>
+        `<li><span class="settings__csv-unrecog">${esc(c)}</span> (ignored)</li>`
+      ).join('');
+
+  // Sample table — show the columns we actually intend to import.
+  const sampleColsAvailable = spec.sampleColumns.filter(c => c in (samples[0] || {}));
+  const sampleTableHtml = samples.length === 0
+    ? '<p class="settings__import-empty">No rows in file.</p>'
+    : `
+      <table class="settings__csv-preview">
+        <thead>
+          <tr>
+            <th>Line</th>
+            <th>Status</th>
+            ${sampleColsAvailable.map(c => `<th>${esc(c)}</th>`).join('')}
+          </tr>
+        </thead>
+        <tbody>
+          ${samples.map(row => `
+            <tr class="settings__csv-row settings__csv-row--${esc(row._status)}">
+              <td>${esc(String(row._line))}</td>
+              <td><span class="settings__csv-status settings__csv-status--${esc(row._status)}">${esc(row._status)}</span></td>
+              ${sampleColsAvailable.map(c => `<td>${esc(String(row[c] ?? ''))}</td>`).join('')}
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+
+  const issuesHtml = (invalidRows.length === 0 && warningRows.length === 0)
+    ? ''
+    : `
+      <details class="settings__details">
+        <summary>${invalidCount + warningCount} row(s) with issues</summary>
+        <div class="settings__details-body">
+          ${invalidRows.length ? `
+            <p><strong>${invalidCount} invalid row(s) — will be skipped:</strong></p>
+            <ul class="settings__import-summary">
+              ${invalidRows.map(r =>
+                `<li>Line ${esc(String(r._line))}: ${esc(r._warnings.join('; '))}</li>`
+              ).join('')}
+              ${invalidCount > invalidRows.length ?
+                `<li><em>… and ${invalidCount - invalidRows.length} more.</em></li>` : ''}
+            </ul>
+          ` : ''}
+          ${warningRows.length ? `
+            <p><strong>${warningCount} row(s) with warnings — will still be imported:</strong></p>
+            <ul class="settings__import-summary">
+              ${warningRows.map(r =>
+                `<li>Line ${esc(String(r._line))}: ${esc(r._warnings.join('; '))}</li>`
+              ).join('')}
+              ${warningCount > warningRows.length ?
+                `<li><em>… and ${warningCount - warningRows.length} more.</em></li>` : ''}
+            </ul>
+          ` : ''}
+        </div>
+      </details>
+    `;
+
+  openModal({
+    titleHtml: `Import ${esc(spec.label)} from CSV — preview`,
+    size:      'lg',
+    bodyHtml: `
+      <p class="modal__body">
+        File: <code>${esc(filename)}</code> &middot;
+        ${esc(String(rows.length))} row(s) total.
+      </p>
+
+      <div class="settings__csv-counts">
+        <div class="settings__csv-count settings__csv-count--new">
+          <strong>${esc(String(newCount))}</strong> new
+        </div>
+        <div class="settings__csv-count settings__csv-count--update">
+          <strong>${esc(String(updateCount))}</strong> to update
+        </div>
+        ${invalidCount > 0 ? `
+          <div class="settings__csv-count settings__csv-count--invalid">
+            <strong>${esc(String(invalidCount))}</strong> invalid (skipped)
+          </div>
+        ` : ''}
+        ${warningCount > 0 ? `
+          <div class="settings__csv-count settings__csv-count--warn">
+            <strong>${esc(String(warningCount))}</strong> with warnings
+          </div>
+        ` : ''}
+      </div>
+
+      <details class="settings__details">
+        <summary>Column mapping</summary>
+        <div class="settings__details-body">
+          <p><strong>Recognised columns:</strong></p>
+          <ul class="settings__import-summary">${mappedHtml}</ul>
+          ${columns.unrecognised && columns.unrecognised.length > 0 ? `
+            <p><strong>Unrecognised columns (will be ignored):</strong></p>
+            <ul class="settings__import-summary">${unrecognisedHtml}</ul>
+          ` : ''}
+        </div>
+      </details>
+
+      <details class="settings__details" open>
+        <summary>Preview (first ${esc(String(samples.length))} row(s))</summary>
+        <div class="settings__details-body">
+          ${sampleTableHtml}
+        </div>
+      </details>
+
+      ${issuesHtml}
+
+      <div class="modal__warn" style="margin-top: 16px;">
+        Updates merge with existing records — fields not in the CSV (like
+        <code>onLoan</code>, photos, creation timestamps) are preserved.
+      </div>
+
+      <div class="form__actions">
+        <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
+        <button type="button" class="btn btn--primary"
+                data-action="csv-confirm"
+                ${importable === 0 ? 'disabled' : ''}>
+          Import ${esc(String(importable))} row(s)
+        </button>
+      </div>
+    `,
+    onMount(panel, close) {
+      const confirmBtn = $('[data-action="csv-confirm"]', panel);
+      if (!confirmBtn) return;
+      confirmBtn.addEventListener('click', async () => {
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Importing…';
+        try {
+          await _doCommit(rows, spec, importable);
+          close();
+        } catch (err) {
+          alert(`Import failed: ${err.message || err}`);
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = `Import ${importable} row(s)`;
+        }
+      });
+    },
   });
-  return { mapped, unrecognised };
 }
 
 // -----------------------------------------------------------------------------
-// Internal: row validation
+// Commit + summary
 // -----------------------------------------------------------------------------
 
-function _validateItemRow(raw, idx, columnIdx, byId, byNsn) {
-  const line = idx + 2;  // +1 for header, +1 for 1-indexing
-  const warnings = [];
-  const get = (canonical) => {
-    const i = columnIdx[canonical];
-    return i != null ? (raw[i] || '') : '';
-  };
+async function _doCommit(rows, spec, importable) {
+  const counts = await spec.commit(rows);
 
-  const name = get('name').trim();
-  const cat  = get('cat').trim();
-  if (!name) {
-    return { _line: line, _status: 'invalid', _warnings: ['Missing required field: name.'] };
-  }
-  if (!cat) {
-    return { _line: line, _status: 'invalid', _warnings: ['Missing required field: cat.'] };
-  }
+  // Audit the import. The action key follows the convention used elsewhere
+  // in the audit log; the description carries the totals so a future audit
+  // viewer entry is self-explanatory.
+  await Storage.audit.append({
+    action: spec.auditAction,
+    user:   AUTH.getSession()?.name || 'unknown',
+    desc:   `CSV import: ${counts.inserted} inserted, ${counts.updated} updated` +
+            (counts.skipped > 0 ? `, ${counts.skipped} skipped` : '') +
+            ` (${spec.label}).`,
+  });
+  Sync.notifyChanged();
 
-  // Numeric fields with graceful fallback.
-  const onHand  = _parseInt(get('onHand'),  warnings, 'onHand');
-  const unsvc   = _parseInt(get('unsvc'),   warnings, 'unsvc');
-  const authQty = _parseInt(get('authQty'), warnings, 'authQty');
-
-  // Condition validation against canonical list.
-  let condition = (get('condition') || 'serviceable').toLowerCase().trim();
-  const validConditions = CONDITIONS.map((c) => c.value);
-  if (!validConditions.includes(condition)) {
-    warnings.push(`Unknown condition "${condition}", defaulted to "serviceable".`);
-    condition = 'serviceable';
-  }
-
-  // NSN soft validation — warn on non-standard format but accept.
-  const nsn = get('nsn').trim();
-  if (nsn && !/^\d{4}-\d{2}-\d{3}-\d{4}$/.test(nsn)) {
-    warnings.push(`NSN "${nsn}" is not in standard 4-2-3-4 format (kept as-is).`);
-  }
-
-  // Determine status. Match priority: explicit id > nsn match > new.
-  let id = get('id').trim();
-  let status = 'new';
-  if (id && byId.has(id)) {
-    status = 'update';
-  } else if (nsn && byNsn.has(nsn.toLowerCase())) {
-    const existing = byNsn.get(nsn.toLowerCase());
-    id = id || existing.id;   // adopt the existing id for the upsert
-    status = 'update';
-  } else {
-    // Generate id if missing — Storage.items.put requires one.
-    id = id || _newItemId();
-  }
-
-  // Build the row in the schema shape that Storage.items.put() expects.
-  // Defaults match what _saveAdd() in inventory.js writes for a manual
-  // create — onLoan starts at 0 (it's derived from active loans, never
-  // imported), hasPhoto false, createdAt is now.
-  // For 'update' status we leave onLoan/hasPhoto/createdAt out of the
-  // payload — commitItems merges with the existing record so those
-  // fields are preserved from the previous row.
-  const base = {
-    _line:     line,
-    _status:   status,
-    _warnings: warnings,
-    id, nsn, name, cat,
-    onHand,
-    unsvc,
-    authQty,
-    condition,
-    loc:       get('loc')   || '',
-    notes:     get('notes') || '',
-  };
-  if (status === 'new') {
-    base.onLoan    = 0;
-    base.hasPhoto  = false;
-    base.createdAt = new Date().toISOString();
-  }
-  return base;
-}
-
-function _validateCadetRow(raw, idx, columnIdx, bySvcNo) {
-  const line = idx + 2;
-  const warnings = [];
-  const get = (canonical) => {
-    const i = columnIdx[canonical];
-    return i != null ? (raw[i] || '') : '';
-  };
-
-  const svcNo   = get('svcNo').trim();
-  const surname = get('surname').trim();
-  if (!svcNo) {
-    return { _line: line, _status: 'invalid', _warnings: ['Missing required field: svcNo.'] };
-  }
-  if (!surname) {
-    return { _line: line, _status: 'invalid', _warnings: ['Missing required field: surname.'] };
-  }
-
-  // Service numbers should be reasonably numeric — warn if not, but accept.
-  if (!/^\d{4,10}$/.test(svcNo)) {
-    warnings.push(`svcNo "${svcNo}" is not 4-10 digits (kept as-is).`);
-  }
-
-  const rawRank = get('rank').trim();
-  const rank = rawRank ? normalizeRank(rawRank) : '';
-  if (rawRank && !rank) {
-    warnings.push(`Rank "${rawRank}" not recognised — kept blank.`);
-  }
-
-  // active: accept TRUE/FALSE/yes/no/1/0; default true if blank.
-  const activeRaw = get('active').toLowerCase().trim();
-  const active = activeRaw === '' ? true
-    : ['true', 'yes', 'y', '1', 'active'].includes(activeRaw) ? true
-    : ['false', 'no', 'n', '0', 'inactive'].includes(activeRaw) ? false
-    : true;
-  if (activeRaw && !['true','yes','y','1','active','false','no','n','0','inactive'].includes(activeRaw)) {
-    warnings.push(`active "${activeRaw}" not recognised — defaulted to true.`);
-  }
-
-  const status = bySvcNo.has(svcNo) ? 'update' : 'new';
-
-  // Build the row in the v2 cadet schema. personType is derived from rank
-  // the same way the manual add path and the migration both do, so manual
-  // entry, v1-imported, and CSV-imported cadets all carry the same field
-  // and the cadets list filters work consistently.
-  const personType = _inferPersonType(rank);
-
-  const base = {
-    _line:     line,
-    _status:   status,
-    _warnings: warnings,
-    svcNo,
-    surname,
-    given:    get('given'),
-    rank,
-    plt:      get('plt'),
-    personType,
-    email:    get('email'),
-    active,
-    notes:    get('notes'),
-  };
-  if (status === 'new') {
-    base.createdAt = new Date().toISOString();
-  }
-  return base;
-}
-
-// -----------------------------------------------------------------------------
-// Helpers
-// -----------------------------------------------------------------------------
-
-function _parseInt(s, warnings, fieldName) {
-  const t = String(s).trim();
-  if (t === '') return 0;
-  const n = parseInt(t, 10);
-  if (isNaN(n)) {
-    warnings.push(`${fieldName} "${s}" is not a number (defaulted to 0).`);
-    return 0;
-  }
-  return n;
-}
-
-function _newItemId() {
-  // Same shape as the manual-add path in inventory.js.
-  return 'i-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
-}
-
-// -----------------------------------------------------------------------------
-// personType inference — duplicated from ui/cadets.js to avoid creating a
-// dependency from src/* on src/ui/*. The logic is small and stable; if it
-// ever needs to grow, lift it into ranks.js so all three callers share one
-// implementation.
-// -----------------------------------------------------------------------------
-
-function _inferPersonType(rank) {
-  if (!rank) return 'cadet';
-  // Cadet ranks all start with 'CDT'; staff ranks don't.
-  return /^CDT/.test(rank) ? 'cadet' : 'staff';
+  openModal({
+    titleHtml: 'Import complete',
+    size:      'sm',
+    bodyHtml: `
+      <p class="modal__body">
+        Imported ${esc(spec.label)} from CSV successfully.
+      </p>
+      <ul class="settings__import-summary">
+        <li><strong>${esc(String(counts.inserted))}</strong> new record(s) inserted</li>
+        <li><strong>${esc(String(counts.updated))}</strong> existing record(s) updated</li>
+        ${counts.skipped > 0 ?
+          `<li><strong>${esc(String(counts.skipped))}</strong> invalid row(s) skipped</li>` : ''}
+      </ul>
+      <p class="modal__body modal__body--small">
+        Reload or navigate to the relevant page to see the imported data.
+      </p>
+      <div class="form__actions">
+        <button type="button" class="btn btn--primary" data-action="modal-close">OK</button>
+      </div>
+    `,
+  });
 }

@@ -2480,3 +2480,258 @@ input {
   color: var(--text-muted);
   padding: 8px;
 }
+
+/* =============================================================================
+ * STOCKTAKE PAGE
+ * ============================================================================= */
+
+.stk {
+  padding: 0 16px 24px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* Toolbar — status badge on the left, actions on the right. Wraps on
+ * narrow screens. */
+.stk__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.stk__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 0 240px;
+}
+
+.stk__status-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.stk__status-badge--idle  {
+  background: rgba(136, 147, 160, 0.15);
+  color: var(--text-muted);
+}
+
+.stk__status-badge--draft {
+  background: rgba(196, 169, 107, 0.20);
+  color: var(--gold);
+}
+
+.stk__status-text {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.stk__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.stk__cat {
+  padding: 6px 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+/* Summary tiles row — counted / match / over / short. */
+.stk__summary {
+  display: flex;
+  gap: 12px;
+  margin: 16px 0;
+  flex-wrap: wrap;
+}
+
+.stk__summary-tile {
+  flex: 1 0 120px;
+  padding: 12px 16px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stk__summary-num {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.stk__summary-lbl {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+}
+
+.stk__summary-tile--counted { border-color: rgba(107, 176, 255, 0.3); }
+.stk__summary-tile--match   { border-color: rgba(106, 224, 122, 0.3); }
+.stk__summary-tile--over    { border-color: rgba(255, 184, 107, 0.3); }
+.stk__summary-tile--short   { border-color: rgba(255, 107, 107, 0.3); }
+
+/* Main table. Same shape as inventory but with input cells. */
+.stk__table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.stk__table th,
+.stk__table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.stk__table th {
+  background: var(--bg-input);
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.stk__table tbody tr:hover {
+  background: rgba(196, 169, 107, 0.04);
+}
+
+.stk__col-num,
+.stk__col-count,
+.stk__col-var { text-align: right; }
+
+.stk__col-cat   { width: 100px; }
+.stk__col-num   { width: 60px; }
+.stk__col-count { width: 90px; }
+.stk__col-var   { width: 70px; font-weight: 600; }
+.stk__col-cond  { width: 130px; }
+.stk__col-notes { width: 180px; }
+
+.stk__count,
+.stk__cond,
+.stk__notes {
+  width: 100%;
+  padding: 4px 6px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.stk__count {
+  text-align: right;
+}
+
+.stk__count--invalid {
+  border-color: var(--danger);
+  background: rgba(255, 107, 107, 0.08);
+}
+
+.stk__cond--orphan {
+  border-color: var(--warn);
+  background: rgba(255, 184, 107, 0.08);
+}
+
+.stk__count:focus,
+.stk__cond:focus,
+.stk__notes:focus {
+  outline: none;
+  border-color: var(--gold);
+}
+
+/* Variance colours — match summary tile palette. */
+.stk__var--none  { color: var(--text-muted); }
+.stk__var--match { color: var(--good); }
+.stk__var--over  { color: var(--warn); }
+.stk__var--short { color: var(--danger); }
+
+.stk__empty {
+  padding: 48px 16px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+/* Finalise modal — discrepancy table inside an expandable details. */
+.stk__finalise-summary {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.stk__finalise-summary li {
+  flex: 1 0 120px;
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+
+.stk__finalise-summary li strong {
+  display: block;
+  font-size: 18px;
+  margin-bottom: 2px;
+}
+
+.stk__finalise-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+.stk__finalise-table th,
+.stk__finalise-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.stk__finalise-table th {
+  background: var(--bg-input);
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.stk__finalise-detail summary {
+  cursor: pointer;
+  padding: 8px 0;
+  color: var(--text-secondary);
+}
+
+.stk__nsn-inline {
+  font-family: monospace;
+  color: var(--text-muted);
+  font-size: 11px;
+}

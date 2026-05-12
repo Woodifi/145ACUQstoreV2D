@@ -52,8 +52,10 @@ src/
     ├── inventory.js    Items list, add/edit/delete, photo upload
     ├── cadets.js       Nominal roll: list, add/edit/delete
     ├── loans.js        Issue / Return / All loans (single tabbed page)
+    ├── stocktake.js    Stocktake session — counts, variance, finalisation
     ├── audit.js        Audit log viewer (read-only)
     ├── settings.js     Unit details, OC PIN recovery, cloud, data export/import
+    ├── csv-import.js   CSV import preview + commit flow (UI for src/csv-import.js)
     ├── modal.js        openModal() helper used by every page
     ├── photo.js        Image processing pipeline (resize + JPEG encode)
     └── util.js         esc(), $, $$, render(), date helpers, ObjectURLPool
@@ -536,7 +538,7 @@ cloud.disabled        (new in v2.1 — kill-switch, see Deployment notes)
 
 ### Build
 
-`node build.js` → `dist/qstore.html` (single file, ~1410 KB at v2.1 with jsPDF + PapaParse; was ~540 KB before Item 7). The size is dominated by jsPDF; PapaParse adds another ~19 KB.
+`node build.js` → `dist/qstore.html` (single file, ~1430 KB at v2.1 with jsPDF + PapaParse; was ~540 KB before Item 7). The size is dominated by jsPDF; PapaParse adds another ~19 KB; the rest is application code.
 
 The build inlines:
 - All JS modules into one IIFE script (esbuild bundle, minified for prod)

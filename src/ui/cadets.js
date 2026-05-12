@@ -52,6 +52,7 @@ import {
   normalizeRank,
   inferPersonType,
 } from '../ranks.js';
+import { generateNominalRoll, downloadPdf }        from '../pdf.js';
 import { openModal }                              from './modal.js';
 import { esc, $, $$, render, fmtDateOnly }        from './util.js';
 
@@ -134,6 +135,7 @@ async function _render() {
           </label>
         </div>
         <div class="cad__actions">
+          <button type="button" class="btn btn--ghost" data-action="print-roll" title="Print the currently-shown nominal roll">⎙ Print roll</button>
           ${canManage ? `<button type="button" class="btn btn--primary" data-action="add">+ Add cadet</button>` : ''}
         </div>
       </header>
@@ -263,6 +265,48 @@ async function _onRootClick(e) {
     case 'edit':           await _openEditModal(svcNo);  break;
     case 'delete':         await _openDeleteModal(svcNo); break;
     case 'clear-filters':  _searchTerm = ''; _pltFilter = ''; _showInactive = false; await _render(); break;
+    case 'print-roll':     await _doPrintRoll(e.target.closest('button')); break;
+  }
+}
+
+// Print the currently-filtered cadet list. We re-derive the filter inline
+// so the print reflects exactly what the user sees on screen at click time
+// (search term, plt filter, inactive toggle all honoured). The PDF
+// generator handles the layout; this function is just the bridge.
+async function _doPrintRoll(button) {
+  if (button) { button.disabled = true; button.textContent = 'Building PDF…'; }
+  try {
+    const all  = await Storage.cadets.list();
+    const term = _searchTerm.trim().toLowerCase();
+    const filtered = all.filter((c) => {
+      if (!_showInactive && c.active === false) return false;
+      if (_pltFilter && (c.plt || '') !== _pltFilter) return false;
+      if (term) {
+        const hay = [c.surname, c.given, c.svcNo, c.rank, c.plt, c.email, c.notes]
+          .join(' ').toLowerCase();
+        if (!hay.includes(term)) return false;
+      }
+      return true;
+    }).sort((a, b) =>
+      (a.surname || '').localeCompare(b.surname || '') ||
+      (a.rank    || '').localeCompare(b.rank    || ''));
+
+    // Subtitle describes the current filter state so the printout makes
+    // sense out of context (a roll labelled "Plt 2 only" tells the reader
+    // why the count looks different from the unit total).
+    const filterParts = [];
+    if (_pltFilter)            filterParts.push(`Plt ${_pltFilter} only`);
+    if (!_showInactive)        filterParts.push('Active only');
+    if (_searchTerm)           filterParts.push(`Search: "${_searchTerm}"`);
+    const subtitle = filterParts.join(' · ');
+
+    const unit = await Storage.settings.getAll();
+    const result = await generateNominalRoll(filtered, { unit, subtitle });
+    downloadPdf(result);
+  } catch (err) {
+    alert('Roll generation failed: ' + (err.message || err));
+  } finally {
+    if (button) { button.disabled = false; button.textContent = '⎙ Print roll'; }
   }
 }
 

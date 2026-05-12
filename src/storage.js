@@ -506,13 +506,26 @@ export const stocktake = {
     return (await _reqDone(tx.objectStore(STORES.STOCKTAKE).get(itemId))) || null;
   },
 
-  async set(itemId, counted, countedBy) {
+  async set(itemId, counted, opts = {}) {
+    // opts: { countedBy, condition, notes }
+    // condition + notes are per-row stocktake overrides applied at finalise.
+    // Each call overwrites the previous record for the item, so the latest
+    // entered value is what finalisation sees.
     const tx = _db.transaction(STORES.STOCKTAKE, 'readwrite');
     tx.objectStore(STORES.STOCKTAKE).put({
-      itemId, counted,
-      countedBy: countedBy || null,
+      itemId,
+      counted,
+      condition: opts.condition || null,
+      notes:     opts.notes || '',
+      countedBy: opts.countedBy || null,
       countedAt: new Date().toISOString(),
     });
+    await _txDone(tx);
+  },
+
+  async remove(itemId) {
+    const tx = _db.transaction(STORES.STOCKTAKE, 'readwrite');
+    tx.objectStore(STORES.STOCKTAKE).delete(itemId);
     await _txDone(tx);
   },
 

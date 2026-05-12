@@ -27,6 +27,7 @@ import * as Login     from './login.js';
 import * as Inventory from './inventory.js';
 import * as Loans     from './loans.js';
 import * as Cadets    from './cadets.js';
+import * as Stocktake from './stocktake.js';
 import * as Audit     from './audit.js';
 import * as Settings  from './settings.js';
 import { openModal }  from './modal.js';
@@ -36,9 +37,9 @@ const PAGES = {
   inventory: { label: 'Inventory', perm: 'view',     mount: Inventory.mount },
   loans:     { label: 'Loans',     perm: 'view',     mount: Loans.mount     },
   cadets:    { label: 'Cadets',    perm: 'view',     mount: Cadets.mount    },
+  stocktake: { label: 'Stocktake', perm: 'editItem', mount: Stocktake.mount },
   audit:     { label: 'Audit',     perm: 'audit',    mount: Audit.mount     },
   settings:  { label: 'Settings',  coOnly: true,     mount: Settings.mount  },
-  // More pages land here as we build them: reports.
 };
 
 const DEFAULT_PAGE = 'inventory';

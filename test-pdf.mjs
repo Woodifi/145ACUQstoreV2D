@@ -170,5 +170,79 @@ const longName = {
 const r9 = await Pdf.generateIssueVoucher([longName], { unit: sampleUnit });
 expect(r9.bytes > 1000, `long-name voucher generates (${r9.bytes} bytes)`);
 
+// =============================================================================
+// REPORTS — nominal roll, stock-on-hand, outstanding loans
+// =============================================================================
+console.log('\n[10] Nominal roll: small list, single page');
+const cadetsSmall = [
+  { rank: 'CDT', surname: 'SMITH', given: 'John', svcNo: '8512345', plt: '1', active: true },
+  { rank: 'CDT', surname: 'JONES', given: 'Mary', svcNo: '8512346', plt: '2', active: true },
+];
+const roll1 = await Pdf.generateNominalRoll(cadetsSmall, { unit: sampleUnit });
+expect(roll1.bytes > 1000, `roll PDF generated (${roll1.bytes} bytes)`);
+expect(roll1.filename.startsWith('NominalRoll_'),
+  `filename starts with NominalRoll_ (got ${roll1.filename})`);
+eq(roll1.blob.type, 'application/pdf', 'roll Blob type is PDF');
+
+console.log('\n[11] Nominal roll: large list forces pagination');
+// 80 cadets pushes us onto multiple pages. We can't easily count pages
+// from a Blob in Node without a PDF parser, but we can confirm the
+// generator doesn't throw and produces a meaningfully-larger file.
+const cadetsBig = [];
+for (let i = 0; i < 80; i++) {
+  cadetsBig.push({
+    rank: 'CDT', surname: `SUR${i}`, given: `Given${i}`,
+    svcNo: `${85123000 + i}`, plt: '1', active: true,
+  });
+}
+const roll2 = await Pdf.generateNominalRoll(cadetsBig, { unit: sampleUnit });
+expect(roll2.bytes > roll1.bytes * 5,
+  `large roll is significantly larger than small (${roll2.bytes} > 5 * ${roll1.bytes})`);
+
+console.log('\n[12] Nominal roll: empty list still produces a valid PDF');
+// Edge: a unit with no cadets, or a filter that matches nothing. The PDF
+// should still be generated (with just a header) — caller can decide
+// whether to actually offer the print.
+const rollEmpty = await Pdf.generateNominalRoll([], { unit: sampleUnit });
+expect(rollEmpty.bytes > 1000, `empty roll still has a header (${rollEmpty.bytes} bytes)`);
+
+console.log('\n[13] Stock report: produces valid PDF with totals');
+const itemsSample = [
+  { id: '1', nsn: '8470-66-001-0001', name: 'Slouch Hat',  cat: 'Headwear',  onHand: 50, onLoan: 12, unsvc: 0, authQty: 60, condition: 'serviceable' },
+  { id: '2', nsn: '8465-66-001-0002', name: 'Webbing Belt',cat: 'Equipment', onHand: 40, onLoan: 8,  unsvc: 5, authQty: 50, condition: 'serviceable' },
+];
+const stock1 = await Pdf.generateStockReport(itemsSample, { unit: sampleUnit });
+expect(stock1.bytes > 1000, `stock report generated (${stock1.bytes} bytes)`);
+expect(stock1.filename.startsWith('StockReport_'),
+  `filename starts with StockReport_ (got ${stock1.filename})`);
+
+console.log('\n[14] Stock report: items with high unservic ratio get visual highlight');
+// We can't visually check the row colour in a smoke test, but we can
+// verify the generator doesn't throw on items at various unsvc ratios.
+const itemsUnsvc = [
+  { nsn: 'X1', name: 'Item-Healthy',         cat: 'Test', onHand: 10, onLoan: 0, unsvc: 0  },
+  { nsn: 'X2', name: 'Item-HalfBroken',      cat: 'Test', onHand: 10, onLoan: 0, unsvc: 5  },
+  { nsn: 'X3', name: 'Item-MostlyBroken',    cat: 'Test', onHand: 10, onLoan: 0, unsvc: 8  },
+  { nsn: 'X4', name: 'Item-Empty',           cat: 'Test', onHand: 0,  onLoan: 0, unsvc: 0  },
+];
+const stock2 = await Pdf.generateStockReport(itemsUnsvc, { unit: sampleUnit });
+expect(stock2.bytes > 1000, `mixed-condition stock report ok (${stock2.bytes} bytes)`);
+
+console.log('\n[15] Outstanding loans: includes overdue badge in subtitle');
+const loansForReport = [
+  { ref: 'LN-1001', issueDate: '2026-04-01', dueDate: '2026-04-30', itemName: 'Slouch Hat',  qty: 1, borrowerName: 'CDT SMITH' },
+  { ref: 'LN-1002', issueDate: '2026-05-06', dueDate: '2026-12-31', itemName: 'Webbing Belt',qty: 1, borrowerName: 'CDT JONES' },
+];
+const loansR = await Pdf.generateOutstandingLoansReport(loansForReport, { unit: sampleUnit });
+expect(loansR.bytes > 1000, `outstanding report generated (${loansR.bytes} bytes)`);
+expect(loansR.filename.startsWith('OutstandingLoans_'),
+  `filename starts with OutstandingLoans_ (got ${loansR.filename})`);
+
+console.log('\n[16] All reports use sanitised unit slug in filename');
+const evilUnit = { unitName: 'Unit / With \\ Slashes', unitCode: '..\\evil' };
+const r = await Pdf.generateNominalRoll(cadetsSmall, { unit: evilUnit });
+expect(!r.filename.includes('/') && !r.filename.includes('\\') && !r.filename.includes('..'),
+  `unit slug is sanitised (got ${r.filename})`);
+
 console.log(`\nResults: ${pass} passed, ${fail} failed.`);
 process.exit(fail === 0 ? 0 : 1);

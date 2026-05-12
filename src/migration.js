@@ -460,7 +460,7 @@ async function _migrateRequests(v1) {
 async function _migrateStocktake(v1) {
   const sc = v1.stocktakeCounts || {};
   for (const [itemId, counted] of Object.entries(sc)) {
-    await Storage.stocktake.set(itemId, counted, 'migration');
+    await Storage.stocktake.set(itemId, counted, { countedBy: 'migration' });
   }
 }
 

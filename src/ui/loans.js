@@ -47,7 +47,7 @@
 import * as Storage from '../storage.js';
 import * as AUTH    from '../auth.js';
 import * as Sync    from '../sync.js';
-import { generateIssueVoucher, downloadPdf } from '../pdf.js';
+import { generateIssueVoucher, generateAB189, generateOutstandingLoansReport, downloadPdf } from '../pdf.js';
 import { openModal }                       from './modal.js';
 import { esc, $, $$, render, fmtDateOnly } from './util.js';
 
@@ -533,23 +533,40 @@ async function _submitIssue(body) {
       </ul>
       <div class="form__actions">
         <button type="button" class="btn btn--ghost" data-action="print-batch-voucher">
-          Print voucher
+          ⎙ Issue Voucher
+        </button>
+        <button type="button" class="btn btn--ghost" data-action="print-batch-ab189">
+          ⎙ AB189
         </button>
         <button type="button" class="btn btn--primary" data-action="modal-close">OK</button>
       </div>`,
     onMount(panel, close) {
-      const printBtn = panel.querySelector('[data-action="print-batch-voucher"]');
-      printBtn?.addEventListener('click', async () => {
-        printBtn.disabled = true;
-        printBtn.textContent = 'Building PDF…';
+      const voucherBtn = panel.querySelector('[data-action="print-batch-voucher"]');
+      voucherBtn?.addEventListener('click', async () => {
+        voucherBtn.disabled = true;
+        voucherBtn.textContent = 'Building PDF…';
         try {
           await _printVoucherForLoans(created);
-          printBtn.textContent = 'Print voucher';
-          printBtn.disabled = false;
+          voucherBtn.textContent = '⎙ Issue Voucher';
+          voucherBtn.disabled = false;
         } catch (err) {
-          printBtn.textContent = 'Print voucher';
-          printBtn.disabled = false;
+          voucherBtn.textContent = '⎙ Issue Voucher';
+          voucherBtn.disabled = false;
           alert('Voucher generation failed: ' + (err.message || err));
+        }
+      });
+      const ab189Btn = panel.querySelector('[data-action="print-batch-ab189"]');
+      ab189Btn?.addEventListener('click', async () => {
+        ab189Btn.disabled = true;
+        ab189Btn.textContent = 'Building PDF…';
+        try {
+          await _printAB189ForLoans(created);
+          ab189Btn.textContent = '⎙ AB189';
+          ab189Btn.disabled = false;
+        } catch (err) {
+          ab189Btn.textContent = '⎙ AB189';
+          ab189Btn.disabled = false;
+          alert('AB189 generation failed: ' + (err.message || err));
         }
       });
     },
@@ -835,6 +852,13 @@ async function _renderAllTab(body) {
               </button>`).join('')}
           </div>
         </div>
+        <div class="loan__all-actions">
+          <button type="button" class="btn btn--ghost"
+                  data-action="print-outstanding"
+                  title="Print active loans (with overdue highlighted)">
+            ⎙ Print outstanding
+          </button>
+        </div>
       </header>
 
       <div class="loan__meta">
@@ -869,7 +893,7 @@ function _allTableHtml(loans, today, canReturn) {
           <th>Purpose</th>
           <th>Due</th>
           <th>Status</th>
-          <th class="loan__col-actions">Voucher</th>
+          <th class="loan__col-actions">Documents</th>
         </tr>
       </thead>
       <tbody>
@@ -911,8 +935,14 @@ function _allRowHtml(loan, today, canReturn) {
         <button type="button" class="btn btn--sm btn--ghost"
                 data-action="print-row-voucher"
                 data-loan-ref="${esc(loan.ref)}"
-                title="Print issue voucher for this loan and any others issued in the same batch">
-          ⎙ PDF
+                title="Print issue voucher for this loan and any others in the same batch">
+          ⎙ Voucher
+        </button>
+        <button type="button" class="btn btn--sm btn--ghost"
+                data-action="print-row-ab189"
+                data-loan-ref="${esc(loan.ref)}"
+                title="Print AB189 equipment request form for this batch">
+          ⎙ AB189
         </button>
       </td>
     </tr>
@@ -932,6 +962,40 @@ function _wireAllTab(body) {
       _wireAllTab(body);
     });
   });
+  // Print outstanding button — generates a PDF of currently-active loans
+  // sorted by due date ascending (most overdue first). Honours the search
+  // filter but ignores the active/returned/overdue/all toggle, because
+  // the report is specifically named "outstanding" and includes only
+  // active loans by definition. If the user wanted other filtering
+  // surfaces (e.g. "include returned"), that's a different report.
+  $('[data-action="print-outstanding"]', body)?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button');
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = 'Building PDF…';
+    try {
+      const all = await Storage.loans.list();
+      let active = all.filter((l) => l.active === true);
+      // Honour the search filter only.
+      if (_allSearch) {
+        const q = _allSearch.toLowerCase();
+        active = active.filter((l) =>
+          [l.ref, l.itemName, l.nsn, l.borrowerName, l.borrowerSvc, l.purpose, l.remarks]
+            .join(' ').toLowerCase().includes(q));
+      }
+      // Sort by dueDate asc (oldest due-date first → most overdue at top).
+      active.sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''));
+      const subtitle = _allSearch ? `Search: "${_allSearch}"` : '';
+      const unit = await Storage.settings.getAll();
+      const result = await generateOutstandingLoansReport(active, { unit, subtitle });
+      downloadPdf(result);
+    } catch (err) {
+      alert('Outstanding-loans report failed: ' + (err.message || err));
+    } finally {
+      btn.textContent = orig;
+      btn.disabled = false;
+    }
+  });
   // Per-row "Print voucher" buttons. Each finds the loan's batch (other
   // loans sharing borrowerSvc + issueDate) and renders the whole batch
   // to one PDF — same as the issue-time confirmation flow.
@@ -945,6 +1009,23 @@ function _wireAllTab(body) {
         await _printVoucherForLoanRef(ref);
       } catch (err) {
         alert('Voucher generation failed: ' + (err.message || err));
+      } finally {
+        btn.textContent = orig;
+        btn.disabled = false;
+      }
+    });
+  });
+  // Per-row "AB189" buttons — same batch-lookup logic, different generator.
+  $$('[data-action="print-row-ab189"]', body).forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const ref = btn.dataset.loanRef;
+      btn.disabled = true;
+      const orig = btn.textContent;
+      btn.textContent = '…';
+      try {
+        await _printAB189ForLoanRef(ref);
+      } catch (err) {
+        alert('AB189 generation failed: ' + (err.message || err));
       } finally {
         btn.textContent = orig;
         btn.disabled = false;
@@ -1076,4 +1157,27 @@ async function _printVoucherForLoanRef(ref) {
     throw new Error(`Could not find any loans for ${loan.borrowerSvc} on ${loan.issueDate}.`);
   }
   await _printVoucherForLoans(batch);
+}
+
+async function _printAB189ForLoans(loans) {
+  if (!Array.isArray(loans) || loans.length === 0) {
+    throw new Error('No loans provided to print.');
+  }
+  const unit  = await Storage.settings.getAll();
+  const cadet = await Storage.cadets.get(loans[0].borrowerSvc);
+  const result = await generateAB189(loans, { unit, cadet: cadet || null });
+  downloadPdf(result);
+}
+
+async function _printAB189ForLoanRef(ref) {
+  const loan = await Storage.loans.get(ref);
+  if (!loan) throw new Error(`Loan ${ref} not found.`);
+  const allForBorrower = await Storage.loans.listForCadet(loan.borrowerSvc);
+  const batch = allForBorrower
+    .filter((l) => l.issueDate === loan.issueDate)
+    .sort((a, b) => (a.ref || '').localeCompare(b.ref || ''));
+  if (batch.length === 0) {
+    throw new Error(`Could not find any loans for ${loan.borrowerSvc} on ${loan.issueDate}.`);
+  }
+  await _printAB189ForLoans(batch);
 }

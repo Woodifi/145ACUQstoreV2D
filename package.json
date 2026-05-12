@@ -15,7 +15,8 @@
   "dependencies": {
     "@azure/msal-browser": "2.38.3",
     "hash-wasm": "^4.11.0",
-    "jspdf": "^4.2.1"
+    "jspdf": "^4.2.1",
+    "papaparse": "^5.5.3"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",
