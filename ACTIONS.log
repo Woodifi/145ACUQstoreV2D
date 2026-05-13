@@ -58,6 +58,16 @@ Format: [TIMESTAMP UTC] ACTION — details
 -------------------------------------------------------------------------------
 END OF LOG — append new entries above this line
 
+[2026-05-13T05:00:00Z] FILES MODIFIED — toast notification rollout (Task 1)
+  NEW: src/ui/toast.js — showToast() component, aria-live, auto-dismiss
+  MODIFIED: qstore.css — toast-container + variant CSS
+  MODIFIED: src/ui/inventory.js, loans.js, cadets.js, csv-import.js, stocktake.js, settings.js
+    — replaced 24 alert() call sites with showToast (error/warn/success/info)
+
+[2026-05-13T05:00:10Z] GIT COMMIT + PUSH — toast notifications (335d4d5)
+  "feat: replace all alert() with toast notifications"
+  481/481 tests passing.
+
 [2026-05-13T04:20:00Z] BUILD.JS MODIFIED — now writes docs/index.html in addition to dist/qstore.html
   GitHub Pages requires index.html; docs/ is the configured Pages source folder
 

@@ -2345,6 +2345,64 @@ input {
 }
 
 /* =============================================================================
+ * RESPONSIVE — mobile layout (≤ 700 px)
+ * Hides low-priority columns; tables remain scrollable via the *-wrap divs.
+ * Priority order on phones: primary identifier → quantities/status → actions.
+ * ============================================================================= */
+
+@media (max-width: 700px) {
+  /* ── Page toolbar: stack filter row ──────────────────────────────────────── */
+  .page__toolbar { flex-wrap: wrap; gap: 6px; }
+  .page__toolbar .page__search { flex: 1 1 100%; }
+
+  /* ── Inventory table ─────────────────────────────────────────────────────── */
+  /* Hide: NSN, Category, Location, On-loan qty, Unserviceable qty.
+     Keep: Photo, Name, Auth qty, On-hand qty, Condition, Actions. */
+  .inv__col-nsn,
+  .inv__col-cat,
+  .inv__col-loc,
+  .inv__col-qty--loan,
+  .inv__col-qty--unsvc { display: none; }
+
+  /* ── Loans table ─────────────────────────────────────────────────────────── */
+  /* Column order: 1=Ref 2=Issued 3=Item 4=Qty 5=Borrower 6=Purpose 7=Due 8=Status 9=Docs */
+  /* Hide: Issued (2), Purpose (6), Due (7). Keep everything else. */
+  .loan__table thead tr > th:nth-child(2),
+  .loan__table thead tr > th:nth-child(6),
+  .loan__table thead tr > th:nth-child(7),
+  .loan__table tbody tr > td:nth-child(2),
+  .loan__table tbody tr > td:nth-child(6),
+  .loan__table tbody tr > td:nth-child(7) { display: none; }
+
+  /* ── Cadets table ────────────────────────────────────────────────────────── */
+  /* Hide: Given names, Plt.  Keep: Rank, Surname, Svc No., Status, Actions. */
+  .cad__col-givens,
+  .cad__col-plt { display: none; }
+
+  /* ── Modals: full-width on phones ────────────────────────────────────────── */
+  .modal__panel { width: 100% !important; max-width: 100% !important; border-radius: 0; }
+  .modal__overlay { align-items: flex-end; }
+
+  /* ── Toast container: full-width on phones ───────────────────────────────── */
+  .toast-container { right: 8px; left: 8px; max-width: none; }
+}
+
+/* ≤ 480 px — phone portrait: simplify further */
+@media (max-width: 480px) {
+  /* Inventory: also hide Condition column to gain space for Name + qty + actions */
+  .inv__col-cond { display: none; }
+
+  /* Loans: hide Qty column; readable qty is in item cell on very small screens */
+  .loan__qty { display: none; }
+
+  /* Cadets: hide Status; keep Rank + Surname + Svc + Actions */
+  .cad__col-status { display: none; }
+
+  /* QR scan viewport: full-width */
+  .qrscan__viewport { height: 220px; }
+}
+
+/* =============================================================================
  * SETTINGS — policy notice (cloud sync section)
  * ============================================================================= */
 
