@@ -7,3 +7,47 @@ destructive file changes, etc.
 Format: [TIMESTAMP UTC] ACTION — details
 
 -------------------------------------------------------------------------------
+
+[2026-05-13T03:51:50Z] NPM INSTALL — installed qrcode-generator (QR code label generation)
+  package.json change: added "qrcode-generator" to dependencies
+
+[2026-05-13T03:52:00Z] NPM UNINSTALL — removed qrcodegen (broke in Node; replaced with qrcode-generator)
+  qrcodegen used document.createElement at module load time — unusable in Node test env
+
+[2026-05-13T03:52:10Z] NPM INSTALL — installed jsqr (QR code decoding for camera scan feature)
+  package.json change: added "jsqr" to dependencies
+  Bundle size impact: +132 KB (includes Shift-JIS decode tables)
+
+[2026-05-13T04:00:00Z] FILE CREATED — ACTIONS.log (this file)
+  Required by user instruction: "Ensure a log is kept in plain text of all actions
+  taken that would have required user input"
+
+[2026-05-13T04:00:10Z] FILE MODIFIED — .gitignore
+  Added "!ACTIONS.log" exception so this log is tracked despite the "*.log" glob rule
+
+[2026-05-13T04:01:00Z] FILE DELETED — qstore.html (root level)
+  Stale build artifact — an old self-contained HTML+CSS build predating the dist/
+  directory convention. Not referenced by anything; dist/qstore.html is the current
+  deliverable. Deleted to keep the repo clean.
+
+[2026-05-13T04:02:00Z] GIT ADD — staged all files for initial commit
+  60 files staged. node_modules/ excluded by .gitignore.
+
+[2026-05-13T04:02:30Z] GIT COMMIT — initial commit (root-commit 9500c7b)
+  Message: "Initial commit — QStore IMS v2.1 feature-complete"
+  60 files, 30083 insertions. Branch: master.
+  This commit covers the entire v2.1 feature set as developed across
+  multiple prior Claude.ai sessions plus this Claude Code session.
+
+[2026-05-13T04:05:00Z] GIT ADD — staged follow-up changes
+  docs/ARCHITECTURE.md — module map updated, bundle sizes corrected, stale debt
+    item removed (duplicate root-level JS files that don't exist), test command fixed
+  docs/CHANGELOG.md — test count corrected (457→481, fourteen→fifteen suites;
+    test-ab189.mjs was present and passing but missing from the count)
+  ACTIONS.log — this file, populated with full log
+
+[2026-05-13T04:05:30Z] GIT COMMIT — docs and log cleanup
+  Message: "Fix test count, update ARCHITECTURE for v2.1 completion"
+
+-------------------------------------------------------------------------------
+END OF LOG — append new entries above this line

@@ -58,6 +58,7 @@ src/
     ├── csv-import.js   CSV import preview + commit flow (UI for src/csv-import.js)
     ├── modal.js        openModal() helper used by every page
     ├── photo.js        Image processing pipeline (resize + JPEG encode)
+    ├── qr-scan.js      Camera QR scanner — getUserMedia + jsQR decode loop
     └── util.js         esc(), $, $$, render(), date helpers, ObjectURLPool
 ```
 
@@ -406,7 +407,7 @@ the table below.
 | `logout` | auth | "Logout." |
 | `login_failed` | auth | "Failed login attempt for \<userId\>." |
 
-(Future: stocktake actions, AB189 generation actions, sync actions.)
+(Future: sync actions, per-user lockout actions.)
 
 ---
 
@@ -538,18 +539,21 @@ cloud.disabled        (new in v2.1 — kill-switch, see Deployment notes)
 
 ### Build
 
-`node build.js` → `dist/qstore.html` (single file, ~1430 KB at v2.1 with jsPDF + PapaParse; was ~540 KB before Item 7). The size is dominated by jsPDF; PapaParse adds another ~19 KB; the rest is application code.
+`node build.js` → `dist/qstore.html` (single file, ~1594 KB at v2.1). The size is dominated by jsPDF; other dependencies add:
+
+| Dependency | Minified size | Purpose |
+|---|---|---|
+| jsPDF | ~800 KB | PDF generation (offline, no server) |
+| jsQR | ~132 KB | QR code decoding (includes Shift-JIS tables) |
+| qrcode-generator | ~31 KB | QR code generation for label sheets |
+| PapaParse | ~19 KB | CSV import |
+| hash-wasm WASM | ~70 KB | Argon2id PIN hashing |
 
 The build inlines:
 - All JS modules into one IIFE script (esbuild bundle, minified for prod)
 - `qstore.css` in a `<style>` block
 - The hash-wasm WASM blob as a base64 data URI inside the script
-- jsPDF (with its bundled font/encoding tables) — this is the largest
-  single dependency, ~800 KB of the bundle. Considered worth it because
-  it lets the deliverable generate PDFs offline with no extra setup.
-- PapaParse — ~19 KB minified. Used for CSV import. Excel quoting rules
-  and embedded newlines defeat hand-rolled parsers; PapaParse is the
-  smallest reliable option.
+- All npm dependencies listed above
 
 Output is loadable via `file://` and runs fully offline once loaded.
 
@@ -574,9 +578,12 @@ Running all suites:
 
 ```bash
 for t in test-ranks test-unit-branding test-export-import \
-         test-recovery test-cadets test-loans; do
+         test-recovery test-cadets test-loans test-audit test-ab189 \
+         test-pdf test-cloud-disable test-v1-import test-inventory \
+         test-csv-import test-stocktake test-qr; do
   node ${t}.mjs
 done
+# Expected: 481/481 across 15 suites
 ```
 
 ---
@@ -602,11 +609,7 @@ These aren't bugs but they're things future-me should know about.
 7. **Toast component doesn't exist** — most user feedback is via
    `alert()` or a `.form__error` slot. A real toast widget would
    improve return-tab feedback ("returned 3 items") without a modal.
-8. **Duplicate top-level files in repo** — `cloud.js`, `migration.js`,
-   `shell.js`, `sync.js` exist at repo root AND in `src/`. The `src/`
-   versions are authoritative; the root copies are leftover from the
-   v1→v2 transition and should be deleted in a cleanup pass.
-9. **CAPT(AAC) doesn't classify as staff** — `normaliseRankInput`
+8. **CAPT(AAC) doesn't classify as staff** — `normaliseRankInput`
    strips whitespace and dots but not parens, so `CAPT(AAC)` falls
    through to `cadet`. Fix is a 2-line ranks.js change but pre-dates
    this work; flagged for a future cleanup.

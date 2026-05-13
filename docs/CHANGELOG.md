@@ -71,6 +71,7 @@ test-recovery.mjs:        86/86 ✓
 test-cadets.mjs:          37/37 ✓
 test-loans.mjs:           33/33 ✓
 test-audit.mjs:           22/22 ✓
+test-ab189.mjs:           24/24 ✓
 test-pdf.mjs:             32/32 ✓
 test-cloud-disable.mjs:    3/ 3 ✓
 test-v1-import.mjs:       36/36 ✓
@@ -79,7 +80,7 @@ test-csv-import.mjs:      68/68 ✓
 test-stocktake.mjs:       26/26 ✓
 test-qr.mjs:              26/26 ✓
 ─────────────────────────────────
-                         457/457 ✓ across fourteen suites
+                         481/481 ✓ across fifteen suites
 ```
 
 Bundle: `dist/qstore.html` ~1594 KB.
