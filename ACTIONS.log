@@ -58,6 +58,19 @@ Format: [TIMESTAMP UTC] ACTION — details
 -------------------------------------------------------------------------------
 END OF LOG — append new entries above this line
 
+[2026-05-13T06:00:00Z] GIT COMMIT + PUSH — per-user PIN lockout (f53d9cc)
+  src/auth.js: localStorage lockout tracking; escalating delays 30s/5m/30m
+  src/ui/login.js: countdown display, keypad disabled while locked
+  481/481 tests passing.
+
+[2026-05-13T05:45:00Z] GIT COMMIT + PUSH — mobile responsive layout (93101bb)
+  qstore.css: @media 700px and 480px breakpoints for inventory/loans/cadets tables
+
+[2026-05-13T05:30:00Z] GIT COMMIT + PUSH — audit logging + rank fix (185ca37)
+  src/ui/loans.js: pdf_voucher + pdf_ab189 audit entries added
+  src/ranks.js: normaliseRankInput strips parenthesised groups (CAPT(AAC) fix)
+  docs/ARCHITECTURE.md: action key registry updated
+
 [2026-05-13T05:00:00Z] FILES MODIFIED — toast notification rollout (Task 1)
   NEW: src/ui/toast.js — showToast() component, aria-live, auto-dismiss
   MODIFIED: qstore.css — toast-container + variant CSS
