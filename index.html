@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0e1014">
+  <title>QStore IMS</title>
+  <link rel="stylesheet" href="qstore.css">
+</head>
+<body>
+  <div id="app">
+    <!-- The shell mounts here on boot. Plain text fallback if JS is disabled
+         or the bundle fails to load. -->
+    <noscript>
+      <div class="fatal">
+        <h1>JavaScript is required</h1>
+        <p>QStore IMS needs JavaScript enabled to run. Please enable it in
+           your browser settings and reload this page.</p>
+      </div>
+    </noscript>
+  </div>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "hash-wasm": "https://esm.sh/hash-wasm@4.11.0",
+        "@azure/msal-browser": "https://esm.sh/@azure/[email protected]"
+      }
+    }
+  </script>
+
+  <script type="module">
+    import { boot } from './src/ui/shell.js';
+    boot(document.getElementById('app'));
+  </script>
+</body>
+</html>
