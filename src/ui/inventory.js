@@ -37,6 +37,7 @@ import { processItemPhoto } from './photo.js';
 import { generateStockReport, generateQRSheet, downloadPdf } from '../pdf.js';
 import { openQRScanModal } from './qr-scan.js';
 import { openModal }   from './modal.js';
+import { showToast }   from './toast.js';
 import { esc, $, $$, render, fmtDate, ObjectURLPool } from './util.js';
 
 // -----------------------------------------------------------------------------
@@ -369,7 +370,7 @@ async function _doPrintStock(button) {
     const result = await generateStockReport(items, { unit, subtitle });
     downloadPdf(result);
   } catch (err) {
-    alert('Stock report generation failed: ' + (err.message || err));
+    showToast('Stock report generation failed: ' + (err.message || err), 'error');
   } finally {
     if (button) { button.disabled = false; button.textContent = '⎙ Print stock'; }
   }
@@ -392,7 +393,7 @@ async function _doPrintQR(button) {
     const result = await generateQRSheet(items, { unit });
     downloadPdf(result);
   } catch (err) {
-    alert('QR sheet generation failed: ' + (err.message || err));
+    showToast('QR sheet generation failed: ' + (err.message || err), 'error');
   } finally {
     if (button) { button.disabled = false; button.textContent = '⎙ QR codes'; }
   }
@@ -405,7 +406,7 @@ function _doScanQR() {
   openQRScanModal(async (itemId) => {
     const item = await Storage.items.get(itemId);
     if (!item) {
-      alert('Scanned item not found in this Q-Store. The label may belong to a different unit.');
+      showToast('Scanned item not found in this Q-Store. The label may belong to a different unit.', 'warn');
       return;
     }
     await _openEditModal(itemId);
@@ -886,9 +887,7 @@ function _sessionName() {
 }
 
 function _flashError(message) {
-  // Tiny non-blocking error reporter. For now, alert(); in a future round
-  // we'll add a proper toast component.
-  alert(message);  // eslint-disable-line no-alert
+  showToast(message, 'error');
 }
 
 // -----------------------------------------------------------------------------

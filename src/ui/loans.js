@@ -49,6 +49,7 @@ import * as AUTH    from '../auth.js';
 import * as Sync    from '../sync.js';
 import { generateIssueVoucher, generateAB189, generateOutstandingLoansReport, downloadPdf } from '../pdf.js';
 import { openModal }                       from './modal.js';
+import { showToast }                       from './toast.js';
 import { esc, $, $$, render, fmtDateOnly } from './util.js';
 
 // -----------------------------------------------------------------------------
@@ -552,7 +553,7 @@ async function _submitIssue(body) {
         } catch (err) {
           voucherBtn.textContent = '⎙ Issue Voucher';
           voucherBtn.disabled = false;
-          alert('Voucher generation failed: ' + (err.message || err));
+          showToast('Voucher generation failed: ' + (err.message || err), 'error');
         }
       });
       const ab189Btn = panel.querySelector('[data-action="print-batch-ab189"]');
@@ -566,7 +567,7 @@ async function _submitIssue(body) {
         } catch (err) {
           ab189Btn.textContent = '⎙ AB189';
           ab189Btn.disabled = false;
-          alert('AB189 generation failed: ' + (err.message || err));
+          showToast('AB189 generation failed: ' + (err.message || err), 'error');
         }
       });
     },
@@ -990,7 +991,7 @@ function _wireAllTab(body) {
       const result = await generateOutstandingLoansReport(active, { unit, subtitle });
       downloadPdf(result);
     } catch (err) {
-      alert('Outstanding-loans report failed: ' + (err.message || err));
+      showToast('Outstanding-loans report failed: ' + (err.message || err), 'error');
     } finally {
       btn.textContent = orig;
       btn.disabled = false;
@@ -1008,7 +1009,7 @@ function _wireAllTab(body) {
       try {
         await _printVoucherForLoanRef(ref);
       } catch (err) {
-        alert('Voucher generation failed: ' + (err.message || err));
+        showToast('Voucher generation failed: ' + (err.message || err), 'error');
       } finally {
         btn.textContent = orig;
         btn.disabled = false;
@@ -1025,7 +1026,7 @@ function _wireAllTab(body) {
       try {
         await _printAB189ForLoanRef(ref);
       } catch (err) {
-        alert('AB189 generation failed: ' + (err.message || err));
+        showToast('AB189 generation failed: ' + (err.message || err), 'error');
       } finally {
         btn.textContent = orig;
         btn.disabled = false;

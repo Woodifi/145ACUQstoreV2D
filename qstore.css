@@ -2788,6 +2788,49 @@ input {
 }
 
 /* =============================================================================
+   Toast notifications
+   ============================================================================= */
+
+.toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+  max-width: 380px;
+}
+
+.toast {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--border);
+  color: var(--text-primary);
+  padding: 11px 16px;
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  line-height: 1.4;
+  box-shadow: var(--shadow-card);
+  pointer-events: all;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateX(16px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.toast--visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.toast--success { border-left-color: var(--good); }
+.toast--error   { border-left-color: var(--danger); }
+.toast--warn    { border-left-color: var(--warn); }
+.toast--info    { border-left-color: var(--info); }
+
+/* =============================================================================
    QR scan modal
    ============================================================================= */
 

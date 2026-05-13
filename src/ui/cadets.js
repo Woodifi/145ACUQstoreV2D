@@ -55,6 +55,7 @@ import {
 import { generateNominalRoll, downloadPdf }        from '../pdf.js';
 import { openModal }                              from './modal.js';
 import { esc, $, $$, render, fmtDateOnly }        from './util.js';
+import { showToast }                              from './toast.js';
 
 // -----------------------------------------------------------------------------
 // Module state
@@ -304,7 +305,7 @@ async function _doPrintRoll(button) {
     const result = await generateNominalRoll(filtered, { unit, subtitle });
     downloadPdf(result);
   } catch (err) {
-    alert('Roll generation failed: ' + (err.message || err));
+    showToast('Roll generation failed: ' + (err.message || err), 'error');
   } finally {
     if (button) { button.disabled = false; button.textContent = '⎙ Print roll'; }
   }
@@ -323,7 +324,7 @@ async function _openEditModal(svcNo) {
   AUTH.requirePermission('manageCadets');
   const cadet = await Storage.cadets.get(svcNo);
   if (!cadet) {
-    alert('That cadet has been deleted. Refreshing the list.');
+    showToast('That cadet has been deleted. Refreshing the list.', 'warn');
     await _render();
     return;
   }
@@ -560,7 +561,7 @@ async function _openDeleteModal(svcNo) {
   AUTH.requirePermission('manageCadets');
   const cadet = await Storage.cadets.get(svcNo);
   if (!cadet) {
-    alert('That cadet has been deleted already. Refreshing.');
+    showToast('That cadet has been deleted already. Refreshing.', 'warn');
     await _render();
     return;
   }

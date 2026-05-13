@@ -36,6 +36,7 @@ import { generateStocktakeReport, downloadPdf } from '../pdf.js';
 import { openModal } from './modal.js';
 import { esc, $, $$, render } from './util.js';
 import { CONDITIONS } from '../conditions.js';
+import { showToast } from './toast.js';
 
 let _root = null;
 let _categoryFilter = '';
@@ -462,7 +463,7 @@ async function _onDiscard() {
           await _render();
           Sync.notifyChanged();
         } catch (err) {
-          alert('Discard failed: ' + (err.message || err));
+          showToast('Discard failed: ' + (err.message || err), 'error');
         }
       });
     },
@@ -547,7 +548,7 @@ async function _onFinalise() {
           // so we still have the session's row data in scope.
           await _offerReportDownload(sessionMeta);
         } catch (err) {
-          alert('Finalisation failed: ' + (err.message || err));
+          showToast('Finalisation failed: ' + (err.message || err), 'error');
           btn.disabled = false;
           btn.textContent = '✓ Finalise & generate report';
         }
@@ -649,7 +650,7 @@ async function _offerReportDownload(sessionMeta) {
           downloadPdf(result);
           close();
         } catch (err) {
-          alert('Report generation failed: ' + (err.message || err));
+          showToast('Report generation failed: ' + (err.message || err), 'error');
           btn.disabled = false;
           btn.textContent = 'Download stocktake report';
         }

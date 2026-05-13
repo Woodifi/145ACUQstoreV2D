@@ -24,6 +24,7 @@ import * as Sync    from '../sync.js';
 import { openModal } from './modal.js';
 import { esc, $, $$ } from './util.js';
 import * as Csv from '../csv-import.js';
+import { showToast } from './toast.js';
 
 // -----------------------------------------------------------------------------
 // Public entry points
@@ -113,7 +114,7 @@ async function _handleSelectedFile(file, spec) {
   try {
     text = await file.text();
   } catch (err) {
-    alert(`Could not read file: ${err.message || err}`);
+    showToast(`Could not read file: ${err.message || err}`, 'error');
     return;
   }
 
@@ -121,7 +122,7 @@ async function _handleSelectedFile(file, spec) {
   try {
     result = await spec.parser(text);
   } catch (err) {
-    alert(`CSV parse failed: ${err.message || err}`);
+    showToast(`CSV parse failed: ${err.message || err}`, 'error');
     return;
   }
 
@@ -311,7 +312,7 @@ function _showPreview(filename, parseResult, spec) {
           await _doCommit(rows, spec, importable);
           close();
         } catch (err) {
-          alert(`Import failed: ${err.message || err}`);
+          showToast(`Import failed: ${err.message || err}`, 'error');
           confirmBtn.disabled = false;
           confirmBtn.textContent = `Import ${importable} row(s)`;
         }

@@ -32,6 +32,7 @@ import { STAFF_RANKS_CANONICAL, CADET_RANKS } from '../ranks.js';
 import * as Recovery from '../recovery.js';
 import * as Migration from '../migration.js';
 import * as CsvUi from './csv-import.js';
+import { showToast } from './toast.js';
 
 let _root = null;
 let _statusListener = null;
@@ -715,7 +716,7 @@ async function _onToggleCloudDisabled(e) {
                             // updates if it's now visible
     await _render();
   } catch (err) {
-    alert('Failed to update cloud-disabled setting: ' + (err.message || err));
+    showToast('Failed to update cloud-disabled setting: ' + (err.message || err), 'error');
     // Roll back the visual state so the UI matches storage.
     checkbox.checked = !desiredDisabled;
   } finally {
@@ -850,7 +851,7 @@ async function _doSignIn() {
     // executes — the next page load will resume.
     await _refreshSyncBlock(Sync.getStatus());
   } catch (err) {
-    alert('Sign-in failed: ' + (err.message || err));
+    showToast('Sign-in failed: ' + (err.message || err), 'error');
   }
 }
 
@@ -860,7 +861,7 @@ async function _doSignOut() {
     await getProvider().signOut();
     await _refreshSyncBlock(Sync.getStatus());
   } catch (err) {
-    alert('Sign-out failed: ' + (err.message || err));
+    showToast('Sign-out failed: ' + (err.message || err), 'error');
   }
 }
 
@@ -869,7 +870,7 @@ async function _doSyncNow() {
     await Sync.syncNow();
     _flashSuccess('Synced to OneDrive.');
   } catch (err) {
-    alert('Sync failed: ' + (err.message || err));
+    showToast('Sync failed: ' + (err.message || err), 'error');
   }
 }
 
@@ -973,7 +974,7 @@ async function _doExportData(btn) {
     _flashSuccess(`Backup saved as ${filename}.`);
   } catch (err) {
     console.error('Export failed:', err);
-    alert('Export failed: ' + (err.message || err));
+    showToast('Export failed: ' + (err.message || err), 'error');
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -1024,7 +1025,7 @@ async function _doImportData(btn) {
         // operation cleanly.
         const fileInput = $('input[data-target="import-file"]', _root);
         if (!fileInput) {
-          alert('Internal error: file input missing.');
+          showToast('Internal error: file input missing.', 'error');
           return;
         }
         // One-shot listener so repeated imports don't stack handlers.
@@ -1050,11 +1051,11 @@ async function _performImport(file, btn) {
     try {
       snapshot = JSON.parse(text);
     } catch {
-      alert('That file is not valid JSON. Choose a backup file produced by QStore.');
+      showToast('That file is not valid JSON. Choose a backup file produced by QStore.', 'error');
       return;
     }
     if (!snapshot || typeof snapshot !== 'object' || !snapshot.schemaVersion) {
-      alert('That file is not a QStore backup (missing schemaVersion).');
+      showToast('That file is not a QStore backup (missing schemaVersion).', 'error');
       return;
     }
     // Storage.importAll throws on schema mismatch; we surface that cleanly.
@@ -1075,11 +1076,11 @@ async function _performImport(file, btn) {
     // Force a reload — the current page state is now stale, and the
     // session may also be invalid (the imported users table might not
     // contain the currently-logged-in user).
-    alert('Backup restored. The page will now reload.');
+    showToast('Backup restored. The page will now reload.', 'success', 2000);
     location.reload();
   } catch (err) {
     console.error('Import failed:', err);
-    alert('Restore failed: ' + (err.message || err));
+    showToast('Restore failed: ' + (err.message || err), 'error');
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -1120,7 +1121,7 @@ function _flashSuccess(message) {
 async function _doGenerateRecovery(button) {
   const sess = AUTH.getSession();
   if (!sess?.userId) {
-    alert('No active session — cannot generate recovery code.');
+    showToast('No active session — cannot generate recovery code.', 'warn');
     return;
   }
 
@@ -1154,7 +1155,7 @@ async function _doGenerateRecovery(button) {
     // even before they read the code.
     _openRecoveryFromSettings(formattedCode, before.exists);
   } catch (err) {
-    alert('Failed to generate recovery code: ' + (err.message || err));
+    showToast('Failed to generate recovery code: ' + (err.message || err), 'error');
   } finally {
     if (button) button.disabled = false;
   }
@@ -1367,7 +1368,7 @@ async function _doImportV1(btn) {
         close();
         const fileInput = $('input[data-target="import-v1-file"]', _root);
         if (!fileInput) {
-          alert('Internal error: v1 file input missing.');
+          showToast('Internal error: v1 file input missing.', 'error');
           return;
         }
         const onChange = async () => {
@@ -1395,8 +1396,7 @@ async function _performV1Import(file, btn) {
     const text = await file.text();
     parsed = JSON.parse(text);
   } catch (err) {
-    alert('Could not read the v1 file: ' + (err.message || err) +
-          '\n\nThe file may be corrupted or not a valid JSON export.');
+    showToast('Could not read the v1 file: ' + (err.message || err) + ' — The file may be corrupted or not a valid JSON export.', 'error');
     if (btn) btn.disabled = false;
     return;
   }
@@ -1437,10 +1437,7 @@ async function _performV1Import(file, btn) {
     result = await Migration.runFromObject(parsed, { wipeFirst: true, onProgress });
   } catch (err) {
     if (progressClose) progressClose();
-    alert('v1 import failed: ' + (err.message || err) +
-          '\n\nThe database may be in a partially-migrated state. ' +
-          'Restore from a v2 backup file, or re-run the v1 import after ' +
-          'the issue is resolved.');
+    showToast('v1 import failed: ' + (err.message || err) + ' — Database may be partially migrated. Restore from a v2 backup or re-run the import.', 'error', 8000);
     if (btn) btn.disabled = false;
     return;
   }
