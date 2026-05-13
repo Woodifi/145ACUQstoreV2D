@@ -85,6 +85,53 @@ const ARGON_PARAMS = {
 };
 
 // -----------------------------------------------------------------------------
+// PIN lockout — per-user, localStorage-backed
+// -----------------------------------------------------------------------------
+// After LOCKOUT_THRESHOLD consecutive failures the account is locked for an
+// escalating delay. Stored in localStorage so a page refresh doesn't reset it.
+// State is cleared on successful login.
+//
+// Thresholds: 5 → 30 s, 10 → 5 min, 15 → 30 min.
+// localStorage key: qstore_lockout_<userId>
+
+const LOCKOUT_THRESHOLD = 5;
+const LOCKOUT_KEY_PREFIX = 'qstore_lockout_';
+
+function _lockoutKey(userId) { return LOCKOUT_KEY_PREFIX + userId; }
+
+function _readLockout(userId) {
+  try {
+    const raw = localStorage.getItem(_lockoutKey(userId));
+    return raw ? JSON.parse(raw) : { failures: 0, lockedUntil: 0 };
+  } catch {
+    return { failures: 0, lockedUntil: 0 };
+  }
+}
+
+function _writeLockout(userId, state) {
+  try { localStorage.setItem(_lockoutKey(userId), JSON.stringify(state)); } catch { /* storage full */ }
+}
+
+function _lockoutDurationMs(failures) {
+  if (failures >= 15) return 30 * 60 * 1000;
+  if (failures >= 10) return 5 * 60 * 1000;
+  return 30 * 1000;
+}
+
+/** Current lockout status for a user. Returns { locked, unlockAt, failures }. */
+export function getLockoutStatus(userId) {
+  const state = _readLockout(userId);
+  const now = Date.now();
+  const locked = state.lockedUntil > now;
+  return { locked, unlockAt: state.lockedUntil, failures: state.failures };
+}
+
+/** Clear lockout for a user (called on successful login). */
+export function clearLockout(userId) {
+  try { localStorage.removeItem(_lockoutKey(userId)); } catch { /* ignore */ }
+}
+
+// -----------------------------------------------------------------------------
 // Module state
 // -----------------------------------------------------------------------------
 
@@ -194,6 +241,12 @@ export async function login(userId, pin) {
   const user = await Storage.users.get(userId);
   if (!user) return { ok: false, reason: 'user_not_found' };
 
+  // Check lockout before expensive argon2id verification.
+  const lockout = _readLockout(userId);
+  if (lockout.lockedUntil > Date.now()) {
+    return { ok: false, reason: 'locked_out', unlockAt: lockout.lockedUntil };
+  }
+
   const algo = user.pinHashAlgorithm || (user.legacyPinHash ? 'legacy-sha' : 'argon2id');
   let verified    = false;
   let needsRehash = false;
@@ -210,11 +263,22 @@ export async function login(userId, pin) {
   }
 
   if (!verified) {
+    const newFailures = (lockout.failures || 0) + 1;
+    const newLockout = {
+      failures:    newFailures,
+      lockedUntil: newFailures % LOCKOUT_THRESHOLD === 0
+        ? Date.now() + _lockoutDurationMs(newFailures)
+        : lockout.lockedUntil || 0,
+    };
+    _writeLockout(userId, newLockout);
     await Storage.audit.append({
       action: 'login_failed',
       user:   user.name || user.username,
-      desc:   `Failed login attempt for user: ${user.username}`,
+      desc:   `Failed login attempt for user: ${user.username} (attempt ${newFailures})`,
     });
+    if (newLockout.lockedUntil > Date.now()) {
+      return { ok: false, reason: 'locked_out', unlockAt: newLockout.lockedUntil };
+    }
     return { ok: false, reason: 'invalid_pin' };
   }
 
@@ -254,6 +318,7 @@ export async function login(userId, pin) {
     user:   user.name,
     desc:   `Login: ${user.name} (${ROLES[user.role]?.label || user.role})`,
   });
+  clearLockout(userId);
   _notify();
   return { ok: true, session: { ..._session } };
 }

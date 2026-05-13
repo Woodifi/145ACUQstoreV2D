@@ -34,6 +34,7 @@ let _selectedUserId = null;
 let _pinBuffer      = '';
 let _pinRevealed    = false;
 let _busy           = false;
+let _lockoutTimer   = null;
 
 /**
  * Mount the login screen into a DOM container. Calls onLoggedIn(session)
@@ -178,6 +179,13 @@ async function _renderPinKeypad() {
   _root.__loginKeydownUnbind = () => {
     document.removeEventListener('keydown', _onKeydown);
   };
+
+  // If this user is already locked out (e.g. returning to the keypad after
+  // switching tabs), start the countdown immediately.
+  const lockoutStatus = AUTH.getLockoutStatus(_selectedUserId);
+  if (lockoutStatus.locked) {
+    _startLockoutCountdown(lockoutStatus.unlockAt);
+  }
 }
 
 function _pinDisplayInnerHtml() {
@@ -316,6 +324,11 @@ async function _submitPin() {
 
   // Failure path. Most common reason is invalid_pin. Show error, shake,
   // refresh display.
+  if (result.reason === 'locked_out') {
+    _startLockoutCountdown(result.unlockAt);
+    return;
+  }
+
   let msg;
   switch (result.reason) {
     case 'invalid_pin':         msg = 'Incorrect PIN. Try again.';                          break;
@@ -339,7 +352,37 @@ async function _submitPin() {
   _refreshPinDisplay();
 }
 
+function _startLockoutCountdown(unlockAt) {
+  if (_lockoutTimer) clearInterval(_lockoutTimer);
+
+  const errorEl  = $('.login__error', _root);
+  const keypad   = $('.login__keypad', _root);
+  if (keypad) keypad.setAttribute('aria-disabled', 'true');
+  $$('.login__key', _root).forEach((b) => b.disabled = true);
+
+  const _tick = () => {
+    const secs = Math.ceil((unlockAt - Date.now()) / 1000);
+    if (secs <= 0) {
+      clearInterval(_lockoutTimer);
+      _lockoutTimer = null;
+      if (errorEl) errorEl.textContent = '';
+      if (keypad) keypad.removeAttribute('aria-disabled');
+      $$('.login__key', _root).forEach((b) => b.disabled = false);
+      _refreshPinDisplay();
+      return;
+    }
+    const display = secs >= 60
+      ? `${Math.ceil(secs / 60)} min ${secs % 60} s`
+      : `${secs} s`;
+    if (errorEl) errorEl.textContent = `Too many attempts — locked for ${display}`;
+  };
+
+  _tick();
+  _lockoutTimer = setInterval(_tick, 1000);
+}
+
 function _teardownKeypad() {
+  if (_lockoutTimer) { clearInterval(_lockoutTimer); _lockoutTimer = null; }
   if (_root?.__loginKeydownUnbind) {
     _root.__loginKeydownUnbind();
     delete _root.__loginKeydownUnbind;
