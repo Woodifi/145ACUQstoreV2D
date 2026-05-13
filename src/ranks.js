@@ -65,7 +65,7 @@ export const STAFF_RANKS_RECOGNISED = Object.freeze([
  * before classification or canonicalisation.
  */
 export function normaliseRankInput(rank) {
-  return String(rank || '').toUpperCase().replace(/[\s.]/g, '');
+  return String(rank || '').replace(/\([^)]*\)/g, '').toUpperCase().replace(/[\s.]/g, '');
 }
 
 /**

@@ -396,6 +396,8 @@ the table below.
 | `cadet_delete` | cadets | "Deleted cadet: \<rank\> \<surname\> (\<svcNo\>) — reason: \<reason\>" |
 | `issue` | loans | "\<ref\>: \<itemName\> × \<qty\> issued to \<borrowerName\> for \<purpose\>" |
 | `return` | loans | "\<ref\>: \<itemName\> × \<qty\> returned by \<borrowerName\> — \<condition\>" |
+| `pdf_voucher` | loans | "Issue voucher printed — \<n\> item(s): \<ref\>, \<ref\>, ..." |
+| `pdf_ab189` | loans | "AB189 printed for \<borrowerName\> — \<n\> item(s): \<ref\>, ..." |
 | `pin_change` | auth | "PIN updated for \<username\>." |
 | `recovery_set` | auth/settings | "Recovery code generated for \<username\>." |
 | `recovery_rotated` | settings | "Recovery code regenerated for \<username\> from settings." |
@@ -407,7 +409,7 @@ the table below.
 | `logout` | auth | "Logout." |
 | `login_failed` | auth | "Failed login attempt for \<userId\>." |
 
-(Future: sync actions, per-user lockout actions.)
+(Future: sync actions, per-user lockout actions, csv_import action.)
 
 ---
 

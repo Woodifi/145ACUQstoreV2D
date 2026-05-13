@@ -1136,6 +1136,12 @@ async function _printVoucherForLoans(loans) {
   const issuedByName = AUTH.getSession()?.name || '';
   const result = await generateIssueVoucher(loans, { unit, issuedByName });
   downloadPdf(result);
+  const refs = loans.map((l) => l.ref).join(', ');
+  await Storage.audit.append({
+    action: 'pdf_voucher',
+    user:   AUTH.getSession()?.name || 'unknown',
+    desc:   `Issue voucher printed — ${loans.length} item(s): ${refs}`,
+  });
 }
 
 async function _printVoucherForLoanRef(ref) {
@@ -1168,6 +1174,12 @@ async function _printAB189ForLoans(loans) {
   const cadet = await Storage.cadets.get(loans[0].borrowerSvc);
   const result = await generateAB189(loans, { unit, cadet: cadet || null });
   downloadPdf(result);
+  const refs = loans.map((l) => l.ref).join(', ');
+  await Storage.audit.append({
+    action: 'pdf_ab189',
+    user:   AUTH.getSession()?.name || 'unknown',
+    desc:   `AB189 printed for ${loans[0].borrowerName || loans[0].borrowerSvc} — ${loans.length} item(s): ${refs}`,
+  });
 }
 
 async function _printAB189ForLoanRef(ref) {
