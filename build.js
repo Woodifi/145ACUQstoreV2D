@@ -45,8 +45,9 @@ const isDev   = process.argv.includes('--dev') || isWatch;
 
 const ENTRY    = join(__dirname, 'src/ui/shell.js');
 const CSS_FILE = join(__dirname, 'qstore.css');
-const HTML_IN  = join(__dirname, 'index.html');
-const HTML_OUT = join(__dirname, 'dist/qstore.html');
+const HTML_IN    = join(__dirname, 'index.html');
+const HTML_OUT   = join(__dirname, 'dist/qstore.html');
+const PAGES_OUT  = join(__dirname, 'docs/index.html');   // GitHub Pages entry
 
 const ESBUILD_OPTS = {
   entryPoints: [ENTRY],
@@ -97,8 +98,12 @@ async function buildOnce() {
 
   const html = inlineIntoHtml(indexHtml, cssSource, jsBundle);
 
-  await mkdir(dirname(HTML_OUT), { recursive: true });
-  await writeFile(HTML_OUT, html);
+  await mkdir(dirname(HTML_OUT),  { recursive: true });
+  await mkdir(dirname(PAGES_OUT), { recursive: true });
+  await Promise.all([
+    writeFile(HTML_OUT,  html),
+    writeFile(PAGES_OUT, html),
+  ]);
 
   // Sanity check — verify the argon2 encoded-output template literal survived
   // the inline step intact. The literal in hash-wasm's bundled output looks
@@ -134,6 +139,7 @@ async function buildOnce() {
   const cssKb  = (cssSource.length / 1024).toFixed(1);
 
   console.log(`✓ ${HTML_OUT} — ${sizeKb} KB (${ms} ms)`);
+  console.log(`✓ ${PAGES_OUT} — (GitHub Pages copy)`);
   console.log(`  js: ${jsKb} KB${isDev ? ' (with inline source map)' : ' (minified)'}`);
   console.log(`  css: ${cssKb} KB`);
   return { sizeBytes: html.length, ms };

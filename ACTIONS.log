@@ -57,3 +57,20 @@ Format: [TIMESTAMP UTC] ACTION — details
 
 -------------------------------------------------------------------------------
 END OF LOG — append new entries above this line
+
+[2026-05-13T04:20:00Z] BUILD.JS MODIFIED — now writes docs/index.html in addition to dist/qstore.html
+  GitHub Pages requires index.html; docs/ is the configured Pages source folder
+
+[2026-05-13T04:20:05Z] FILE CREATED — docs/.nojekyll
+  Suppresses GitHub Pages Jekyll processing so HTML is served as-is
+
+[2026-05-13T04:20:10Z] FILE CREATED — docs/index.html
+  GitHub Pages entry point — identical content to dist/qstore.html, produced by build.js
+
+[2026-05-13T04:20:15Z] GITHUB PAGES CONFIG UPDATED via API
+  Changed source: main/root → master/docs
+  URL: https://woodifi.github.io/145ACUQstoreV2D/
+
+[2026-05-13T04:20:30Z] GIT COMMIT + PUSH — GitHub Pages setup
+  Committed: build.js, docs/.nojekyll, docs/index.html, ACTIONS.log
+
