@@ -35,6 +35,7 @@
 
 import * as esbuild from 'esbuild';
 import { readFile, writeFile, mkdir, stat } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -49,6 +50,22 @@ const HTML_IN    = join(__dirname, 'index.html');
 const HTML_OUT   = join(__dirname, 'dist/qstore.html');
 const PAGES_OUT  = join(__dirname, 'docs/index.html');   // GitHub Pages entry
 
+// Unique per-build fingerprint — stamped into the JS bundle and HTML meta tags.
+// Keep a log of which build ID was distributed to which unit so you can trace
+// any unauthorised copy back to its source.
+function _generateBuildId() {
+  const now  = new Date();
+  const date = now.toISOString().slice(0, 10).replace(/-/g, '');
+  const rand = randomBytes(4).toString('hex').toUpperCase();
+  return `${date}-${rand}`;
+}
+function _buildTimestamp() {
+  return new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+}
+
+const BUILD_ID = isDev ? 'dev' : _generateBuildId();
+const BUILD_TS = isDev ? 'dev' : _buildTimestamp();
+
 const ESBUILD_OPTS = {
   entryPoints: [ENTRY],
   bundle: true,
@@ -60,6 +77,12 @@ const ESBUILD_OPTS = {
   legalComments: 'none',
   write: false,        // we want the bytes back, not a file on disk
   logLevel: 'warning', // suppress info chatter, keep warnings + errors
+  // Inject build-time constants into the bundle as string literals.
+  // These survive minification and make every build uniquely identifiable.
+  define: {
+    __QSTORE_BUILD_ID__: JSON.stringify(BUILD_ID),
+    __QSTORE_BUILD_TS__: JSON.stringify(BUILD_TS),
+  },
 };
 
 // -----------------------------------------------------------------------------
@@ -96,7 +119,7 @@ async function buildOnce() {
   const cssSource = await readFile(CSS_FILE, 'utf8');
   const indexHtml = await readFile(HTML_IN,  'utf8');
 
-  const html = inlineIntoHtml(indexHtml, cssSource, jsBundle);
+  const html = inlineIntoHtml(indexHtml, cssSource, jsBundle, BUILD_ID, BUILD_TS);
 
   await mkdir(dirname(HTML_OUT),  { recursive: true });
   await mkdir(dirname(PAGES_OUT), { recursive: true });
@@ -142,10 +165,24 @@ async function buildOnce() {
   console.log(`✓ ${PAGES_OUT} — (GitHub Pages copy)`);
   console.log(`  js: ${jsKb} KB${isDev ? ' (with inline source map)' : ' (minified)'}`);
   console.log(`  css: ${cssKb} KB`);
+  if (!isDev) console.log(`  build ID: ${BUILD_ID}  (${BUILD_TS})`);
   return { sizeBytes: html.length, ms };
 }
 
-function inlineIntoHtml(html, css, js) {
+function inlineIntoHtml(html, css, js, buildId, buildTs) {
+  // 0) Inject copyright meta tags and a fingerprint comment into <head>.
+  //    These survive copy/paste of the HTML file and are indexed by search
+  //    engines, making authorship discoverable and legally defensible.
+  const metaTags = [
+    `<meta name="author" content="Sean Scales">`,
+    `<meta name="copyright" content="© 2025 Sean Scales. All rights reserved.">`,
+    `<meta name="generator" content="QStore IMS Build ${buildId}">`,
+    `<meta name="license" content="Proprietary — redistribution and modification prohibited without written consent. Contact: admin@seanscales.com.au">`,
+  ].join('\n  ');
+  const fingerprintComment =
+    `\n  <!-- QStore IMS v2 | Author: Sean Scales | Build: ${buildId} | Built: ${buildTs} | © 2025 Sean Scales. All rights reserved. Proprietary software — unauthorised copying or modification is prohibited. admin@seanscales.com.au -->`;
+  html = html.replace('</head>', `  ${metaTags}${fingerprintComment}\n</head>`);
+
   // 1) Replace the <link rel="stylesheet" href="qstore.css"> with an inline
   //    <style> block. Match permissively to allow attribute order variation.
   const linkRe = /<link\s+rel="stylesheet"\s+href="qstore\.css"\s*\/?>/i;

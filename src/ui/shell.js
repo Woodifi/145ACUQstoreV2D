@@ -20,6 +20,7 @@
 //   true. Clears automatically after a successful PIN change.
 // =============================================================================
 
+import { logBanner, checkOrigin, checkIntegrity } from '../fingerprint.js';
 import * as Storage   from '../storage.js';
 import * as AUTH      from '../auth.js';
 import * as Sync      from '../sync.js';
@@ -55,6 +56,10 @@ let _currentUnmount   = null;
 
 export async function boot(rootEl) {
   _root = rootEl;
+  logBanner();
+  checkOrigin();
+  // Integrity check deferred briefly so the DOM is fully parsed first.
+  setTimeout(checkIntegrity, 1500);
   try {
     await Storage.init();
     await Storage.requestPersistence();
