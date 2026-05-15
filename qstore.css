@@ -3132,3 +3132,115 @@ input {
   text-align: center;
   margin: 0;
 }
+
+/* ==========================================================================
+   About section
+   ========================================================================== */
+
+.about__block {
+  margin-bottom: 20px;
+}
+
+.about__app-name {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+
+.about__version {
+  font-size: 0.9rem;
+  font-weight: 400;
+  color: var(--text-dim);
+  margin-left: 6px;
+}
+
+.about__tagline {
+  margin: 4px 0 0;
+  color: var(--text-dim);
+  font-size: 0.875rem;
+}
+
+.about__credits {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.about__credit-row {
+  display: flex;
+  gap: 16px;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.about__credit-label {
+  flex: 0 0 180px;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.about__credit-value {
+  color: var(--text);
+}
+
+.about__link {
+  color: var(--gold);
+  text-decoration: none;
+}
+.about__link:hover {
+  text-decoration: underline;
+}
+
+.about__license {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.about__license-summary {
+  padding: 10px 14px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  list-style: none;
+  user-select: none;
+}
+.about__license-summary::-webkit-details-marker { display: none; }
+.about__license-summary::before {
+  content: '▶ ';
+  font-size: 0.7em;
+  transition: transform 0.15s;
+  display: inline-block;
+}
+details[open] .about__license-summary::before {
+  transform: rotate(90deg);
+}
+
+.about__license-body {
+  padding: 0 16px 16px;
+  font-size: 0.78rem;
+  line-height: 1.65;
+  color: var(--text-dim);
+  border-top: 1px solid var(--border);
+}
+
+.about__license-body p {
+  margin: 12px 0 0;
+}
+
+.about__license-body strong {
+  color: var(--text);
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+}
+
+.about__license-list {
+  margin: 8px 0 0 20px;
+  padding: 0;
+}
+
+.about__license-list li {
+  margin-bottom: 6px;
+}

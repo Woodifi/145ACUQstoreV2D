@@ -80,6 +80,7 @@ async function _render() {
         ${_recoverySectionHtml(recoveryStatus)}
         ${_cloudSectionHtml(settings, status)}
         ${_dataSectionHtml(settings)}
+        ${_aboutSectionHtml()}
       </div>
     </section>
   `);
@@ -1476,4 +1477,104 @@ async function _performV1Import(file, btn) {
   // Re-render so the data section's "last import" timestamp updates.
   await _render();
   if (btn) btn.disabled = false;
+}
+
+// -----------------------------------------------------------------------------
+// About section
+// -----------------------------------------------------------------------------
+
+function _aboutSectionHtml() {
+  return `
+    <section class="settings__section" data-section="about">
+      <header class="settings__section-header">
+        <h2 class="settings__section-title">About QStore IMS</h2>
+      </header>
+
+      <div class="about__block">
+        <div class="about__app-name">QStore IMS <span class="about__version">v2</span></div>
+        <p class="about__tagline">Inventory Management System for Australian Army Cadet Q-Stores</p>
+      </div>
+
+      <div class="about__credits">
+        <div class="about__credit-row">
+          <span class="about__credit-label">Primary Author</span>
+          <span class="about__credit-value">Sean Scales</span>
+        </div>
+        <div class="about__credit-row">
+          <span class="about__credit-label">AI Development Partner</span>
+          <span class="about__credit-value">Claude Sonnet 4.6 — Anthropic</span>
+        </div>
+        <div class="about__credit-row">
+          <span class="about__credit-label">Copyright</span>
+          <span class="about__credit-value">&copy; ${new Date().getFullYear()} Sean Scales. All rights reserved.</span>
+        </div>
+        <div class="about__credit-row">
+          <span class="about__credit-label">Licensing enquiries</span>
+          <span class="about__credit-value"><a href="mailto:admin@seanscales.com.au" class="about__link">admin@seanscales.com.au</a></span>
+        </div>
+      </div>
+
+      <details class="about__license">
+        <summary class="about__license-summary">Proprietary Software Licence</summary>
+        <div class="about__license-body">
+          <p><strong>QStore IMS — Proprietary Software Licence</strong></p>
+          <p>Copyright &copy; ${new Date().getFullYear()} Sean Scales (&ldquo;the Author&rdquo;). All rights reserved.</p>
+
+          <p><strong>OWNERSHIP</strong><br>
+          This software, QStore IMS (the &ldquo;Software&rdquo;), including all associated source code, compiled
+          outputs, documentation, and assets, is the exclusive intellectual property of the Author.
+          All rights not expressly granted herein are reserved by the Author.</p>
+
+          <p><strong>PERMITTED USE</strong><br>
+          Authorised end users may use the Software solely for its intended purpose of inventory
+          management operations. This permission is granted at the Author&rsquo;s sole discretion and
+          may be withdrawn at any time.</p>
+
+          <p><strong>RESTRICTIONS</strong><br>
+          Without the express prior written consent of the Author, you may <strong>not</strong>:</p>
+          <ol class="about__license-list">
+            <li>Distribute, sublicense, sell, lease, rent, lend, or otherwise transfer the Software
+                or any copy thereof to any third party;</li>
+            <li>Modify, adapt, translate, reverse-engineer, decompile, disassemble, or create
+                derivative works based on the Software;</li>
+            <li>Remove, alter, or obscure any copyright, trademark, or proprietary notices
+                contained in or accompanying the Software;</li>
+            <li>Use the Software, in whole or in part, for any commercial purpose or incorporate
+                it into any commercial product or service without a separate written licence
+                agreement with the Author;</li>
+            <li>Publicly display, publicly perform, or otherwise make the Software available to
+                any person not expressly authorised by the Author.</li>
+          </ol>
+
+          <p><strong>INTELLECTUAL PROPERTY</strong><br>
+          The Software incorporates AI-assisted development tooling provided by Anthropic
+          (Claude Sonnet 4.6). All output generated through such tooling in the creation of this
+          Software is attributed to and owned by the Author in accordance with Anthropic&rsquo;s
+          terms of service.</p>
+
+          <p><strong>DISCLAIMER OF WARRANTIES</strong><br>
+          THE SOFTWARE IS PROVIDED &ldquo;AS IS&rdquo;, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+          INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+          PARTICULAR PURPOSE, AND NON-INFRINGEMENT. THE AUTHOR DOES NOT WARRANT THAT THE
+          SOFTWARE WILL BE ERROR-FREE OR UNINTERRUPTED.</p>
+
+          <p><strong>LIMITATION OF LIABILITY</strong><br>
+          TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE AUTHOR SHALL NOT BE LIABLE
+          FOR ANY INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+          (INCLUDING LOSS OF DATA, LOSS OF PROFITS, OR BUSINESS INTERRUPTION) ARISING OUT OF
+          OR IN CONNECTION WITH THE USE OR INABILITY TO USE THE SOFTWARE.</p>
+
+          <p><strong>GOVERNING LAW</strong><br>
+          This licence is governed by the laws of Queensland, Australia. Any dispute arising
+          under or in connection with this licence shall be subject to the exclusive jurisdiction
+          of the courts of Queensland, Australia.</p>
+
+          <p><strong>LICENSING ENQUIRIES</strong><br>
+          To enquire about commercial licensing, distribution rights, or any permissions beyond
+          the scope of this licence, contact the Author at
+          <a href="mailto:admin@seanscales.com.au" class="about__link">admin@seanscales.com.au</a>.</p>
+        </div>
+      </details>
+    </section>
+  `;
 }
