@@ -50,6 +50,7 @@ import * as Sync    from '../sync.js';
 import { generateIssueVoucher, generateAB189, generateOutstandingLoansReport, downloadPdf } from '../pdf.js';
 import { openModal }                       from './modal.js';
 import { showToast }                       from './toast.js';
+import { openKitPicker }                   from './kits.js';
 import { esc, $, $$, render, fmtDateOnly } from './util.js';
 
 // -----------------------------------------------------------------------------
@@ -209,7 +210,10 @@ async function _renderIssueTab(body) {
         <h3 class="loan__heading">1. Borrower</h3>
         ${_borrowerPickerHtml('issue', _issueState.svcNo, activeCadets, borrower)}
 
-        <h3 class="loan__heading">2. Items</h3>
+        <h3 class="loan__heading">2. Items
+          <button type="button" class="btn btn--ghost btn--sm loan__load-kit"
+                  data-action="load-kit" title="Pre-fill with a saved kit">⊞ Load kit</button>
+        </h3>
         ${_issueLinesHtml(_issueState.lines, availableItems)}
 
         <h3 class="loan__heading">3. Issue details</h3>
@@ -367,7 +371,9 @@ function _wireIssueTab(body, activeCadets, availableItems) {
   body.addEventListener('click', async (e) => {
     const action = e.target.closest('[data-action]')?.dataset.action;
     if (!action) return;
-    if (action === 'issue-add-line') {
+    if (action === 'load-kit') {
+      await openKitPicker((kit, items) => _loadKitIntoIssue(kit, items, availableItems));
+    } else if (action === 'issue-add-line') {
       _issueState.lines.push(_freshLine());
       await _render();
     } else if (action === 'issue-remove-line') {
@@ -382,6 +388,33 @@ function _wireIssueTab(body, activeCadets, availableItems) {
       await _submitIssue(body);
     }
   });
+}
+
+async function _loadKitIntoIssue(kit, allItems, availableItems) {
+  // Drop the single empty default line before merging.
+  const existing = _issueState.lines.filter((l) => l.itemId);
+
+  const skipped = [];
+  for (const kitLine of (kit.lines || [])) {
+    const avail = availableItems.find((i) => i.id === kitLine.itemId);
+    if (!avail) {
+      const item = allItems.find((i) => i.id === kitLine.itemId);
+      skipped.push(item ? item.name : kitLine.itemId);
+      continue;
+    }
+    const existing_line = existing.find((l) => l.itemId === kitLine.itemId);
+    if (existing_line) {
+      existing_line.qty = Math.min(existing_line.qty + kitLine.qty, avail._avail);
+    } else {
+      existing.push({ itemId: kitLine.itemId, qty: Math.min(kitLine.qty, avail._avail) });
+    }
+  }
+
+  _issueState.lines = existing.length > 0 ? existing : [_freshLine()];
+  if (skipped.length > 0) {
+    showToast(`${skipped.length} kit item(s) skipped — no stock available: ${skipped.join(', ')}`, 'warn', 7000);
+  }
+  await _render();
 }
 
 async function _submitIssue(body) {

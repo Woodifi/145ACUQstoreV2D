@@ -35,7 +35,7 @@
 // =============================================================================
 
 const DEFAULT_DB_NAME = 'qstore';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let _dbName = DEFAULT_DB_NAME;
 
@@ -51,6 +51,7 @@ export const STORES = Object.freeze({
   USERS:     'users',
   REQUESTS:  'pendingRequests',
   STOCKTAKE: 'stocktakeCounts',
+  KITS:      'kits',
 });
 
 let _db = null;
@@ -153,6 +154,9 @@ function _runSchemaMigrations(db, oldVersion) {
     reqs.createIndex('requestorSvc', 'requestorSvc', { unique: false });
 
     db.createObjectStore(STORES.STOCKTAKE, { keyPath: 'itemId' });
+  }
+  if (oldVersion < 2) {
+    db.createObjectStore(STORES.KITS, { keyPath: 'id' });
   }
   // Future schema upgrades go here. Bump DB_VERSION above and add a new
   // `if (oldVersion < N)` block. NEVER remove old blocks — users on older
@@ -537,6 +541,40 @@ export const stocktake = {
 };
 
 // -----------------------------------------------------------------------------
+// Issue Kits (named item templates for batch issue)
+// -----------------------------------------------------------------------------
+//
+// Kit schema:
+//   id          string  PK ('kit-<uuid>')
+//   name        string  Display name, e.g. "Initial Issue — Male Cadet"
+//   description string  Optional one-liner
+//   lines       Array   [{ itemId, qty }] — ids only; names resolved at use-time
+//   createdAt   string  ISO timestamp
+//   updatedAt   string  ISO timestamp
+
+export const kits = {
+  list: () => _all(STORES.KITS),
+
+  async get(id) {
+    const tx = _db.transaction(STORES.KITS, 'readonly');
+    return (await _reqDone(tx.objectStore(STORES.KITS).get(id))) || null;
+  },
+
+  async put(kit) {
+    if (!kit?.id) throw new Error('Kit.id required');
+    const tx = _db.transaction(STORES.KITS, 'readwrite');
+    tx.objectStore(STORES.KITS).put(kit);
+    await _txDone(tx);
+  },
+
+  async delete(id) {
+    const tx = _db.transaction(STORES.KITS, 'readwrite');
+    tx.objectStore(STORES.KITS).delete(id);
+    await _txDone(tx);
+  },
+};
+
+// -----------------------------------------------------------------------------
 // Audit log (HMAC-chained, append-only at the API level)
 // -----------------------------------------------------------------------------
 
@@ -757,6 +795,7 @@ export async function exportAll() {
     users:           await _all(STORES.USERS),
     pendingRequests: await _all(STORES.REQUESTS),
     stocktakeCounts: await _all(STORES.STOCKTAKE),
+    kits:            await _all(STORES.KITS),
   };
 
   const photoRows = await _all(STORES.PHOTOS);
@@ -803,16 +842,19 @@ function _b64ToBlob(b64, contentType) {
  *   across devices. If you change it, the audit chain will break.
  */
 export async function importAll(snapshot) {
-  if (!snapshot || snapshot.schemaVersion !== DB_VERSION) {
-    throw new Error('Snapshot schema mismatch — expected v' + DB_VERSION
-      + ', got v' + (snapshot?.schemaVersion ?? '?'));
+  if (!snapshot || !snapshot.schemaVersion) {
+    throw new Error('Not a valid QStore backup (missing schemaVersion).');
+  }
+  if (snapshot.schemaVersion > DB_VERSION) {
+    throw new Error('Backup is from a newer version of QStore (v' + snapshot.schemaVersion
+      + '). Update the app before restoring.');
   }
   await wipe({ keepMeta: true });
 
   const stores = [
     STORES.META, STORES.SETTINGS, STORES.COUNTERS, STORES.ITEMS, STORES.CADETS,
     STORES.LOANS, STORES.AUDIT, STORES.USERS, STORES.REQUESTS,
-    STORES.STOCKTAKE, STORES.PHOTOS,
+    STORES.STOCKTAKE, STORES.PHOTOS, STORES.KITS,
   ];
   const tx = _db.transaction(stores, 'readwrite');
   const put = (name, rows) => {
@@ -834,6 +876,7 @@ export async function importAll(snapshot) {
   put(STORES.USERS,     snapshot.users);
   put(STORES.REQUESTS,  snapshot.pendingRequests);
   put(STORES.STOCKTAKE, snapshot.stocktakeCounts);
+  put(STORES.KITS,      snapshot.kits);
 
   const photoStore = tx.objectStore(STORES.PHOTOS);
   for (const p of snapshot.photos || []) {
@@ -867,7 +910,7 @@ export async function wipe({ keepMeta = true, keepUsers = true } = {}) {
   const targets = [
     STORES.SETTINGS, STORES.COUNTERS, STORES.ITEMS, STORES.PHOTOS,
     STORES.CADETS, STORES.LOANS, STORES.AUDIT, STORES.REQUESTS,
-    STORES.STOCKTAKE,
+    STORES.STOCKTAKE, STORES.KITS,
   ];
   if (!keepUsers) targets.push(STORES.USERS);
   if (!keepMeta)  targets.push(STORES.META);

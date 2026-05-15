@@ -36,6 +36,7 @@ import * as Sync       from '../sync.js';
 import { processItemPhoto } from './photo.js';
 import { generateStockReport, generateQRSheet, downloadPdf } from '../pdf.js';
 import { openQRScanModal } from './qr-scan.js';
+import { openKitManager } from './kits.js';
 import { openModal }   from './modal.js';
 import { showToast }   from './toast.js';
 import { esc, $, $$, render, fmtDate, ObjectURLPool } from './util.js';
@@ -141,6 +142,7 @@ async function _render() {
           <button type="button" class="btn btn--ghost" data-action="print-stock" title="Print the currently-shown stock list">⎙ Print stock</button>
           ${AUTH.can('qr') ? `<button type="button" class="btn btn--ghost" data-action="print-qr" title="Print QR code labels for the currently-shown items">⎙ QR codes</button>` : ''}
           ${AUTH.can('qr') ? `<button type="button" class="btn btn--ghost" data-action="scan-qr" title="Scan a QR code label to look up an item">⌖ Scan</button>` : ''}
+          ${canEdit ? `<button type="button" class="btn btn--ghost" data-action="manage-kits" title="Create and manage issue kits">⊞ Kits</button>` : ''}
           ${canAdd ? `<button type="button" class="btn btn--primary" data-action="add">+ Add item</button>` : ''}
         </div>
       </header>
@@ -343,6 +345,9 @@ async function _onRootClick(e) {
       break;
     case 'scan-qr':
       _doScanQR();
+      break;
+    case 'manage-kits':
+      if (AUTH.can('editItem')) openKitManager();
       break;
   }
 }

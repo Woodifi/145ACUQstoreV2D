@@ -70,7 +70,7 @@ expect(v1.ok, `chain valid pre-export (count=${v1.count})`);
 
 console.log('\n[3] Export builds a complete snapshot');
 const snapshot = await Storage.exportAll();
-eq(snapshot.schemaVersion, 1, 'schemaVersion');
+eq(snapshot.schemaVersion, 2, 'schemaVersion');
 expect(typeof snapshot.exportedAt === 'string' && snapshot.exportedAt.includes('T'),
   'exportedAt is ISO');
 expect(snapshot.items.length === 1, 'items present');
@@ -119,7 +119,7 @@ let threw = false;
 try {
   await Storage.importAll({ schemaVersion: 999 });
 } catch (err) {
-  threw = err.message.includes('schema mismatch');
+  threw = err.message.includes('newer version') || err.message.includes('schema');
 }
 expect(threw, 'importAll rejects bad schemaVersion');
 
