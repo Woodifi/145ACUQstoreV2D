@@ -24,8 +24,7 @@
 13. [OC PIN Recovery](#13-oc-pin-recovery)
 14. [Issue Kits](#14-issue-kits)
 15. [QR Codes](#15-qr-codes)
-16. [Distributing to Another Unit](#16-distributing-to-another-unit)
-17. [Troubleshooting](#17-troubleshooting)
+16. [Troubleshooting](#16-troubleshooting)
 
 ---
 
@@ -524,47 +523,7 @@ QR code labels allow quick item lookup using a phone or tablet camera.
 
 ---
 
-## 16. Distributing to Another Unit
-
-QStore IMS can be distributed to other units as a single self-contained HTML file.
-
-### For Your Unit (GitHub Pages)
-
-Your unit accesses the app via your GitHub Pages URL. To update it after changes:
-
-```
-npm run build
-git add -A
-git commit -m "your message"
-git push
-```
-
-### For Another Unit
-
-Each copy for another unit must be built separately to receive a unique tracking ID:
-
-```
-node build.js --dist --recipient="123 ACU Unit Name"
-```
-
-This produces a file in the `dist/` folder named:
-```
-qstore-123-acu-unit-name-YYYYMMDD-XXXXXXXX.html
-```
-
-The build ID is recorded in `DIST_LOG.md` alongside the recipient and date. Send the named HTML file to the unit — they open it directly in a browser with no installation required.
-
-> **Important:** Each unit's copy contains a unique embedded build ID. If an unauthorised copy is found, the build ID in the HTML source (`View Source → search for "Build:"`) identifies which distributed copy it came from.
-
-### What the Receiving Unit Needs
-
-- A modern browser (Chrome, Edge, Firefox, Safari)
-- No internet connection required for basic operation
-- No installation, no server, no dependencies
-
----
-
-## 17. Troubleshooting
+## 16. Troubleshooting
 
 ### App won't load / blank screen
 

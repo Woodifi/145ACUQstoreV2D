@@ -3,3 +3,8 @@ node_modules/
 .DS_Store
 *.log
 !ACTIONS.log
+
+# Owner-only documents — never commit to GitHub
+DIST_LOG.md
+MANUAL_ADDENDUM_OWNER.md
+dist/manual-owner.html
