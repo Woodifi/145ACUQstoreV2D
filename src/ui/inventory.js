@@ -80,6 +80,7 @@ let _urlPool = new ObjectURLPool();
 
 export async function mount(rootEl) {
   _root = rootEl;
+  _root.innerHTML = '';   // ensure first render always builds the full shell
   _searchTerm = '';
   _categoryFilter = '';
   await _render();
@@ -122,6 +123,36 @@ async function _render() {
 
   const totalItems = await Storage.items.count();
 
+  const contentHtml = `
+    <div class="inv__meta">
+      ${items.length} ${items.length === 1 ? 'item' : 'items'} shown
+      ${(_searchTerm || _categoryFilter) && totalItems !== items.length
+        ? `<span class="inv__meta-of"> of ${totalItems}</span>`
+        : ''}
+    </div>
+    <div class="inv__table-wrap">
+      ${items.length === 0
+        ? _emptyStateHtml(totalItems, canAdd)
+        : _tableHtml(items, photoUrls, { canEdit, canDel })}
+    </div>
+  `;
+
+  // If the toolbar already exists, only replace the content area so the search
+  // input is never destroyed and never loses focus mid-keystroke.
+  const existingContent = $('.inv__content', _root);
+  if (existingContent) {
+    existingContent.innerHTML = contentHtml;
+    // Sync input/select state in case _render was called by clear-filters or
+    // an external action that changed _searchTerm / _categoryFilter.
+    const searchEl = $('.inv__search', _root);
+    if (searchEl && searchEl !== document.activeElement) searchEl.value = _searchTerm;
+    const catEl = $('.inv__cat-filter', _root);
+    if (catEl) catEl.value = _categoryFilter;
+    oldPool.revokeAll();
+    return;
+  }
+
+  // First render: build the full shell including the toolbar.
   render(_root, `
     <section class="inv">
       <header class="inv__toolbar">
@@ -146,18 +177,8 @@ async function _render() {
           ${canAdd ? `<button type="button" class="btn btn--primary" data-action="add">+ Add item</button>` : ''}
         </div>
       </header>
-
-      <div class="inv__meta">
-        ${items.length} ${items.length === 1 ? 'item' : 'items'} shown
-        ${(_searchTerm || _categoryFilter) && totalItems !== items.length
-          ? `<span class="inv__meta-of"> of ${totalItems}</span>`
-          : ''}
-      </div>
-
-      <div class="inv__table-wrap">
-        ${items.length === 0
-          ? _emptyStateHtml(totalItems, canAdd)
-          : _tableHtml(items, photoUrls, { canEdit, canDel })}
+      <div class="inv__content">
+        ${contentHtml}
       </div>
     </section>
   `);
