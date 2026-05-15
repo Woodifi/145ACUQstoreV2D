@@ -43,12 +43,19 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const isWatch = process.argv.includes('--watch');
 const isDev   = process.argv.includes('--dev') || isWatch;
+const isDist  = process.argv.includes('--dist');  // distribution build — no GitHub Pages output
 
-const ENTRY    = join(__dirname, 'src/ui/shell.js');
-const CSS_FILE = join(__dirname, 'qstore.css');
+// --recipient="Unit Name" embeds the unit name in the filename and dist log.
+const recipientArg = process.argv.find(a => a.startsWith('--recipient='));
+const RECIPIENT = recipientArg ? recipientArg.split('=').slice(1).join('=').trim() : null;
+
+const ENTRY      = join(__dirname, 'src/ui/shell.js');
+const CSS_FILE   = join(__dirname, 'qstore.css');
 const HTML_IN    = join(__dirname, 'index.html');
+const DIST_DIR   = join(__dirname, 'dist');
 const HTML_OUT   = join(__dirname, 'dist/qstore.html');
-const PAGES_OUT  = join(__dirname, 'docs/index.html');   // GitHub Pages entry
+const PAGES_OUT  = join(__dirname, 'docs/index.html');   // GitHub Pages entry — never written by --dist
+const DIST_LOG   = join(__dirname, 'DIST_LOG.md');
 
 // Unique per-build fingerprint — stamped into the JS bundle and HTML meta tags.
 // Keep a log of which build ID was distributed to which unit so you can trace
@@ -121,12 +128,28 @@ async function buildOnce() {
 
   const html = inlineIntoHtml(indexHtml, cssSource, jsBundle, BUILD_ID, BUILD_TS);
 
-  await mkdir(dirname(HTML_OUT),  { recursive: true });
-  await mkdir(dirname(PAGES_OUT), { recursive: true });
-  await Promise.all([
-    writeFile(HTML_OUT,  html),
-    writeFile(PAGES_OUT, html),
-  ]);
+  await mkdir(DIST_DIR, { recursive: true });
+
+  if (isDist) {
+    // Distribution build — write a uniquely-named file to dist/, never touch docs/.
+    const slug = RECIPIENT
+      ? RECIPIENT.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+      : 'unit';
+    const distFile = join(DIST_DIR, `qstore-${slug}-${BUILD_ID}.html`);
+    await writeFile(distFile, html);
+    await _appendDistLog(distFile, slug);
+    console.log(`✓ ${distFile}`);
+    console.log(`  build ID: ${BUILD_ID}  (${BUILD_TS})`);
+    if (RECIPIENT) console.log(`  recipient: ${RECIPIENT}`);
+    console.log('  GitHub Pages copy: NOT updated (--dist mode)');
+  } else {
+    // Normal build — update both dist/qstore.html and docs/ (GitHub Pages).
+    await mkdir(dirname(PAGES_OUT), { recursive: true });
+    await Promise.all([
+      writeFile(HTML_OUT,  html),
+      writeFile(PAGES_OUT, html),
+    ]);
+  }
 
   // Sanity check — verify the argon2 encoded-output template literal survived
   // the inline step intact. The literal in hash-wasm's bundled output looks
@@ -161,13 +184,35 @@ async function buildOnce() {
   const jsKb   = (jsBundle.length / 1024).toFixed(1);
   const cssKb  = (cssSource.length / 1024).toFixed(1);
 
-  console.log(`✓ ${HTML_OUT} — ${sizeKb} KB (${ms} ms)`);
-  console.log(`✓ ${PAGES_OUT} — (GitHub Pages copy)`);
-  console.log(`  js: ${jsKb} KB${isDev ? ' (with inline source map)' : ' (minified)'}`);
-  console.log(`  css: ${cssKb} KB`);
-  if (!isDev) console.log(`  build ID: ${BUILD_ID}  (${BUILD_TS})`);
+  if (!isDist) {
+    console.log(`✓ ${HTML_OUT} — ${sizeKb} KB (${ms} ms)`);
+    console.log(`✓ ${PAGES_OUT} — (GitHub Pages copy)`);
+    console.log(`  js: ${jsKb} KB${isDev ? ' (with inline source map)' : ' (minified)'}`);
+    console.log(`  css: ${cssKb} KB`);
+    if (!isDev) console.log(`  build ID: ${BUILD_ID}  (${BUILD_TS})`);
+  }
   return { sizeBytes: html.length, ms };
 }
+
+// -----------------------------------------------------------------------------
+// Distribution log — appends one line per dist build to DIST_LOG.md
+// -----------------------------------------------------------------------------
+
+async function _appendDistLog(filePath, slug) {
+  const { appendFile } = await import('node:fs/promises');
+  const { basename } = await import('node:path');
+  let existing = '';
+  try { existing = await readFile(DIST_LOG, 'utf8'); } catch { /* first entry */ }
+  const header = existing.trim() === ''
+    ? '# QStore IMS — Distribution Log\n\n| Date (UTC) | Build ID | Recipient | File |\n|---|---|---|---|\n'
+    : '';
+  const line = `| ${BUILD_TS} | \`${BUILD_ID}\` | ${RECIPIENT || slug} | ${basename(filePath)} |\n`;
+  await appendFile(DIST_LOG, header + line, 'utf8');
+}
+
+// -----------------------------------------------------------------------------
+// Inline the bundled JS and the CSS into the HTML shell.
+// -----------------------------------------------------------------------------
 
 function inlineIntoHtml(html, css, js, buildId, buildTs) {
   // 0) Inject copyright meta tags and a fingerprint comment into <head>.

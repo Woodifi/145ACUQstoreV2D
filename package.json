@@ -10,7 +10,8 @@
   "scripts": {
     "build": "node build.js",
     "dev": "node build.js --dev",
-    "watch": "node build.js --watch"
+    "watch": "node build.js --watch",
+    "dist": "node build.js --dist"
   },
   "dependencies": {
     "@azure/msal-browser": "2.38.3",
