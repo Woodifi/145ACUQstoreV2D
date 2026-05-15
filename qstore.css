@@ -3244,3 +3244,209 @@ details[open] .about__license-summary::before {
 .about__license-list li {
   margin-bottom: 6px;
 }
+
+/* ==========================================================================
+   Help page
+   ========================================================================== */
+
+.help {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+}
+
+.help__header {
+  margin-bottom: 24px;
+}
+
+.help__title {
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin: 0 0 4px;
+  color: var(--text);
+}
+
+.help__subtitle {
+  color: var(--text-dim);
+  font-size: 0.875rem;
+  margin: 0 0 14px;
+}
+
+.help__manual-link {
+  color: var(--gold);
+  text-decoration: none;
+}
+.help__manual-link:hover { text-decoration: underline; }
+
+.help__search {
+  width: 100%;
+  max-width: 400px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+.help__search:focus {
+  outline: none;
+  border-color: var(--gold);
+}
+
+.help__sections {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.help__section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.help__section-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 16px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+.help__section-summary::-webkit-details-marker { display: none; }
+.help__section-summary::after {
+  content: '›';
+  margin-left: auto;
+  font-size: 1.1rem;
+  color: var(--text-dim);
+  transition: transform 0.15s;
+  display: inline-block;
+}
+details[open] > .help__section-summary::after {
+  transform: rotate(90deg);
+}
+.help__section-summary:hover {
+  background: var(--surface-raised, rgba(255,255,255,0.04));
+}
+
+.help__section-icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.help__section-title {
+  flex: 1;
+}
+
+.help__section-body {
+  padding: 4px 20px 20px 20px;
+  border-top: 1px solid var(--border);
+  font-size: 0.875rem;
+  line-height: 1.65;
+  color: var(--text-dim);
+}
+
+.help__section-body h4 {
+  color: var(--text);
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin: 16px 0 6px;
+}
+.help__section-body h4:first-child { margin-top: 12px; }
+
+.help__section-body p,
+.help__section-body ul,
+.help__section-body ol {
+  margin: 6px 0;
+}
+
+.help__section-body ol,
+.help__section-body ul {
+  padding-left: 20px;
+}
+
+.help__section-body li { margin-bottom: 4px; }
+
+.help__section-body code,
+.help__section-body kbd {
+  background: rgba(255,255,255,0.08);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-family: monospace;
+  font-size: 0.85em;
+  color: var(--text);
+}
+
+.help__section-body a {
+  color: var(--gold);
+  text-decoration: none;
+}
+.help__section-body a:hover { text-decoration: underline; }
+
+.help__table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0;
+  font-size: 0.85rem;
+}
+.help__table th {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-weight: 600;
+}
+.help__table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  color: var(--text-dim);
+  vertical-align: top;
+}
+.help__table tr:last-child td { border-bottom: none; }
+
+.help__role {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: rgba(201,162,39,0.15);
+  color: var(--gold);
+  border-radius: 3px;
+  padding: 1px 5px;
+  margin-left: 6px;
+  vertical-align: middle;
+  letter-spacing: 0.03em;
+}
+
+.help__note {
+  background: rgba(255,255,255,0.04);
+  border-left: 3px solid var(--border);
+  padding: 8px 12px;
+  border-radius: 0 4px 4px 0;
+  margin: 10px 0;
+  color: var(--text-dim);
+}
+
+.help__warn {
+  background: rgba(224,82,82,0.08);
+  border-left: 3px solid #e05252;
+  padding: 8px 12px;
+  border-radius: 0 4px 4px 0;
+  margin: 10px 0;
+  color: #e8a0a0;
+}
+
+.help__dl dt {
+  font-weight: 600;
+  color: var(--text);
+  margin-top: 14px;
+}
+.help__dl dt:first-child { margin-top: 8px; }
+.help__dl dd {
+  margin: 4px 0 0 16px;
+  color: var(--text-dim);
+}

@@ -31,6 +31,7 @@ import * as Cadets    from './cadets.js';
 import * as Stocktake from './stocktake.js';
 import * as Audit     from './audit.js';
 import * as Settings  from './settings.js';
+import * as Help      from './help.js';
 import { openModal }  from './modal.js';
 import { esc, $, render } from './util.js';
 
@@ -41,6 +42,7 @@ const PAGES = {
   stocktake: { label: 'Stocktake', perm: 'editItem', mount: Stocktake.mount },
   audit:     { label: 'Audit',     perm: 'audit',    mount: Audit.mount     },
   settings:  { label: 'Settings',  coOnly: true,     mount: Settings.mount  },
+  help:      { label: 'Help',      perm: 'view',     mount: Help.mount      },
 };
 
 const DEFAULT_PAGE = 'inventory';
