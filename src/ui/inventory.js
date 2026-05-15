@@ -55,7 +55,8 @@ export const CATEGORIES = [
 // CONDITIONS lives in src/conditions.js so non-UI modules can import it
 // without pulling DOM-dependent code. Re-exported here so existing
 // callers keep working.
-export { CONDITIONS } from '../conditions.js';
+import { CONDITIONS } from '../conditions.js';
+export { CONDITIONS };
 
 // Standard NSN format: 4-2-3-4 digits with dashes (e.g., 8470-66-001-0001).
 // Items with non-standard local NSNs are still accepted, just flagged.
