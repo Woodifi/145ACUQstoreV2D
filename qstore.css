@@ -383,7 +383,7 @@ input {
 }
 
 .shell__brand-logo {
-  height: 40px;
+  height: 80px;
   width: auto;
   max-width: 120px;
   object-fit: contain;
