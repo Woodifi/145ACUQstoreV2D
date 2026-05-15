@@ -3134,6 +3134,62 @@ input {
 }
 
 /* ==========================================================================
+   Cloud sync — client ID reveal
+   ========================================================================== */
+
+.cloud-id-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.cloud-id-success {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(40, 167, 69, 0.12);
+  border: 1px solid rgba(40, 167, 69, 0.35);
+  border-radius: 6px;
+  padding: 6px 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.cloud-id-success__icon {
+  color: #4caf6e;
+  font-size: 1rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.cloud-id-success__label {
+  color: #4caf6e;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.cloud-id-reveal {
+  flex-shrink: 0;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: pointer;
+  font-family: monospace;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  overflow: hidden;
+  max-width: 340px;
+  text-overflow: ellipsis;
+  transition: background 0.1s, color 0.1s;
+}
+
+.cloud-id-reveal--active {
+  background: var(--surface-raised, rgba(255,255,255,0.1));
+  color: var(--text);
+  letter-spacing: 0.04em;
+}
+
+/* ==========================================================================
    About section
    ========================================================================== */
 

@@ -370,6 +370,21 @@ function _cloudSectionHtml(settings, status) {
       </div>
 
       <form class="form" data-form="cloud-config" autocomplete="off">
+        ${clientId && lastSync ? `
+        <div class="form__field">
+          <span class="form__label">Azure Application (client) ID</span>
+          <input type="hidden" name="clientId" value="${esc(clientId)}">
+          <div class="cloud-id-row">
+            <div class="cloud-id-success">
+              <span class="cloud-id-success__icon">✓</span>
+              <span class="cloud-id-success__label">Client ID configured</span>
+            </div>
+            <button type="button" class="btn btn--ghost btn--sm cloud-id-reveal"
+                    data-action="reveal-client-id"
+                    data-client-id="${esc(clientId)}">Hold to reveal</button>
+          </div>
+        </div>
+        ` : `
         <label class="form__field">
           <span class="form__label">Azure Application (client) ID</span>
           <input type="text" name="clientId" value="${esc(clientId)}"
@@ -377,6 +392,7 @@ function _cloudSectionHtml(settings, status) {
                  spellcheck="false">
           <span class="form__hint">From Azure Portal → App registrations → Overview → Application (client) ID</span>
         </label>
+        `}
 
         <div class="form__row">
           <label class="form__field form__field--grow">
@@ -684,6 +700,27 @@ function _wireEventListeners() {
   if (cloudToggle) {
     cloudToggle.addEventListener('change', _onToggleCloudDisabled);
   }
+
+  const revealBtn = $('[data-action="reveal-client-id"]', _root);
+  if (revealBtn) _wireRevealButton(revealBtn);
+}
+
+function _wireRevealButton(btn) {
+  const original = 'Hold to reveal';
+  const show = () => {
+    btn.textContent = btn.dataset.clientId;
+    btn.classList.add('cloud-id-reveal--active');
+  };
+  const hide = () => {
+    btn.textContent = original;
+    btn.classList.remove('cloud-id-reveal--active');
+  };
+  btn.addEventListener('mousedown',    show);
+  btn.addEventListener('mouseup',      hide);
+  btn.addEventListener('mouseleave',   hide);
+  btn.addEventListener('touchstart',   (e) => { e.preventDefault(); show(); }, { passive: false });
+  btn.addEventListener('touchend',     hide);
+  btn.addEventListener('touchcancel',  hide);
 }
 
 async function _onToggleCloudDisabled(e) {
