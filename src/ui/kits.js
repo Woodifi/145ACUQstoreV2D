@@ -181,7 +181,7 @@ function _renderKitForm(panel, close, { isEdit, initial, lines, items, onSaved }
 
       <div class="form__error" data-kit-error role="alert"></div>
       <div class="form__actions">
-        <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
+        <button type="button" class="btn btn--ghost" data-action="kit-cancel">Cancel</button>
         <button type="button" class="btn btn--primary" data-action="kit-save">
           ${isEdit ? 'Save changes' : 'Create kit'}
         </button>
@@ -216,6 +216,26 @@ function _renderKitForm(panel, close, { isEdit, initial, lines, items, onSaved }
     } catch (err) {
       errEl.textContent = err.message || 'Could not save kit.';
     }
+  });
+
+  $('[data-action="kit-cancel"]', panel).addEventListener('click', () => {
+    openModal({
+      titleHtml: 'Discard changes?',
+      size: 'sm',
+      bodyHtml: `
+        <p>Any unsaved changes will be lost.</p>
+        <div class="form__actions">
+          <button type="button" class="btn btn--ghost" data-action="modal-close">Keep editing</button>
+          <button type="button" class="btn btn--danger" data-action="confirm-discard">Discard</button>
+        </div>
+      `,
+      onMount(confirmPanel, confirmClose) {
+        $('[data-action="confirm-discard"]', confirmPanel).addEventListener('click', () => {
+          confirmClose();
+          close();
+        });
+      },
+    });
   });
 
   $('[data-action="kit-line-add"]', panel).addEventListener('click', () => {
