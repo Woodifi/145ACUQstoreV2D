@@ -142,6 +142,7 @@ async function _openKitForm({ mode, kit, items, onSaved }) {
   const handle = openModal({
     titleHtml: isEdit ? `Edit kit — ${esc(initial.name)}` : 'New kit',
     size: 'lg',
+    persistent: true,   // prevent backdrop/Esc wiping unsaved data
     onMount(panel, close) {
       _renderKitForm(panel, close, { isEdit, initial, lines, items, onSaved });
     },
@@ -220,6 +221,9 @@ function _renderKitForm(panel, close, { isEdit, initial, lines, items, onSaved }
   $('[data-action="kit-line-add"]', panel).addEventListener('click', () => {
     lines.push({ itemId: '', qty: 1 });
     _rerenderLines(panel, lines, items);
+    // Auto-scroll to show the new line
+    const linesContainer = $('[data-kit-lines]', panel);
+    if (linesContainer) linesContainer.scrollTop = linesContainer.scrollHeight;
   });
 }
 
