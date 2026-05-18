@@ -47,6 +47,7 @@
 import * as Storage from '../storage.js';
 import * as AUTH    from '../auth.js';
 import * as Sync    from '../sync.js';
+import { compareRanks } from '../ranks.js';
 import { generateIssueVoucher, generateAB189, generateOutstandingLoansReport, downloadPdf } from '../pdf.js';
 import { openModal }                       from './modal.js';
 import { showToast }                       from './toast.js';
@@ -1097,7 +1098,9 @@ function _borrowerPickerHtml(context, currentSvcNo, cadets, currentCadet) {
       <datalist id="${listId}">
         ${cadets
           .slice()
-          .sort((a, b) => (a.surname || '').localeCompare(b.surname || ''))
+          .sort((a, b) =>
+            compareRanks(a.rank, b.rank) ||
+            (a.surname || '').localeCompare(b.surname || ''))
           .map((c) =>
             `<option value="${esc(c.rank)} ${esc(c.surname)} (${esc(c.svcNo)})">`)
           .join('')}

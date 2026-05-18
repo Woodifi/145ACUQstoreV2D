@@ -87,6 +87,34 @@ export function normalizeRank(rank) {
 }
 
 /**
+ * Rank sort priority — highest rank first (lower number = higher rank).
+ * Staff precede cadets. Unknown / blank ranks sort to the bottom (9999).
+ *
+ * Usage:
+ *   people.sort((a, b) =>
+ *     compareRanks(a.rank, b.rank) ||
+ *     (a.surname || '').localeCompare(b.surname || ''));
+ */
+const _RANK_PRIORITY = (() => {
+  const order = [
+    // Staff — highest to lowest
+    'COL-AAC', 'LTCOL-AAC', 'MAJ-AAC', 'CAPT-AAC', 'LT-AAC', '2LT-AAC',
+    'DAH',
+    // Cadets — highest to lowest (CADET_RANKS is defined lowest→highest)
+    'UO', 'CDTWO1', 'CDTWO2', 'CDTSSGT', 'CDTSGT', 'CDTCPL', 'CDTLCPL', 'CDT',
+  ];
+  const map = new Map();
+  order.forEach((r, i) => map.set(r, i));
+  return map;
+})();
+
+export function compareRanks(rankA, rankB) {
+  const a = _RANK_PRIORITY.has(rankA) ? _RANK_PRIORITY.get(rankA) : 9999;
+  const b = _RANK_PRIORITY.has(rankB) ? _RANK_PRIORITY.get(rankB) : 9999;
+  return a - b;
+}
+
+/**
  * Classify a rank as 'cadet' or 'staff'. Used by migration to fill in
  * personType for legacy records. DAH is staff. Bare officer ranks are
  * staff (about to get -AAC suffix). CADET_RANKS are cadet. Anything

@@ -51,6 +51,7 @@ import {
   CADET_RANKS,
   normalizeRank,
   inferPersonType,
+  compareRanks,
 } from '../ranks.js';
 import { generateNominalRoll, downloadPdf }        from '../pdf.js';
 import { openModal }                              from './modal.js';
@@ -87,10 +88,10 @@ export async function mount(rootEl) {
 async function _render() {
   const all = await Storage.cadets.list();
 
-  // Sort: surname asc, then rank to disambiguate same-surname cadets.
+  // Sort: rank highest-to-lowest, then surname A-Z within same rank.
   all.sort((a, b) =>
-    (a.surname || '').localeCompare(b.surname || '') ||
-    (a.rank    || '').localeCompare(b.rank    || ''));
+    compareRanks(a.rank, b.rank) ||
+    (a.surname || '').localeCompare(b.surname || ''));
 
   // Apply filters in JS — the dataset is small (typical AAC unit < 200
   // cadets) so a single-pass filter is fast enough without indexes.
@@ -289,8 +290,8 @@ async function _doPrintRoll(button) {
       }
       return true;
     }).sort((a, b) =>
-      (a.surname || '').localeCompare(b.surname || '') ||
-      (a.rank    || '').localeCompare(b.rank    || ''));
+      compareRanks(a.rank, b.rank) ||
+      (a.surname || '').localeCompare(b.surname || ''));
 
     // Subtitle describes the current filter state so the printout makes
     // sense out of context (a roll labelled "Plt 2 only" tells the reader
