@@ -354,6 +354,7 @@ const SECTIONS = [
           <tr><td>login / login_failed</td><td>Login events</td></tr>
           <tr><td>data_export / data_imported</td><td>Backup actions</td></tr>
           <tr><td>stocktake</td><td>Stocktake finalised</td></tr>
+          <tr><td>session_unlock</td><td>Locked session resumed after PIN entry</td></tr>
           <tr><td>order-import</td><td>AAC QStore order PDF imported</td></tr>
           <tr><td>order-received</td><td>Order approved and items received into IMS</td></tr>
           <tr><td>order-delete</td><td>Order record deleted</td></tr>
@@ -374,6 +375,15 @@ const SECTIONS = [
         <li>After any PIN is set or reset, it is displayed once for the OC to note down — it cannot be retrieved again</li>
       </ul>
       <p>PINs must be exactly 4 digits.</p>
+
+      <h4>Auto-lock (idle timeout) <span class="help__role">OC only</span></h4>
+      <p>The OC can configure the app to lock automatically after a period of inactivity in <strong>Settings → Security → Auto-lock after idle</strong>. Options: Disabled, 5, 10, 15, 30 minutes, or 1 hour.</p>
+      <p>When locked, a PIN entry screen overlays the current page. Any mouse, keyboard, or touch activity resets the timer. On the lock screen:</p>
+      <ul>
+        <li>Enter your PIN to resume — the page you were on is still active behind the overlay</li>
+        <li>Click <strong>Sign out / switch user</strong> to log out fully</li>
+      </ul>
+      <p class="help__note">Failed unlock attempts follow the same lockout rules as login. Unlock events are recorded in the audit log as <code>session_unlock</code>.</p>
 
       <h4>PIN lockout</h4>
       <table class="help__table">

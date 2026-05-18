@@ -5225,3 +5225,90 @@ details[open] > .help__section-summary::after {
   .ord__edit-meta-grid { grid-template-columns: 1fr 1fr; }
   .ord__edit-table .ord__edit-col-qty { width: 60px; }
 }
+
+/* =============================================================================
+   Lock overlay (auto-lock / idle timeout)
+   Full-screen overlay shown over the current page when the session idles out.
+   The user must enter their PIN to resume, or sign out.
+============================================================================= */
+
+.lock-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;           /* above modals (8000) */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.80);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.lock-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 40px 32px 32px;
+  width: 100%;
+  max-width: 340px;
+  text-align: center;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+}
+
+.lock-icon {
+  font-size: 40px;
+  line-height: 1;
+  margin-bottom: 14px;
+}
+
+.lock-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 8px;
+}
+
+.lock-body {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0 0 24px;
+}
+
+.lock-form {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 0;
+}
+
+.lock-pin {
+  width: 130px;
+  text-align: center;
+  font-size: 24px;
+  letter-spacing: 0.25em;
+  padding: 10px 8px;
+}
+
+.lock-error {
+  min-height: 18px;
+  font-size: 13px;
+  color: var(--danger);
+  text-align: center;
+}
+
+.lock-submit {
+  width: 100%;
+  max-width: 200px;
+  margin-top: 4px;
+}
+
+.lock-switch {
+  margin-top: 20px;
+  font-size: 13px;
+  color: var(--text-tertiary, var(--text-secondary));
+  padding: 6px 12px;
+}
+
+/* Settings security section */
+.settings__idle-select { width: auto; min-width: 140px; }

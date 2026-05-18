@@ -88,6 +88,7 @@ async function _render() {
         ${_structureSectionHtml(unitStructure)}
         ${_categoriesSectionHtml(activeCats)}
         ${_recoverySectionHtml(recoveryStatus)}
+        ${_securitySectionHtml(settings)}
         ${_cloudSectionHtml(settings, status)}
         ${_dataSectionHtml(settings)}
         ${_aboutSectionHtml()}
@@ -861,6 +862,54 @@ function _cloudUnavailableFileProtocolHtml() {
 // -----------------------------------------------------------------------------
 // Data backup section — manual export/import
 // -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
+// Security section — auto-lock idle timeout
+// -----------------------------------------------------------------------------
+
+function _securitySectionHtml(settings) {
+  const stored = parseInt(settings['security.idleTimeoutMinutes'], 10);
+  const current = isNaN(stored) ? 15 : stored;   // default 15 min
+
+  const opts = [
+    { value: 0,  label: 'Disabled' },
+    { value: 5,  label: '5 minutes' },
+    { value: 10, label: '10 minutes' },
+    { value: 15, label: '15 minutes' },
+    { value: 30, label: '30 minutes' },
+    { value: 60, label: '1 hour' },
+  ].map(({ value, label }) =>
+    `<option value="${value}"${value === current ? ' selected' : ''}>${esc(label)}</option>`
+  ).join('');
+
+  return `
+    <section class="settings__section" data-section="security">
+      <header class="settings__section-header">
+        <h2 class="settings__section-title">Security</h2>
+        <p class="settings__section-hint">
+          Auto-lock the session after a period of inactivity. The screen is
+          locked and a PIN is required to resume — useful on shared devices
+          such as a duty computer or parade-night tablet.
+        </p>
+      </header>
+
+      <div class="form__row form__row--align-center">
+        <label class="form__label" for="idle-timeout-select">Auto-lock after idle</label>
+        <select id="idle-timeout-select" class="form__select settings__idle-select"
+                data-action="save-idle-timeout">
+          ${opts}
+        </select>
+      </div>
+      <p class="form__hint">
+        Any mouse, keyboard, or touch activity resets the timer.
+        ${current === 0
+          ? 'Auto-lock is currently <strong>disabled</strong>.'
+          : `Session will lock after <strong>${current} minute${current === 1 ? '' : 's'}</strong> of inactivity.`
+        }
+      </p>
+    </section>
+  `;
+}
+
 // Independent of cloud sync. Works on any origin including file://. Provides
 // the only recovery path when cloud sync isn't configured.
 //
@@ -1093,6 +1142,31 @@ function _wireEventListeners() {
 
   const revealBtn = $('[data-action="reveal-client-id"]', _root);
   if (revealBtn) _wireRevealButton(revealBtn);
+
+  const idleSelect = $('[data-action="save-idle-timeout"]', _root);
+  if (idleSelect) idleSelect.addEventListener('change', _onIdleTimeoutChange);
+}
+
+async function _onIdleTimeoutChange(e) {
+  const select  = e.target;
+  const minutes = parseInt(select.value, 10);
+  select.disabled = true;
+  try {
+    await Storage.settings.set('security.idleTimeoutMinutes', isNaN(minutes) ? 0 : minutes);
+    // Notify the shell so it restarts the idle watcher immediately.
+    document.dispatchEvent(new CustomEvent('qstore:idle-timeout-changed'));
+    showToast(
+      minutes > 0
+        ? `Auto-lock set to ${minutes} minute${minutes === 1 ? '' : 's'}.`
+        : 'Auto-lock disabled.',
+      'success'
+    );
+    await _render();   // refresh hint text
+  } catch (err) {
+    showToast('Failed to save auto-lock setting.', 'error');
+  } finally {
+    select.disabled = false;
+  }
 }
 
 function _wireRevealButton(btn) {

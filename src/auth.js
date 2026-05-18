@@ -323,6 +323,70 @@ export async function login(userId, pin) {
   return { ok: true, session: { ..._session } };
 }
 
+// -----------------------------------------------------------------------------
+// verifyPin — PIN check without a full login (used by the auto-lock overlay)
+// -----------------------------------------------------------------------------
+// Same lockout rules and hash verification as login(), but:
+//   - Does NOT update lastLogin or create a new session object
+//   - Writes 'login_failed' on wrong attempts (lockout tracking)
+//   - Writes 'session_unlock' on success
+// The caller (lock overlay) is responsible for resuming the session after a
+// successful verify.
+
+export async function verifyPin(userId, pin) {
+  if (!userId || pin === undefined || pin === null || pin === '') {
+    return { ok: false, reason: 'missing_credentials' };
+  }
+  const user = await Storage.users.get(userId);
+  if (!user) return { ok: false, reason: 'user_not_found' };
+
+  const lockout = _readLockout(userId);
+  if (lockout.lockedUntil > Date.now()) {
+    return { ok: false, reason: 'locked_out', unlockAt: lockout.lockedUntil };
+  }
+
+  const algo = user.pinHashAlgorithm || (user.legacyPinHash ? 'legacy-sha' : 'argon2id');
+  let verified = false;
+
+  if (algo === 'legacy-sha') {
+    verified = user.legacyPinHash
+      ? (_legacyHashV1(String(pin)) === user.legacyPinHash)
+      : false;
+  } else if (algo === 'argon2id') {
+    verified = user.pinHash
+      ? await _argonVerify(pin, user.pinHash)
+      : false;
+  }
+
+  if (!verified) {
+    const newFailures   = (lockout.failures || 0) + 1;
+    const newLockout    = {
+      failures:    newFailures,
+      lockedUntil: newFailures % LOCKOUT_THRESHOLD === 0
+        ? Date.now() + _lockoutDurationMs(newFailures)
+        : lockout.lockedUntil || 0,
+    };
+    _writeLockout(userId, newLockout);
+    await Storage.audit.append({
+      action: 'login_failed',
+      user:   user.name || user.username,
+      desc:   `Failed unlock attempt for ${user.username} (attempt ${newFailures})`,
+    });
+    if (newLockout.lockedUntil > Date.now()) {
+      return { ok: false, reason: 'locked_out', unlockAt: newLockout.lockedUntil };
+    }
+    return { ok: false, reason: 'invalid_pin' };
+  }
+
+  clearLockout(userId);
+  await Storage.audit.append({
+    action: 'session_unlock',
+    user:   user.name || user.username,
+    desc:   `Session unlocked: ${user.name} (${ROLES[user.role]?.label || user.role})`,
+  });
+  return { ok: true };
+}
+
 export async function logout() {
   if (_session) {
     await Storage.audit.append({

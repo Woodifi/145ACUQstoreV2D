@@ -60,6 +60,129 @@ let _currentPage      = null;
 let _currentUnmount   = null;
 
 // -----------------------------------------------------------------------------
+// Auto-lock (idle timeout)
+// -----------------------------------------------------------------------------
+// Reads 'security.idleTimeoutMinutes' from settings. 0 = disabled.
+// On idle expiry, a full-screen lock overlay is shown over the current page.
+// The user must enter their PIN to resume, or click "Sign out" to log out.
+
+let _idleTimerHandle  = null;
+let _idleTimeoutMs    = 0;
+let _lockOverlay      = null;
+
+const _IDLE_EVENTS = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'];
+
+function _onIdleActivity() {
+  _resetIdleTimer();
+}
+
+async function _startIdleWatcher() {
+  _stopIdleWatcher();
+  const raw  = await Storage.settings.get('security.idleTimeoutMinutes');
+  const mins = parseInt(raw, 10);
+  if (!mins || mins <= 0) return;                // disabled
+  _idleTimeoutMs = mins * 60_000;
+  _IDLE_EVENTS.forEach(ev =>
+    document.addEventListener(ev, _onIdleActivity, { passive: true })
+  );
+  _resetIdleTimer();
+}
+
+function _stopIdleWatcher() {
+  if (_idleTimerHandle) { clearTimeout(_idleTimerHandle); _idleTimerHandle = null; }
+  _IDLE_EVENTS.forEach(ev => document.removeEventListener(ev, _onIdleActivity));
+  _idleTimeoutMs = 0;
+}
+
+function _resetIdleTimer() {
+  if (!_idleTimeoutMs) return;
+  if (_idleTimerHandle) clearTimeout(_idleTimerHandle);
+  _idleTimerHandle = setTimeout(_triggerLock, _idleTimeoutMs);
+}
+
+function _triggerLock() {
+  if (_lockOverlay) return;   // already locked
+  _stopIdleWatcher();         // pause activity tracking while locked
+  _showLockOverlay();
+}
+
+function _showLockOverlay() {
+  const overlay = document.createElement('div');
+  overlay.className = 'lock-overlay';
+
+  overlay.innerHTML = `
+    <div class="lock-card">
+      <div class="lock-icon" aria-hidden="true">🔒</div>
+      <h2 class="lock-title">Session Locked</h2>
+      <p class="lock-body">
+        Signed in as <strong>${esc(_session?.name || 'Unknown')}</strong>
+      </p>
+      <form class="lock-form" autocomplete="off" data-form="lock-form">
+        <input type="text" inputmode="numeric" pattern="\\d{4}" maxlength="4"
+               class="form__input--pin lock-pin"
+               placeholder="Enter PIN" autocomplete="off"
+               aria-label="Enter PIN to unlock" autofocus>
+        <div class="form__error lock-error" role="alert"></div>
+        <button type="submit" class="btn btn--primary lock-submit">Unlock</button>
+      </form>
+      <button type="button" class="btn btn--ghost lock-switch"
+              data-action="lock-switch-user">Sign out / switch user</button>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+  _lockOverlay = overlay;
+
+  // Focus the PIN field after the overlay is painted.
+  const pinInput = overlay.querySelector('.lock-pin');
+  if (pinInput) requestAnimationFrame(() => pinInput.focus());
+
+  const form      = overlay.querySelector('[data-form="lock-form"]');
+  const errEl     = overlay.querySelector('.lock-error');
+  const switchBtn = overlay.querySelector('[data-action="lock-switch-user"]');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errEl.textContent = '';
+
+    const enteredPin = (pinInput.value || '').trim();
+    if (!/^\d{4}$/.test(enteredPin)) {
+      errEl.textContent = 'Enter your 4-digit PIN.';
+      return;
+    }
+
+    const submit = form.querySelector('[type="submit"]');
+    if (submit) { submit.disabled = true; submit.textContent = 'Checking…'; }
+
+    const result = await AUTH.verifyPin(_session.userId, enteredPin);
+
+    if (result.ok) {
+      _hideLockOverlay();
+      await _startIdleWatcher();     // restart idle watcher after successful unlock
+    } else {
+      if (submit) { submit.disabled = false; submit.textContent = 'Unlock'; }
+      pinInput.value = '';
+      pinInput.focus();
+      if (result.reason === 'locked_out') {
+        const secs = Math.ceil(Math.max(0, (result.unlockAt - Date.now())) / 1000);
+        errEl.textContent = `Too many failed attempts. Try again in ${secs} second${secs === 1 ? '' : 's'}.`;
+      } else {
+        errEl.textContent = 'Incorrect PIN. Try again.';
+      }
+    }
+  });
+
+  switchBtn.addEventListener('click', () => {
+    _hideLockOverlay();
+    _onLogout();
+  });
+}
+
+function _hideLockOverlay() {
+  if (_lockOverlay) { _lockOverlay.remove(); _lockOverlay = null; }
+}
+
+// -----------------------------------------------------------------------------
 // Boot
 // -----------------------------------------------------------------------------
 
@@ -222,6 +345,12 @@ async function _renderShell() {
     const page = e.detail?.page;
     if (page && PAGES[page]) _navigateTo(page);
   });
+
+  // Re-apply idle timeout when OC changes the setting in Settings.
+  document.addEventListener('qstore:idle-timeout-changed', _startIdleWatcher);
+
+  // Start idle watcher for this session.
+  await _startIdleWatcher();
 
   const syncIndicator = $('[data-target="sync-indicator"]', _root);
   if (syncIndicator) {
@@ -553,6 +682,9 @@ function _openRecoveryCodeModal(formattedCode, { reason } = {}) {
 // -----------------------------------------------------------------------------
 
 async function _onLogout() {
+  _stopIdleWatcher();
+  _hideLockOverlay();
+  document.removeEventListener('qstore:idle-timeout-changed', _startIdleWatcher);
   await _teardownCurrentPage();
   Sync.removeStatusListener(_onSyncStatus);
   await AUTH.logout();
