@@ -629,15 +629,19 @@ export async function generateStocktakeReport(session, opts = {}) {
   const { rows, counts, finalisedAt, finalisedBy } = session;
 
   const COLS = [
-    { x: PAGE.MARGIN + 2,   w: 28, label: 'NSN',      get: (r) => r.item.nsn || '' },
-    { x: PAGE.MARGIN + 32,  w: 56, label: 'Item',     get: (r) => r.item.name || '' },
-    { x: PAGE.MARGIN + 90,  w: 14, label: 'System',   get: (r) => String(r.item.onHand || 0), align: 'right' },
-    { x: PAGE.MARGIN + 106, w: 14, label: 'Counted',  get: (r) => String(r.stk.counted),       align: 'right' },
-    { x: PAGE.MARGIN + 122, w: 14, label: 'Var.',     get: (r) => (r.variance >= 0 ? '+' : '') + r.variance, align: 'right' },
-    { x: PAGE.MARGIN + 138, w: 32, label: 'Notes',    get: (r) => r.stk.notes || '' },
+    { x: PAGE.MARGIN + 2,   w: 26, label: 'NSN',      get: (r) => r.item.nsn || '' },
+    { x: PAGE.MARGIN + 30,  w: 50, label: 'Item',     get: (r) => r.item.name || '' },
+    { x: PAGE.MARGIN + 82,  w: 13, label: 'System',   get: (r) => String(r.item.onHand  || 0), align: 'right' },
+    { x: PAGE.MARGIN + 97,  w: 11, label: 'Svc',      get: (r) => String(r.stk.qtyServiceable   != null ? r.stk.qtyServiceable   : r.stk.counted), align: 'right' },
+    { x: PAGE.MARGIN + 110, w: 11, label: 'U/S',      get: (r) => String(r.stk.qtyUnserviceable != null ? r.stk.qtyUnserviceable  : 0),             align: 'right' },
+    { x: PAGE.MARGIN + 123, w: 11, label: 'W/O',      get: (r) => String(r.stk.qtyWrittenOff    != null ? r.stk.qtyWrittenOff     : 0),             align: 'right' },
+    { x: PAGE.MARGIN + 136, w: 12, label: 'Total',    get: (r) => String(r.stk.counted),                                                            align: 'right' },
+    { x: PAGE.MARGIN + 150, w: 12, label: 'Var.',     get: (r) => (r.variance >= 0 ? '+' : '') + r.variance,                                        align: 'right' },
+    { x: PAGE.MARGIN + 164, w: 26, label: 'Notes',    get: (r) => r.stk.notes || '' },
   ];
 
   const subtitle = `${counts.total} counted · ${counts.match} match, ${counts.over} over, ${counts.short} short` +
+                   (counts.writeOffs > 0 ? `, ${counts.writeOffs} write-off` : '') +
                    ` · finalised ${_fmtDateTimeAU(finalisedAt)} by ${finalisedBy}`;
 
   _renderTabularReport(doc, {

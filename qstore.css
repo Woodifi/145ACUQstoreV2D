@@ -2882,16 +2882,26 @@ input {
 
 .stk__col-num,
 .stk__col-count,
+.stk__col-total,
 .stk__col-var { text-align: right; }
 
-.stk__col-cat   { width: 100px; }
-.stk__col-num   { width: 60px; }
-.stk__col-count { width: 90px; }
-.stk__col-var   { width: 70px; font-weight: 600; }
-.stk__col-cond  { width: 130px; }
-.stk__col-notes { width: 180px; }
+.stk__col-cat   { width: 90px; }
+.stk__col-num   { width: 52px; }
+.stk__col-count { width: 58px; }   /* Svc / U/S / W/O — 3 narrow cols */
+.stk__col-total { width: 52px; font-weight: 600; }
+.stk__col-var   { width: 62px; font-weight: 600; }
+.stk__col-cond  { width: 120px; }
+.stk__col-notes { width: 150px; }
 
-.stk__count,
+/* Total cell */
+.stk__total { color: var(--text-primary); }
+
+/* Written-off column header hint */
+.stk__table thead th[title] { cursor: help; }
+
+.stk__count-svc,
+.stk__count-uns,
+.stk__count-wof,
 .stk__cond,
 .stk__notes {
   width: 100%;
@@ -2904,8 +2914,28 @@ input {
   font-family: inherit;
 }
 
+/* Keep legacy .stk__count selector working for any old references */
 .stk__count {
+  width: 100%;
+  padding: 4px 6px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
   text-align: right;
+}
+
+.stk__count-svc,
+.stk__count-uns,
+.stk__count-wof {
+  text-align: right;
+}
+
+/* Written-off input gets a subtle red tint when filled */
+.stk__count-wof:not([value=""]):not([value="0"]):not([placeholder]) {
+  color: var(--danger);
 }
 
 .stk__count--invalid {
@@ -2919,6 +2949,9 @@ input {
 }
 
 .stk__count:focus,
+.stk__count-svc:focus,
+.stk__count-uns:focus,
+.stk__count-wof:focus,
 .stk__cond:focus,
 .stk__notes:focus {
   outline: none;

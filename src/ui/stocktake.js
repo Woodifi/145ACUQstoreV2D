@@ -6,15 +6,31 @@
 //
 // FLOW
 //   1. User starts a stocktake (or resumes a draft if one exists).
-//   2. For each item: enter physical count + optional condition override
-//      + optional notes. Each entry writes to Storage.stocktake on blur.
+//   2. For each item: enter counts split by condition — Serviceable (Svc),
+//      Unserviceable (U/S), and Written Off (W/O) — plus optional notes.
+//      Each entry writes to Storage.stocktake on blur.
 //   3. Live summary updates: counted / matches / discrepancies / missing.
 //   4. Finalise: confirmation modal lists discrepancies → on confirm:
-//      - For each item with a count: update item.onHand, item.condition,
-//        push audit entry per discrepancy.
+//      - For each item with a count: update item.onHand (total of all three
+//        condition counts), item.unsvc (unserviceable count), item.writtenOff
+//        (written-off count), push audit entry per discrepancy.
+//      - Write-off items get a separate stocktake_writeoff audit entry.
 //      - Push one finalisation audit entry with the totals.
 //      - Clear the stocktake store.
 //      - Offer to generate the stocktake report PDF.
+//
+// CONDITION BREAKDOWN SCHEMA (Storage.stocktake row)
+//   The storage row carries:
+//     counted          — total physical count (svc + uns + wof), for compat
+//     qtyServiceable   — serviceable count
+//     qtyUnserviceable — unserviceable count
+//     qtyWrittenOff    — written-off count (pending board of survey)
+//   Legacy draft rows (without breakdown) default to svc = counted, uns/wof = 0.
+//
+// ITEM FIELD UPDATES ON FINALISE
+//   onHand     ← qtyServiceable + qtyUnserviceable + qtyWrittenOff (total)
+//   unsvc      ← qtyUnserviceable   (existing field)
+//   writtenOff ← qtyWrittenOff      (new field, pending formal striking)
 //
 // WHAT THIS DOESN'T DO (deliberate)
 //   - No multi-stage QM / CO sign-off workflow. The audit log is the
@@ -170,9 +186,12 @@ function _tableHtml(items) {
           <th class="stk__col-name">Item</th>
           <th class="stk__col-cat">Cat.</th>
           <th class="stk__col-num">Auth</th>
-          <th class="stk__col-num">On hand</th>
+          <th class="stk__col-num" data-sys-col>On hand</th>
           <th class="stk__col-num">On loan</th>
-          <th class="stk__col-count">Counted</th>
+          <th class="stk__col-count" title="Serviceable — items in good working order">Svc</th>
+          <th class="stk__col-count" title="Unserviceable — damaged or non-functional, awaiting repair">U/S</th>
+          <th class="stk__col-count" title="Written off — beyond economic repair, pending board of survey">W/O</th>
+          <th class="stk__col-total">Total</th>
           <th class="stk__col-var">Variance</th>
           <th class="stk__col-cond">Condition</th>
           <th class="stk__col-notes">Notes</th>
@@ -186,41 +205,74 @@ function _tableHtml(items) {
 }
 
 function _itemRowHtml(item, canEdit) {
-  const stk      = _countsByItem.get(item.id);
-  const counted  = stk ? stk.counted : '';
-  const condVal  = stk?.condition || item.condition || 'serviceable';
-  const notes    = stk?.notes || '';
-  const sys      = Number(item.onHand) || 0;
-  const onLoan   = Number(item.onLoan) || 0;
-  const authQty  = Number(item.authQty) || 0;
+  const stk     = _countsByItem.get(item.id);
+  const condVal = stk?.condition || item.condition || 'serviceable';
+  const notes   = stk?.notes || '';
+  const sys     = Number(item.onHand) || 0;
+  const onLoan  = Number(item.onLoan) || 0;
+  const authQty = Number(item.authQty) || 0;
 
-  const variance = (counted === '' || counted == null)
-    ? null
-    : Number(counted) - sys;
+  // Condition breakdown — default legacy rows to: svc = counted, uns/wof = 0.
+  const qtyS = stk
+    ? (stk.qtyServiceable   != null ? stk.qtyServiceable   : stk.counted ?? '')
+    : '';
+  const qtyU = stk ? (stk.qtyUnserviceable ?? 0) : '';
+  const qtyW = stk ? (stk.qtyWrittenOff    ?? 0) : '';
+
+  // Total — only compute when at least one field has a value.
+  const hasCount = stk != null;
+  const total    = hasCount
+    ? (Number(qtyS) || 0) + (Number(qtyU) || 0) + (Number(qtyW) || 0)
+    : null;
+
+  const variance = total == null ? null : total - sys;
   const varClass = variance === null ? 'stk__var--none'
     : variance === 0 ? 'stk__var--match'
-    : variance < 0 ? 'stk__var--short'
+    : variance < 0   ? 'stk__var--short'
     : 'stk__var--over';
   const varText  = variance === null ? '—' : (variance >= 0 ? `+${variance}` : `${variance}`);
 
   return `
-    <tr class="stk__row" data-item-id="${esc(item.id)}">
+    <tr class="stk__row" data-item-id="${esc(item.id)}" data-sys="${sys}">
       <td class="stk__col-nsn">${esc(item.nsn || '')}</td>
       <td class="stk__col-name">${esc(item.name || '')}</td>
       <td class="stk__col-cat">${esc(item.cat || '')}</td>
       <td class="stk__col-num">${authQty}</td>
       <td class="stk__col-num">${sys}</td>
       <td class="stk__col-num">${onLoan}</td>
+
       <td class="stk__col-count">
         <input type="number" min="0" inputmode="numeric"
-               class="stk__count"
-               value="${esc(String(counted))}"
+               class="stk__count-svc"
+               value="${hasCount ? esc(String(qtyS)) : ''}"
                placeholder="—"
-               data-field="counted"
+               data-field="qty-svc"
                ${canEdit ? '' : 'disabled'}
-               aria-label="Counted quantity">
+               aria-label="Serviceable count">
       </td>
-      <td class="stk__col-var ${varClass}">${varText}</td>
+      <td class="stk__col-count">
+        <input type="number" min="0" inputmode="numeric"
+               class="stk__count-uns"
+               value="${hasCount ? esc(String(qtyU)) : ''}"
+               placeholder="—"
+               data-field="qty-uns"
+               ${canEdit ? '' : 'disabled'}
+               aria-label="Unserviceable count">
+      </td>
+      <td class="stk__col-count">
+        <input type="number" min="0" inputmode="numeric"
+               class="stk__count-wof"
+               value="${hasCount ? esc(String(qtyW)) : ''}"
+               placeholder="—"
+               data-field="qty-wof"
+               ${canEdit ? '' : 'disabled'}
+               aria-label="Written-off count">
+      </td>
+
+      <td class="stk__col-total stk__total" data-target="total-cell">
+        ${total != null ? String(total) : '—'}
+      </td>
+      <td class="stk__col-var ${varClass}" data-target="var-cell">${varText}</td>
       <td class="stk__col-cond">
         <select class="stk__cond" data-field="condition" ${canEdit ? '' : 'disabled'}>
           ${CONDITIONS.map((c) => `
@@ -258,17 +310,19 @@ function _wire() {
   // Per-row input handlers. Use blur (and change for selects) rather than
   // input — blur fires after the user is done editing, which keeps IDB
   // writes from happening on every keystroke. For select dropdowns,
-  // change is the natural event. The price is a brief window where the
-  // user has typed but not blurred and a refresh could lose it; in
-  // practice that window is small and the simpler model is worth it.
+  // change is the natural event.
   //
-  // For the count input we ALSO listen to input so the variance updates
-  // visually as the user types — but we only persist on blur.
-  $$('input[data-field="counted"]', _root).forEach((input) => {
-    input.addEventListener('input',  _onCountInput);
-    input.addEventListener('change', _onCountChange);
-    input.addEventListener('blur',   _onCountChange);
-  });
+  // For the three count inputs (Svc / U/S / W/O) we ALSO listen to input
+  // so the Total and Variance cells update visually as the user types —
+  // but we only persist on blur.
+  const countFields = ['qty-svc', 'qty-uns', 'qty-wof'];
+  for (const field of countFields) {
+    $$(`input[data-field="${field}"]`, _root).forEach((input) => {
+      input.addEventListener('input',  _onCountInput);
+      input.addEventListener('change', _onCountChange);
+      input.addEventListener('blur',   _onCountChange);
+    });
+  }
   $$('select[data-field="condition"]', _root).forEach((sel) => {
     sel.addEventListener('change', _onConditionChange);
   });
@@ -282,66 +336,86 @@ function _wire() {
 // Per-row event handlers
 // -----------------------------------------------------------------------------
 
-// While typing, update the variance cell live without touching IDB.
+// Helper: read all three count inputs from a row and return their numeric values.
+function _readBreakdown(row) {
+  const svcInput = row.querySelector('input[data-field="qty-svc"]');
+  const unsInput = row.querySelector('input[data-field="qty-uns"]');
+  const wofInput = row.querySelector('input[data-field="qty-wof"]');
+  const svc = svcInput?.value.trim() ?? '';
+  const uns = unsInput?.value.trim() ?? '';
+  const wof = wofInput?.value.trim() ?? '';
+  return {
+    svcRaw: svc, unsRaw: uns, wofRaw: wof,
+    allEmpty: svc === '' && uns === '' && wof === '',
+    qtyServiceable:   svc === '' ? 0 : Math.max(0, Number(svc) || 0),
+    qtyUnserviceable: uns === '' ? 0 : Math.max(0, Number(uns) || 0),
+    qtyWrittenOff:    wof === '' ? 0 : Math.max(0, Number(wof) || 0),
+  };
+}
+
+// While typing, update Total and Variance cells live without touching IDB.
 function _onCountInput(e) {
-  const input = e.target;
-  const row = input.closest('.stk__row');
+  const row = e.target.closest('.stk__row');
   if (!row) return;
-  const itemId = row.dataset.itemId;
-  const sys = Number(row.cells[4].textContent.trim()) || 0;
-  const counted = input.value.trim();
-  const varCell = row.querySelector('.stk__col-var');
-  if (counted === '') {
-    varCell.textContent = '—';
-    varCell.className = 'stk__col-var stk__var--none';
+  const sys        = Number(row.dataset.sys) || 0;
+  const bd         = _readBreakdown(row);
+  const totalCell  = row.querySelector('[data-target="total-cell"]');
+  const varCell    = row.querySelector('[data-target="var-cell"]');
+
+  if (bd.allEmpty) {
+    if (totalCell) totalCell.textContent = '—';
+    if (varCell)   { varCell.textContent = '—'; varCell.className = 'stk__col-var stk__var--none'; }
     return;
   }
-  const v = Number(counted) - sys;
-  varCell.textContent = v >= 0 ? `+${v}` : `${v}`;
-  varCell.className = 'stk__col-var ' + (
-    v === 0 ? 'stk__var--match' : v < 0 ? 'stk__var--short' : 'stk__var--over');
+
+  const total = bd.qtyServiceable + bd.qtyUnserviceable + bd.qtyWrittenOff;
+  const v     = total - sys;
+  if (totalCell) totalCell.textContent = String(total);
+  if (varCell)   {
+    varCell.textContent = v >= 0 ? `+${v}` : `${v}`;
+    varCell.className = 'stk__col-var ' + (
+      v === 0 ? 'stk__var--match' : v < 0 ? 'stk__var--short' : 'stk__var--over');
+  }
 }
 
 async function _onCountChange(e) {
-  const input = e.target;
-  const row = input.closest('.stk__row');
+  const row    = e.target.closest('.stk__row');
   if (!row) return;
   const itemId = row.dataset.itemId;
-  const raw = input.value.trim();
+  const bd     = _readBreakdown(row);
 
-  if (raw === '') {
-    // Empty count → remove the row from the session entirely. User
-    // cleared their entry; we shouldn't pretend they counted 0.
+  if (bd.allEmpty) {
+    // All three inputs cleared → remove the draft row entirely.
     if (_countsByItem.has(itemId)) {
       await Storage.stocktake.remove(itemId);
       _countsByItem.delete(itemId);
-      // Re-render the toolbar/summary which depend on session shape, but
-      // not the whole table — that would steal focus from neighbouring
-      // inputs.
       await _refreshChrome();
     }
     return;
   }
 
-  const counted = Number(raw);
-  if (!Number.isFinite(counted) || counted < 0) {
-    input.classList.add('stk__count--invalid');
-    return;
-  }
-  input.classList.remove('stk__count--invalid');
+  // Clear any invalid markers.
+  row.querySelectorAll('.stk__count--invalid').forEach((el) => el.classList.remove('stk__count--invalid'));
 
+  const total    = bd.qtyServiceable + bd.qtyUnserviceable + bd.qtyWrittenOff;
   const existing = _countsByItem.get(itemId) || {};
-  await Storage.stocktake.set(itemId, counted, {
-    countedBy: AUTH.getSession()?.name || 'unknown',
-    condition: existing.condition || null,
-    notes:     existing.notes || '',
+
+  await Storage.stocktake.set(itemId, total, {
+    countedBy:        AUTH.getSession()?.name || 'unknown',
+    condition:        existing.condition || null,
+    notes:            existing.notes || '',
+    qtyServiceable:   bd.qtyServiceable,
+    qtyUnserviceable: bd.qtyUnserviceable,
+    qtyWrittenOff:    bd.qtyWrittenOff,
   });
 
-  // Mirror back to the cache so the next render reads the fresh values.
   _countsByItem.set(itemId, {
-    ...(existing),
+    ...existing,
     itemId,
-    counted,
+    counted:          total,
+    qtyServiceable:   bd.qtyServiceable,
+    qtyUnserviceable: bd.qtyUnserviceable,
+    qtyWrittenOff:    bd.qtyWrittenOff,
     countedAt: new Date().toISOString(),
   });
   await _refreshChrome();
@@ -349,15 +423,14 @@ async function _onCountChange(e) {
 }
 
 async function _onConditionChange(e) {
-  const sel = e.target;
-  const row = sel.closest('.stk__row');
+  const sel      = e.target;
+  const row      = sel.closest('.stk__row');
   if (!row) return;
-  const itemId = row.dataset.itemId;
+  const itemId   = row.dataset.itemId;
   const existing = _countsByItem.get(itemId);
   // If no count entered yet, condition change alone doesn't create a
   // session row — the count is the trigger. Without a count, finalisation
   // doesn't act on this row, so a condition override would be lost.
-  // Tell the user via a soft warning rather than silently doing nothing.
   if (!existing) {
     sel.classList.add('stk__cond--orphan');
     sel.title = 'Enter a count to record this condition change.';
@@ -365,28 +438,31 @@ async function _onConditionChange(e) {
   }
   sel.classList.remove('stk__cond--orphan');
   await Storage.stocktake.set(itemId, existing.counted, {
-    countedBy: AUTH.getSession()?.name || 'unknown',
-    condition: sel.value,
-    notes:     existing.notes || '',
+    countedBy:        AUTH.getSession()?.name || 'unknown',
+    condition:        sel.value,
+    notes:            existing.notes || '',
+    qtyServiceable:   existing.qtyServiceable   ?? existing.counted ?? 0,
+    qtyUnserviceable: existing.qtyUnserviceable  ?? 0,
+    qtyWrittenOff:    existing.qtyWrittenOff     ?? 0,
   });
   existing.condition = sel.value;
   Sync.notifyChanged();
 }
 
 async function _onNotesChange(e) {
-  const input = e.target;
-  const row = input.closest('.stk__row');
+  const input    = e.target;
+  const row      = input.closest('.stk__row');
   if (!row) return;
-  const itemId = row.dataset.itemId;
+  const itemId   = row.dataset.itemId;
   const existing = _countsByItem.get(itemId);
-  if (!existing) {
-    // Same orphan case as condition. Notes without a count are lost.
-    return;
-  }
+  if (!existing) return;  // Notes without a count are lost — no orphan UI needed.
   await Storage.stocktake.set(itemId, existing.counted, {
-    countedBy: AUTH.getSession()?.name || 'unknown',
-    condition: existing.condition || null,
-    notes:     input.value,
+    countedBy:        AUTH.getSession()?.name || 'unknown',
+    condition:        existing.condition || null,
+    notes:            input.value,
+    qtyServiceable:   existing.qtyServiceable   ?? existing.counted ?? 0,
+    qtyUnserviceable: existing.qtyUnserviceable  ?? 0,
+    qtyWrittenOff:    existing.qtyWrittenOff     ?? 0,
   });
   existing.notes = input.value;
   Sync.notifyChanged();
@@ -513,17 +589,27 @@ async function _onFinalise() {
           <summary>${overs.length + shorts.length} discrepanc${overs.length + shorts.length === 1 ? 'y' : 'ies'} — review</summary>
           <table class="stk__finalise-table">
             <thead>
-              <tr><th>Item</th><th>System</th><th>Counted</th><th>Variance</th></tr>
+              <tr><th>Item</th><th>System</th><th>Svc</th><th>U/S</th><th>W/O</th><th>Total</th><th>Variance</th></tr>
             </thead>
             <tbody>
-              ${[...overs, ...shorts].map(({ item, stk, v }) => `
-                <tr>
-                  <td>${esc(item.name)} ${item.nsn ? `<span class="stk__nsn-inline">${esc(item.nsn)}</span>` : ''}</td>
-                  <td>${item.onHand || 0}</td>
-                  <td>${stk.counted}</td>
-                  <td class="${v > 0 ? 'stk__var--over' : 'stk__var--short'}">${v > 0 ? '+' : ''}${v}</td>
-                </tr>
-              `).join('')}
+              ${[...overs, ...shorts].map(({ item, stk, v }) => {
+                const qtyS = stk.qtyServiceable   != null ? Number(stk.qtyServiceable)   : Number(stk.counted) || 0;
+                const qtyU = stk.qtyUnserviceable != null ? Number(stk.qtyUnserviceable)  : 0;
+                const qtyW = stk.qtyWrittenOff    != null ? Number(stk.qtyWrittenOff)     : 0;
+                const total = qtyS + qtyU + qtyW;
+                const variance = total - (Number(item.onHand) || 0);
+                return `
+                  <tr>
+                    <td>${esc(item.name)} ${item.nsn ? `<span class="stk__nsn-inline">${esc(item.nsn)}</span>` : ''}</td>
+                    <td>${item.onHand || 0}</td>
+                    <td>${qtyS}</td>
+                    <td>${qtyU || '—'}</td>
+                    <td>${qtyW > 0 ? `<strong>${qtyW}</strong>` : '—'}</td>
+                    <td>${total}</td>
+                    <td class="${variance > 0 ? 'stk__var--over' : 'stk__var--short'}">${variance > 0 ? '+' : ''}${variance}</td>
+                  </tr>
+                `;
+              }).join('')}
             </tbody>
           </table>
         </details>
@@ -558,39 +644,61 @@ async function _onFinalise() {
 }
 
 async function _doFinalise(matches, overs, shorts, itemsById) {
-  const userName = AUTH.getSession()?.name || 'unknown';
+  const userName    = AUTH.getSession()?.name || 'unknown';
   const finalisedAt = new Date().toISOString();
+  const reportRows  = [];
+  let totalWriteOffs = 0;
 
-  // Snapshot rows BEFORE clearing, so the report has the data.
-  const reportRows = [];
+  // 1. Apply each counted item: update onHand, unsvc, writtenOff + condition.
+  for (const { item, stk, v } of [...matches, ...overs, ...shorts]) {
+    // Breakdown fields — support legacy draft rows that only have `counted`.
+    const qtyS = stk.qtyServiceable   != null ? Number(stk.qtyServiceable)   : Number(stk.counted) || 0;
+    const qtyU = stk.qtyUnserviceable != null ? Number(stk.qtyUnserviceable)  : 0;
+    const qtyW = stk.qtyWrittenOff    != null ? Number(stk.qtyWrittenOff)     : 0;
+    const total = qtyS + qtyU + qtyW;
 
-  // 1. Apply each counted item: update onHand + condition.
-  for (const { item, stk } of [...matches, ...overs, ...shorts]) {
-    const v = Number(stk.counted) - (Number(item.onHand) || 0);
     const updated = {
       ...item,
-      onHand:    Math.max(0, Number(stk.counted)),
-      condition: stk.condition || item.condition,
+      onHand:         Math.max(0, total),
+      unsvc:          Math.max(0, qtyU),
+      writtenOff:     Math.max(0, qtyW),
+      condition:      stk.condition || item.condition,
       lastStocktakeAt: finalisedAt,
-      updatedAt: finalisedAt,
+      updatedAt:      finalisedAt,
     };
     await Storage.items.put(updated);
 
-    // Audit per-discrepancy. Matches don't generate per-row entries —
-    // they're rolled up in the finalisation entry below. This matches
-    // v1's approach and keeps the audit log readable.
-    if (v !== 0) {
+    // Audit per-discrepancy. Matches rolled up in summary.
+    const variance = total - (Number(item.onHand) || 0);
+    if (variance !== 0) {
+      let condBreakdown = '';
+      if (qtyU > 0 || qtyW > 0) {
+        condBreakdown = ` [Svc:${qtyS} U/S:${qtyU} W/O:${qtyW}]`;
+      }
       await Storage.audit.append({
         action: 'stocktake_adjust',
         user:   userName,
         desc:   `Stocktake: ${item.name}` +
                 (item.nsn ? ` (${item.nsn})` : '') +
-                ` system:${item.onHand} counted:${stk.counted} variance:${v >= 0 ? '+' : ''}${v}` +
+                ` system:${item.onHand || 0} counted:${total}${condBreakdown} variance:${variance >= 0 ? '+' : ''}${variance}` +
                 (stk.notes ? ` — ${stk.notes}` : ''),
       });
     }
 
-    reportRows.push({ item: updated, stk, variance: v });
+    // Write-off entries get their own audit entry for visibility.
+    if (qtyW > 0) {
+      totalWriteOffs += qtyW;
+      await Storage.audit.append({
+        action: 'stocktake_writeoff',
+        user:   userName,
+        desc:   `Write-off recorded: ${item.name}` +
+                (item.nsn ? ` (${item.nsn})` : '') +
+                ` — ${qtyW} item${qtyW === 1 ? '' : 's'} beyond economic repair, pending board of survey.` +
+                (stk.notes ? ` Notes: ${stk.notes}` : ''),
+      });
+    }
+
+    reportRows.push({ item: updated, stk: { ...stk, qtyServiceable: qtyS, qtyUnserviceable: qtyU, qtyWrittenOff: qtyW, counted: total }, variance });
   }
 
   // 2. One summary audit entry.
@@ -598,7 +706,8 @@ async function _doFinalise(matches, overs, shorts, itemsById) {
     action: 'stocktake_finalise',
     user:   userName,
     desc:   `Stocktake finalised: ${matches.length + overs.length + shorts.length} counted, ` +
-            `${matches.length} match, ${overs.length} over, ${shorts.length} short.`,
+            `${matches.length} match, ${overs.length} over, ${shorts.length} short` +
+            (totalWriteOffs > 0 ? `, ${totalWriteOffs} write-off item${totalWriteOffs === 1 ? '' : 's'} recorded` : '') + '.',
   });
 
   // 3. Clear the draft.
@@ -616,6 +725,7 @@ async function _doFinalise(matches, overs, shorts, itemsById) {
       match:  matches.length,
       over:   overs.length,
       short:  shorts.length,
+      writeOffs: totalWriteOffs,
     },
   };
 }
@@ -626,10 +736,13 @@ async function _offerReportDownload(sessionMeta) {
     size:      'sm',
     bodyHtml: `
       <p class="modal__body">
-        ${sessionMeta.counts.total} item${sessionMeta.counts.total === 1 ? '' : 's'} counted.
+        ${sessionMeta.counts.total} item${sessionMeta.counts.total === 1 ? '' : 's'} counted:
         ${sessionMeta.counts.match} match,
         ${sessionMeta.counts.over} over,
-        ${sessionMeta.counts.short} short.
+        ${sessionMeta.counts.short} short
+        ${sessionMeta.counts.writeOffs > 0
+          ? `, <strong>${sessionMeta.counts.writeOffs} write-off item${sessionMeta.counts.writeOffs === 1 ? '' : 's'} flagged</strong> (see audit log)`
+          : ''}.
         Inventory and audit log updated.
       </p>
       <div class="form__actions">
