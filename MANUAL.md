@@ -321,33 +321,35 @@ The Stocktake page guides you through a physical count of all Q-Store items.
 ### Starting a Stocktake (OC / QM)
 
 1. Navigate to **Stocktake**
-2. Enter counts for each item using the **three condition columns**:
+2. Enter counts for each item using the **five condition columns** — one for each condition state in the system:
 
 | Column | Abbreviation | Meaning |
 |--------|-------------|---------|
 | Serviceable | Svc | Items in good working order |
 | Unserviceable | U/S | Items damaged or non-functional; awaiting repair or assessment |
+| In Repair | Repr | Items currently being repaired (temporarily unavailable) |
+| Calibration Due | Cal | Items requiring calibration before they can be issued |
 | Written Off | W/O | Items beyond economic repair; pending formal Board of Survey |
 
-3. The **Total** column shows the sum of Svc + U/S + W/O automatically. **Variance** compares Total to the system's on-hand quantity
-4. Optionally override the **condition** classification and add **notes**
+3. The **Total** column shows the sum of all five columns automatically. **Variance** compares Total to the system's on-hand quantity
+4. Optionally override the item's **condition** classification (the dropdown reflects the same five states) and add **notes**
 5. The live summary shows: counted, matching, discrepancies, and missing items
 6. Use the category filter to work through one section at a time
 7. Drafts save automatically — you can leave and return without losing progress
 
-> **Tip:** Leave any column blank (or at 0) if there are none of that condition. You only need to fill in the columns that apply.
+> **Tip:** Leave any column blank (or at 0) if there are none of that condition. You only need to fill in the columns that apply. The In Repair and Calibration Due inputs turn amber when filled as a visual reminder.
 
 ### Finalising
 
 1. Once all items are counted, click **Finalise stocktake**
-2. Review the discrepancy table (shows Svc / U/S / W/O breakdown per item) and confirm
+2. Review the discrepancy table (shows all five condition columns per item) and confirm
 3. On finalise, inventory is updated:
-   - **On hand** ← total (Svc + U/S + W/O)
-   - **Unserviceable** ← U/S count
+   - **On hand** ← total (Svc + U/S + Repr + Cal + W/O)
+   - **Unserviceable** ← U/S + Repr + Cal (all items not ready for issue)
    - **Written off** ← W/O count (tracked for follow-up Board of Survey)
-4. Each discrepancy is recorded in the audit log
+4. Each discrepancy is recorded in the audit log with a full condition breakdown
 5. Write-off items get a separate `stocktake_writeoff` audit entry flagging them for formal action
-6. A stocktake report PDF (with condition breakdown columns) is available
+6. A stocktake report PDF (with all five condition columns) is available
 
 > **Note:** Finalising is irreversible. Ensure all counts are correct before confirming. Written-off items must be formally struck off charge via a Board of Survey (AB174) — this is not done automatically by the system.
 

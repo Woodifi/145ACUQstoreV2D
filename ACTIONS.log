@@ -143,6 +143,23 @@ Format: [TIMESTAMP UTC] ACTION — details
 
 -------------------------------------------------------------------------------
 
+[2026-05-18T07:57:00Z] GIT COMMIT + PUSH — stocktake 5-condition breakdown (6733389)
+  MODIFIED: src/ui/stocktake.js — added Repr (In Repair) and Cal (Calibration Due) qty
+    count inputs; _readBreakdown() now reads all 5 fields; _onCountInput sums all 5;
+    _onCountChange/_onConditionChange/_onNotesChange persist all 5; _wire() binds
+    qty-repr and qty-cal; finalise modal discrepancy table shows all 5 columns;
+    _doFinalise: total = sum of all 5; unsvc ← qtyU+qtyR+qtyC; audit condBreakdown
+    includes all non-zero parts; reportRows carry all 5 qty fields
+  MODIFIED: src/pdf.js — stocktake report: added Repr and Cal columns; dropped Notes
+    column to maintain portrait A4 fit (170mm); 10 cols total
+  MODIFIED: qstore.css — .stk__count-repr/.stk__count-cal selectors; amber tint when
+    filled; stk__col-count width 58px → 48px; focus selectors updated
+  MODIFIED: MANUAL.md §7 — updated to five-column table; finalise field update table updated
+  MODIFIED: src/ui/help.js — stocktake section updated to five-column table
+  481/481 tests passing.
+
+-------------------------------------------------------------------------------
+
 [2026-05-18T07:38:00Z] GIT COMMIT + PUSH — Company / Platoon / Section unit sub-structure (bad303d)
   NEW: src/structure.js — load/save/getCompanies/getPlatoons/getSections/companyIndex/
     platoonIndex/sectionIndex/makeComparator helpers

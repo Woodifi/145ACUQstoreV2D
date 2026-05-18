@@ -223,22 +223,24 @@ const SECTIONS = [
     icon: '🔢',
     body: `
       <h4>Running a stocktake <span class="help__role">OC / QM</span></h4>
-      <p>Each item has <strong>three count columns</strong> for condition breakdown:</p>
+      <p>Each item has <strong>five count columns</strong> matching every condition state in the system:</p>
       <table class="help__table">
         <thead><tr><th>Column</th><th>Meaning</th></tr></thead>
         <tbody>
           <tr><td><strong>Svc</strong></td><td>Serviceable — good working order</td></tr>
-          <tr><td><strong>U/S</strong></td><td>Unserviceable — damaged or non-functional, awaiting repair</td></tr>
-          <tr><td><strong>W/O</strong></td><td>Written off — beyond repair, pending Board of Survey (AB174)</td></tr>
+          <tr><td><strong>U/S</strong></td><td>Unserviceable — damaged or non-functional, awaiting assessment</td></tr>
+          <tr><td><strong>Repr</strong></td><td>In repair — currently being repaired (amber tint when filled)</td></tr>
+          <tr><td><strong>Cal</strong></td><td>Calibration due — must be calibrated before issue (amber tint when filled)</td></tr>
+          <tr><td><strong>W/O</strong></td><td>Written off — beyond repair, pending Board of Survey (AB174) (red tint when filled)</td></tr>
         </tbody>
       </table>
       <ol>
         <li>Go to <strong>Stocktake</strong> and enter counts for each item's condition columns</li>
-        <li>The <strong>Total</strong> cell sums Svc + U/S + W/O automatically; <strong>Variance</strong> compares it to the system quantity</li>
-        <li>Optionally override the condition override or add notes per item</li>
+        <li>The <strong>Total</strong> cell sums all five columns; <strong>Variance</strong> compares it to the system quantity</li>
+        <li>Optionally set the condition dropdown (same five states) and add notes per item</li>
         <li>Use the category filter to work section by section</li>
         <li>Drafts save automatically — you can leave and return</li>
-        <li>When done, click <strong>Finalise stocktake</strong> and review the breakdown before confirming</li>
+        <li>When done, click <strong>Finalise stocktake</strong> and review the full breakdown before confirming</li>
       </ol>
       <p>On finalise: <strong>On hand</strong> ← total; <strong>Unserviceable</strong> ← U/S count; <strong>Written off</strong> ← W/O count. Write-off items generate a separate <code>stocktake_writeoff</code> audit entry.</p>
       <p class="help__note">Written-off items must be formally struck off charge via Board of Survey (AB174). The system records them but does not process the write-off automatically.</p>
