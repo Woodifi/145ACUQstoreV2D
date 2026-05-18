@@ -35,6 +35,7 @@ import * as Audit     from './audit.js';
 import * as Users     from './users.js';
 import * as Settings  from './settings.js';
 import * as Help      from './help.js';
+import * as Orders    from './orders.js';
 import { openModal }  from './modal.js';
 import { esc, $, render } from './util.js';
 
@@ -44,6 +45,7 @@ const PAGES = {
   loans:     { label: 'Loans',     perm: 'view',     mount: Loans.mount     },
   cadets:    { label: 'Cadets',    perm: 'view',     mount: Cadets.mount    },
   stocktake: { label: 'Stocktake', perm: 'editItem', mount: Stocktake.mount },
+  orders:    { label: 'Orders',    perm: 'editItem', mount: Orders.mount    },
   audit:     { label: 'Audit',     perm: 'audit',    mount: Audit.mount     },
   users:     { label: 'Users',     coOnly: true,     mount: Users.mount     },
   settings:  { label: 'Settings',  coOnly: true,     mount: Settings.mount  },

@@ -4732,3 +4732,353 @@ details[open] > .help__section-summary::after {
     margin: 0 16px;
   }
 }
+
+/* =============================================================================
+ * AAC QStore Orders page
+ * ============================================================================= */
+
+/* ── Layout ── */
+.orders {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 0 48px;
+}
+
+.orders__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 20px 0 16px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.orders__title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.orders__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.orders__import-btn {
+  cursor: pointer;
+}
+.orders__import-btn.btn--loading {
+  opacity: 0.7;
+  pointer-events: none;
+}
+.orders__import-btn.btn--loading::after {
+  content: '…';
+}
+
+.orders__back {
+  padding: 6px 12px;
+  font-size: 0.85rem;
+}
+
+/* ── Empty state ── */
+.orders__empty {
+  text-align: center;
+  padding: 64px 24px;
+  color: var(--text-muted);
+}
+.orders__empty-icon {
+  font-size: 3rem;
+  margin-bottom: 16px;
+  opacity: 0.6;
+}
+.orders__empty p { margin: 4px 0; }
+.orders__empty-hint { font-size: 0.875rem; margin-top: 12px !important; }
+
+/* ── Order list rows ── */
+.orders__list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.orders__row {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 18px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.orders__row:hover,
+.orders__row:focus {
+  border-color: var(--gold);
+  background: var(--bg-input);
+  outline: none;
+}
+
+.orders__row-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.orders__row-id {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+
+.orders__row-body {
+  display: flex;
+  gap: 20px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+
+/* ── Badges ── */
+.ord__badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.ord__badge--pending  { background: rgba(255,160,0,0.15);  color: #f0a500; }
+.ord__badge--approved { background: rgba(0,200,100,0.12);  color: #00c864; }
+.ord__badge--received { background: rgba(0,160,210,0.14);  color: #20b0e0; }
+.ord__badge--request  { background: rgba(130,130,180,0.15); color: #9898c0; }
+.ord__badge--issue    { background: rgba(200,100,0,0.15);  color: #e08020; }
+.ord__badge--cat      { background: rgba(255,255,255,0.07); color: var(--text-muted); }
+
+/* ── Detail view ── */
+.orders__detail {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.orders__detail-meta {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px 24px;
+}
+
+.orders__detail-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 16px;
+  color: var(--text-primary);
+}
+
+.orders__detail-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px 24px;
+  margin: 0;
+}
+
+.orders__detail-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.orders__detail-field dt {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.orders__detail-field dd {
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.orders__notes {
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+}
+
+/* ── Items table ── */
+.orders__items-section {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 20px;
+}
+
+.orders__items-heading {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.orders__items-count {
+  background: var(--bg-input);
+  border-radius: 10px;
+  padding: 2px 8px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.orders__items-empty {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  text-align: center;
+  padding: 24px 0;
+}
+
+.orders__table-wrap {
+  overflow-x: auto;
+}
+
+.orders__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.orders__table th {
+  text-align: left;
+  padding: 8px 10px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.orders__table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  color: var(--text-primary);
+  vertical-align: top;
+}
+
+.orders__table tr:last-child td { border-bottom: none; }
+
+.orders__table.orders__table--compact td,
+.orders__table.orders__table--compact th { padding: 6px 8px; }
+
+.orders__row--new td { color: var(--gold); }
+.orders__col-num { text-align: center; }
+.orders__cell-nsn { font-family: monospace; font-size: 0.82rem; white-space: nowrap; }
+
+/* ── IMS status cells ── */
+.ord__ims-status {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.ord__ims--found  { background: rgba(0,200,100,0.12);  color: #00c864; }
+.ord__ims--new    { background: rgba(255,160,0,0.15);  color: #f0a500; }
+.ord__ims--no-nsn { background: rgba(130,130,130,0.12); color: var(--text-muted); }
+
+/* ── Parse error ── */
+.orders__parse-error {
+  margin-top: 16px;
+}
+
+/* ── Approve modal ── */
+.ord__approve-body p { margin: 0 0 14px; font-size: 0.9rem; }
+
+.ord__approve-heading {
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin: 14px 0 8px;
+}
+.ord__approve-heading--found { color: #00c864; }
+.ord__approve-heading--new   { color: var(--gold); }
+.ord__approve-sub {
+  font-weight: 400;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-left: 8px;
+}
+
+.ord__approve-warn {
+  background: rgba(255,160,0,0.08);
+  border: 1px solid rgba(255,160,0,0.25);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  color: var(--gold);
+  margin: 12px 0 0;
+}
+
+.ord__approve-cat-label {
+  display: block;
+  margin-top: 10px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.ord__approve-cat-sel {
+  margin-top: 4px;
+  width: 220px;
+}
+
+.ord__approve-notes {
+  margin-top: 14px;
+}
+.ord__notes-input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 4px;
+  resize: vertical;
+  min-height: 52px;
+}
+.ord__approve-err { min-height: 20px; }
+
+/* ── Delete button ── */
+.btn--danger-ghost {
+  background: transparent;
+  border: 1px solid rgba(220, 50, 50, 0.4);
+  color: var(--danger);
+}
+.btn--danger-ghost:hover {
+  background: rgba(220, 50, 50, 0.1);
+  border-color: var(--danger);
+}
+
+/* ── Mobile responsiveness ── */
+@media (max-width: 600px) {
+  .orders__header { flex-direction: column; align-items: flex-start; }
+  .orders__row-body { gap: 10px; }
+  .orders__detail-fields { grid-template-columns: 1fr 1fr; }
+  .orders__table th:nth-child(4),
+  .orders__table td:nth-child(4),
+  .orders__table th:nth-child(5),
+  .orders__table td:nth-child(5) { display: none; }
+}

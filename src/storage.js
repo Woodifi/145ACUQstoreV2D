@@ -35,7 +35,7 @@
 // =============================================================================
 
 const DEFAULT_DB_NAME = 'qstore';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let _dbName = DEFAULT_DB_NAME;
 
@@ -50,8 +50,9 @@ export const STORES = Object.freeze({
   AUDIT:     'audit',
   USERS:     'users',
   REQUESTS:  'pendingRequests',
-  STOCKTAKE: 'stocktakeCounts',
-  KITS:      'kits',
+  STOCKTAKE:     'stocktakeCounts',
+  KITS:          'kits',
+  SUPPLY_ORDERS: 'supplyOrders',
 });
 
 let _db = null;
@@ -157,6 +158,12 @@ function _runSchemaMigrations(db, oldVersion) {
   }
   if (oldVersion < 2) {
     db.createObjectStore(STORES.KITS, { keyPath: 'id' });
+  }
+  if (oldVersion < 3) {
+    const orders = db.createObjectStore(STORES.SUPPLY_ORDERS, { keyPath: 'id' });
+    orders.createIndex('docType',   'docType',   { unique: false });
+    orders.createIndex('status',    'status',    { unique: false });
+    orders.createIndex('importedAt','importedAt',{ unique: false });
   }
   // Future schema upgrades go here. Bump DB_VERSION above and add a new
   // `if (oldVersion < N)` block. NEVER remove old blocks — users on older
@@ -575,6 +582,62 @@ export const kits = {
 };
 
 // -----------------------------------------------------------------------------
+// Supply Orders (AAC QStore import tracking)
+// -----------------------------------------------------------------------------
+//
+// Order schema:
+//   id             string  PK ('order-<uuid>')
+//   orderId        string  AAC order number, e.g. "21922"
+//   orderCategory  string  "uniform" | "equipment" | "general"
+//   docType        string  "request" | "issue"
+//   orderStatus    string  Raw status string from PDF
+//   status         string  "pending" | "approved" | "received"
+//   date           string  ISO date "2026-04-05"
+//   dateRaw        string  Human-readable date from PDF
+//   requestorName  string
+//   requestorRank  string
+//   requestorSvcNo string
+//   unit           string
+//   items          Array   [{ nsn, description, qtyRequired, qtyRequisitioned, qtyReceived }]
+//   importedAt     string  ISO timestamp of when QM imported the PDF
+//   approvedAt     string  ISO timestamp if approved
+//   approvedBy     string  User who approved
+//   notes          string  Optional QM notes
+
+export const orders = {
+  list: () => _all(STORES.SUPPLY_ORDERS),
+
+  async listByDocType(docType) {
+    const tx = _db.transaction(STORES.SUPPLY_ORDERS, 'readonly');
+    const idx = tx.objectStore(STORES.SUPPLY_ORDERS).index('docType');
+    return _reqDone(idx.getAll(docType));
+  },
+
+  async get(id) {
+    const tx = _db.transaction(STORES.SUPPLY_ORDERS, 'readonly');
+    return (await _reqDone(tx.objectStore(STORES.SUPPLY_ORDERS).get(id))) || null;
+  },
+
+  async put(order) {
+    if (!order?.id) throw new Error('Order.id required');
+    const tx = _db.transaction(STORES.SUPPLY_ORDERS, 'readwrite');
+    tx.objectStore(STORES.SUPPLY_ORDERS).put(order);
+    await _txDone(tx);
+  },
+
+  async delete(id) {
+    const tx = _db.transaction(STORES.SUPPLY_ORDERS, 'readwrite');
+    tx.objectStore(STORES.SUPPLY_ORDERS).delete(id);
+    await _txDone(tx);
+  },
+
+  async count() {
+    const tx = _db.transaction(STORES.SUPPLY_ORDERS, 'readonly');
+    return _reqDone(tx.objectStore(STORES.SUPPLY_ORDERS).count());
+  },
+};
+
+// -----------------------------------------------------------------------------
 // Audit log (HMAC-chained, append-only at the API level)
 // -----------------------------------------------------------------------------
 
@@ -796,6 +859,7 @@ export async function exportAll() {
     pendingRequests: await _all(STORES.REQUESTS),
     stocktakeCounts: await _all(STORES.STOCKTAKE),
     kits:            await _all(STORES.KITS),
+    supplyOrders:    await _all(STORES.SUPPLY_ORDERS),
   };
 
   const photoRows = await _all(STORES.PHOTOS);
@@ -854,7 +918,7 @@ export async function importAll(snapshot) {
   const stores = [
     STORES.META, STORES.SETTINGS, STORES.COUNTERS, STORES.ITEMS, STORES.CADETS,
     STORES.LOANS, STORES.AUDIT, STORES.USERS, STORES.REQUESTS,
-    STORES.STOCKTAKE, STORES.PHOTOS, STORES.KITS,
+    STORES.STOCKTAKE, STORES.PHOTOS, STORES.KITS, STORES.SUPPLY_ORDERS,
   ];
   const tx = _db.transaction(stores, 'readwrite');
   const put = (name, rows) => {
@@ -875,8 +939,9 @@ export async function importAll(snapshot) {
   put(STORES.AUDIT,     snapshot.audit);
   put(STORES.USERS,     snapshot.users);
   put(STORES.REQUESTS,  snapshot.pendingRequests);
-  put(STORES.STOCKTAKE, snapshot.stocktakeCounts);
-  put(STORES.KITS,      snapshot.kits);
+  put(STORES.STOCKTAKE,     snapshot.stocktakeCounts);
+  put(STORES.KITS,          snapshot.kits);
+  put(STORES.SUPPLY_ORDERS, snapshot.supplyOrders);
 
   const photoStore = tx.objectStore(STORES.PHOTOS);
   for (const p of snapshot.photos || []) {
@@ -910,7 +975,7 @@ export async function wipe({ keepMeta = true, keepUsers = true } = {}) {
   const targets = [
     STORES.SETTINGS, STORES.COUNTERS, STORES.ITEMS, STORES.PHOTOS,
     STORES.CADETS, STORES.LOANS, STORES.AUDIT, STORES.REQUESTS,
-    STORES.STOCKTAKE, STORES.KITS,
+    STORES.STOCKTAKE, STORES.KITS, STORES.SUPPLY_ORDERS,
   ];
   if (!keepUsers) targets.push(STORES.USERS);
   if (!keepMeta)  targets.push(STORES.META);
