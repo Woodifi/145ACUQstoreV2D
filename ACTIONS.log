@@ -232,3 +232,21 @@ END OF LOG — append new entries above this line
 [2026-05-13T04:20:30Z] GIT COMMIT + PUSH — GitHub Pages setup
   Committed: build.js, docs/.nojekyll, docs/index.html, ACTIONS.log
 
+
+[2026-05-18T08:49:00Z] CSS FIX — add audit stubs for cad__form-plt-wrap / cad__form-sec-wrap
+  qstore.css: two JS-only selector hook classes now have explicit (empty) CSS rules
+  so dependency audits don't flag them as orphaned.
+  Tests: 481/481 ✓  Bundle: 1691.7 KB
+
+[2026-05-18T08:49:10Z] GIT COMMIT + PUSH — CSS audit fix
+  Commit: fix: add CSS audit stubs for cad__form-plt-wrap and cad__form-sec-wrap
+  SHA: 0781f69  →  master
+
+[2026-05-18T13:39:08Z] MERGE WIP → MAIN — v2.2.0 full feature merge
+  Pulled fast-forward from origin/master (d7dd59b → present in qstore-v2)
+  Copied source files not committed in WIP: dashboard.js (new), modal.js,
+  inventory.js, cadets.js, stocktake.js, pdf.js, csv-import.js,
+  fingerprint.js, package.json, test-pdf.mjs, docs/CHANGELOG.md
+  Build: 20260518-B4BDAEEC  Bundle: 1736.0 KB  Tests: 42/42 (PDF)
+  Commit: 581fa71  →  master
+  GitHub Pages updated: https://woodifi.github.io (docs/index.html)
