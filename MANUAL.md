@@ -163,6 +163,21 @@ The Inventory page lists all items in the Q-Store. It is the first page shown af
 - **Search:** Type in the search box to filter by NSN, item name, or category. Results update as you type.
 - **Category filter:** Use the dropdown to show only one category.
 - **Columns:** NSN, photo, name, category, authorised qty, on hand, on loan, unserviceable, condition, location.
+- **Condition badge:** Coloured badge showing overall item status. When an item has a mixed breakdown, a detail line appears below — e.g. *3 Svc · 1 U/S · 1 Repr*.
+
+### Condition Breakdown
+
+Every inventory item tracks the same five condition states as Stocktake:
+
+| Field | Abbreviation | Meaning |
+|-------|-------------|---------|
+| Serviceable | Svc | Ready for issue |
+| Unserviceable | U/S | Damaged or non-functional |
+| In Repair | Repr | Temporarily unavailable (being repaired) |
+| Calibration Due | Cal | Must be calibrated before issue |
+| Written Off | W/O | Beyond repair — pending Board of Survey |
+
+The **Condition badge** and **Unsvc** count are derived automatically from these fields. There is no separate condition dropdown to maintain — the breakdown drives everything.
 
 ### Adding an Item (OC / QM)
 
@@ -173,15 +188,19 @@ The Inventory page lists all items in the Q-Store. It is the first page shown af
    - **Category** — Uniform, Equipment, Safety, Training Aids, Field Stores, Medical, or ICT
    - **Authorised qty** — Establishment quantity
    - **On hand** — Current physical quantity
-   - **On loan** — Items currently issued (usually 0 for a new item)
-   - **Unserviceable** — Damaged/unfit items
-   - **Condition** — Serviceable, Unserviceable, or Calibration Due
+   - **Condition breakdown** — Enter a qty in each applicable condition field. The running total (shown top-right of the section) must equal On hand. Changing On hand automatically adjusts Svc to keep the total consistent.
    - **Location** — Storage location within the Q-Store
 3. Click **Save item**
 
+> **Tip:** For new items being added for the first time, the Svc field defaults to match On hand. Adjust if any units are already unserviceable.
+
 ### Editing an Item (OC / QM)
 
-Click **Edit** on any row to modify any field. Changes are audited.
+Click **Edit** on any row to modify any field. The condition breakdown fields are pre-filled with current data. Changes are audited.
+
+### Loan History
+
+Click **History** on any row to see the complete loan history for that item — borrower, issue date, return date, quantity, and return status.
 
 ### Deleting an Item (OC only)
 
@@ -191,9 +210,12 @@ Click **Delete** on a row. You must provide a reason (up to 200 characters). Del
 
 Click the photo icon (camera) on any inventory row to upload a photo. Recommended: photograph the item label or the item itself. Photos are resized and stored locally. Supported formats: JPEG, PNG, WebP.
 
-### Printing Stock List
+### Printing the Stock Report
 
-Click **⎙ Print stock** to generate a PDF of the currently-visible items (respects active search and category filters).
+Click **⎙ Print stock** to generate a PDF of the currently-visible items (respects active search and category filters). The report includes:
+- A **Condition** column showing the full breakdown in compact format — e.g. *5S/2U/1R* = 5 Serviceable, 2 Unserviceable, 1 In Repair. *Svc* means all units are serviceable.
+- **Available** qty (On hand minus On loan).
+- Rows with more than half the stock not ready for issue are highlighted in red.
 
 ### QR Code Labels
 
@@ -345,9 +367,10 @@ The Stocktake page guides you through a physical count of all Q-Store items.
 2. Review the discrepancy table (shows all five condition columns per item) and confirm
 3. On finalise, inventory is updated:
    - **On hand** ← total (Svc + U/S + Repr + Cal + W/O)
+   - **Full condition breakdown** ← stored per item (Svc / U/S / Repr / Cal / W/O), so the Inventory page and stock report PDF immediately reflect the exact post-stocktake state
    - **Unserviceable** ← U/S + Repr + Cal (all items not ready for issue)
    - **Written off** ← W/O count (tracked for follow-up Board of Survey)
-   - **Condition** ← derived automatically from the highest-severity count present (W/O > Repr > Cal > U/S > Svc)
+   - **Condition badge** ← derived automatically from the highest-severity count present (W/O > Repr > Cal > U/S > Svc)
 4. Each discrepancy is recorded in the audit log with a full condition breakdown
 5. Write-off items get a separate `stocktake_writeoff` audit entry flagging them for formal action
 6. A stocktake report PDF (with all five condition columns) is available

@@ -104,16 +104,36 @@ const SECTIONS = [
     body: `
       <h4>Viewing and searching</h4>
       <p>Type in the search box to filter by NSN, name, or category. Use the category dropdown to narrow further. Results update as you type.</p>
+      <p>The <strong>Condition</strong> column shows a coloured badge for each item's overall status. When an item has mixed conditions, a breakdown line appears below the badge — for example: <em>3 Svc · 1 U/S · 1 Repr</em>.</p>
+
+      <h4>Condition breakdown</h4>
+      <p>Every item tracks the full five-state condition breakdown — the same states used in Stocktake:</p>
+      <table class="help__table">
+        <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Svc</strong></td><td>Serviceable — ready for issue</td></tr>
+          <tr><td><strong>U/S</strong></td><td>Unserviceable — damaged or non-functional</td></tr>
+          <tr><td><strong>Repr</strong></td><td>In repair — temporarily unavailable</td></tr>
+          <tr><td><strong>Cal</strong></td><td>Calibration due — must be calibrated before issue</td></tr>
+          <tr><td><strong>W/O</strong></td><td>Written off — beyond repair, pending Board of Survey</td></tr>
+        </tbody>
+      </table>
+      <p>The overall <strong>Condition badge</strong> and <strong>Unsvc</strong> count are derived automatically from these five fields — no separate dropdown needed.</p>
 
       <h4>Adding an item <span class="help__role">OC / QM</span></h4>
       <ol>
         <li>Click <strong>+ Add item</strong></li>
-        <li>Enter NSN (4-2-3-4 format, e.g. <code>8470-66-001-0001</code>), name, category, quantities, condition, and location</li>
-        <li>Click <strong>Save item</strong></li>
+        <li>Enter NSN (4-2-3-4 format, e.g. <code>8470-66-001-0001</code>), name, category, authorised and on-hand quantities</li>
+        <li>Fill in the <strong>Condition breakdown</strong> — the five qty fields must total the On-hand count. The running total indicator turns green when they match.</li>
+        <li>Enter a location and click <strong>Save item</strong></li>
       </ol>
+      <p class="help__note">Changing <strong>On hand</strong> automatically adjusts the <strong>Svc</strong> field to keep the total consistent. Fine-tune the other fields as needed.</p>
 
       <h4>Editing an item <span class="help__role">OC / QM</span></h4>
-      <p>Click <strong>Edit</strong> on any row. All changes are recorded in the audit log.</p>
+      <p>Click <strong>Edit</strong> on any row. The condition breakdown fields are pre-filled from current data. All changes are recorded in the audit log.</p>
+
+      <h4>Loan history</h4>
+      <p>Click <strong>History</strong> on any row to see the full loan history for that item — borrower, dates, quantity, and return status.</p>
 
       <h4>Deleting an item <span class="help__role">OC only</span></h4>
       <p>Click <strong>Delete</strong> and provide a reason. Deletion is permanent.</p>
@@ -121,8 +141,8 @@ const SECTIONS = [
       <h4>Item photos</h4>
       <p>Click the camera icon on any row to upload a photo (JPEG, PNG, or WebP).</p>
 
-      <h4>Print stock list</h4>
-      <p>Click <strong>⎙ Print stock</strong> to generate a PDF of currently-visible items.</p>
+      <h4>Print stock report</h4>
+      <p>Click <strong>⎙ Print stock</strong> to generate a PDF of currently-visible items. The report includes a <strong>Condition</strong> column showing the full breakdown — for example <em>5S/2U/1R</em> means 5 Serviceable, 2 Unserviceable, 1 In Repair. Rows with more than half the stock not ready for issue are highlighted in red.</p>
 
       <h4>QR code labels</h4>
       <p>Click <strong>⎙ QR codes</strong> to generate printable labels. Use <strong>⌖ Scan</strong> to look up an item by scanning its label.</p>
@@ -242,7 +262,7 @@ const SECTIONS = [
         <li>Drafts save automatically — you can leave and return</li>
         <li>When done, click <strong>Finalise stocktake</strong> and review the full breakdown before confirming</li>
       </ol>
-      <p>On finalise: <strong>On hand</strong> ← total; <strong>Unserviceable</strong> ← U/S count; <strong>Written off</strong> ← W/O count. Write-off items generate a separate <code>stocktake_writeoff</code> audit entry.</p>
+      <p>On finalise, each item is updated: <strong>On hand</strong> ← total counted; the full condition breakdown (Svc / U/S / Repr / Cal / W/O) is stored on the item so the Inventory page and stock report PDF both reflect the exact post-stocktake state. Write-off items generate a separate <code>stocktake_writeoff</code> audit entry.</p>
       <p class="help__note">Written-off items must be formally struck off charge via Board of Survey (AB174). The system records them but does not process the write-off automatically.</p>
       <p class="help__warn">Finalising is irreversible. Check all counts before confirming.</p>
     `,
