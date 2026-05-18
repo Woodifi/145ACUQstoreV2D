@@ -47,6 +47,10 @@ QStore IMS (Inventory Management System) is a self-contained browser-based appli
 
 ## 2. Getting Started
 
+### Launch Splash Screen
+
+When the app loads, a full-screen splash is displayed showing the unit logo and a 5-second countdown. The app proceeds automatically to the login screen once the countdown completes and all data has loaded. No action is required.
+
 ### First Login
 
 When the app is opened for the first time, a default Administrator account is created automatically.
@@ -233,7 +237,14 @@ The Cadets page manages the unit's personnel records for both cadets and staff.
 
 ### Viewing the Roll
 
-All logged-in users can view the nominal roll. Search by name or service number, and filter by platoon.
+All logged-in users can view the nominal roll. Search by name or service number, and filter by platoon. Tick **Show inactive** to include deactivated records.
+
+**Sort order:** The roll is always sorted by rank (highest to lowest) then surname (A–Z) within each rank. Staff appear above cadets regardless of rank. This applies to the on-screen table and the printed nominal roll PDF.
+
+| Group | Order |
+|-------|-------|
+| Staff | COL-AAC → LTCOL-AAC → MAJ-AAC → CAPT-AAC → LT-AAC → 2LT-AAC → DAH |
+| Cadets | UO → WO1 → WO2 → SSGT → SGT → CPL → LCPL → CDT |
 
 ### Adding a Person (OC / QM)
 
@@ -342,7 +353,7 @@ Configure the information that appears in the app header, on the login screen, a
 | OC/QM name | Appears on signature blocks |
 | OC/QM email | Contact email |
 | QM rank | QM's rank for signature blocks |
-| Unit logo | PNG or SVG displayed in the header |
+| Unit logo | Displayed in the header and on the launch splash screen. Upload the highest-resolution version available — stored as lossless PNG up to 1024 × 1024 px. |
 
 ### User Accounts
 
@@ -384,6 +395,8 @@ Cloud sync is optional. It backs up all data to a Microsoft OneDrive folder so i
 5. Set the **file name** (default: *qstore_data.json*)
 6. Click **Save**
 7. Click **Sign in** and complete the Microsoft authentication flow
+
+> **Client ID security:** After the first successful sync, the Azure Client ID is hidden and replaced with a *Client ID configured* indicator. To view the ID at any time, click and hold the **Hold to reveal** button — the value is shown only while held and immediately hidden on release.
 
 ### Using Cloud Sync
 
@@ -488,6 +501,11 @@ Issue kits are pre-defined bundles of items (e.g., *Initial Issue — Male Cadet
 4. Enter a kit name (required) and description (optional)
 5. Add item lines — search for items and set quantities
 6. Click **Create kit**
+
+**Kit form behaviour:**
+- Clicking outside the form or pressing Escape does **not** close it — data is preserved until you explicitly save or cancel
+- When a kit has many item lines the list becomes scrollable; new lines are added at the bottom and the list scrolls automatically
+- Clicking **Cancel** asks for confirmation before discarding unsaved changes
 
 ### Using a Kit
 

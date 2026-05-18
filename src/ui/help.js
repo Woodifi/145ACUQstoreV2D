@@ -26,6 +26,9 @@ const SECTIONS = [
     title: 'Getting started',
     icon: '🚀',
     body: `
+      <h4>Launch splash screen</h4>
+      <p>When the app loads a full-screen splash shows the unit logo and counts down from 5. It proceeds automatically — no action needed.</p>
+
       <h4>First login</h4>
       <p>Select <strong>Administrator</strong> from the user list and enter PIN <code>0000</code>.
       You will be prompted to change this immediately — do so before continuing.</p>
@@ -140,6 +143,7 @@ const SECTIONS = [
         <li>Click <strong>⊞ Kits</strong></li>
         <li>Click <strong>+ New kit</strong>, name it, add item lines, and click <strong>Create kit</strong></li>
       </ol>
+      <p class="help__note">The kit form stays open if you click outside it — your data is not lost. When the item list gets long it becomes scrollable and new lines auto-scroll into view. Clicking <strong>Cancel</strong> will ask you to confirm before discarding changes.</p>
 
       <h4>Using a kit</h4>
       <ol>
@@ -157,6 +161,14 @@ const SECTIONS = [
     body: `
       <h4>Viewing the roll</h4>
       <p>All logged-in users can view the nominal roll. Search by name or service number. Filter by platoon. Tick <strong>Show inactive</strong> to see deactivated records.</p>
+      <p><strong>Sort order:</strong> Staff always appear first, then cadets. Within each group the list is ordered by rank (highest to lowest), then surname A–Z within the same rank.</p>
+      <table class="help__table">
+        <thead><tr><th>Group</th><th>Rank order (high → low)</th></tr></thead>
+        <tbody>
+          <tr><td>Staff</td><td>COL-AAC · LTCOL-AAC · MAJ-AAC · CAPT-AAC · LT-AAC · 2LT-AAC · DAH</td></tr>
+          <tr><td>Cadets</td><td>UO · WO1 · WO2 · SSGT · SGT · CPL · LCPL · CDT</td></tr>
+        </tbody>
+      </table>
 
       <h4>Adding a person <span class="help__role">OC / QM</span></h4>
       <ol>
@@ -275,6 +287,7 @@ const SECTIONS = [
         <li>Enter your Azure Application (Client) ID</li>
         <li>Click <strong>Save</strong> then <strong>Sign in</strong></li>
       </ol>
+      <p class="help__note">After the first successful sync the Client ID is hidden for security. Click and hold <strong>Hold to reveal</strong> to view it — it is shown only while held.</p>
 
       <h4>Sync options</h4>
       <ul>
