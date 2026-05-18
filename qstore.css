@@ -697,6 +697,22 @@ input {
   border-color: var(--border);
 }
 
+/* Overdue-count badge on the Loans nav button. */
+.shell__nav-badge {
+  display: inline-block;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 10px;
+  margin-left: 5px;
+  vertical-align: middle;
+  min-width: 16px;
+  text-align: center;
+}
+
 .shell__main {
   flex: 1;
   /* override the centered placeholder layout from the earlier rule */
@@ -3920,4 +3936,707 @@ details[open] > .help__section-summary::after {
   background: rgba(255,107,107,0.12);
   color: var(--danger);
   border-color: rgba(255,107,107,0.2);
+}
+
+/* =============================================================================
+   Dashboard (home page)
+   ============================================================================= */
+
+.dash {
+  padding: 24px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.dash__loading {
+  padding: 48px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.dash__header {
+  margin-bottom: 28px;
+}
+
+.dash__title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--gold);
+  margin: 0 0 4px 0;
+}
+
+.dash__meta {
+  font-size: 13px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dash__refresh {
+  padding: 2px 6px;
+  font-size: 14px;
+}
+
+/* ── Stat tiles ── */
+.dash__tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 12px;
+  margin-bottom: 32px;
+}
+
+.dash__tile {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 12px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dash__tile--warn  { border-color: var(--amber);  background: rgba(196,169,107,0.08); }
+.dash__tile--active{ border-color: var(--gold);   background: rgba(201,162,39,0.08);  }
+.dash__tile--danger{ border-color: var(--danger); background: rgba(220,53,53,0.08);   }
+
+.dash__tile-num {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.dash__tile--warn  .dash__tile-num  { color: var(--amber);  }
+.dash__tile--active .dash__tile-num { color: var(--gold);   }
+.dash__tile--danger .dash__tile-num { color: var(--danger); }
+
+.dash__tile-lbl {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ── Sections ── */
+.dash__section {
+  margin-bottom: 28px;
+}
+
+.dash__section-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin: 0 0 10px 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── Stocktake status ── */
+.dash__stkstatus {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.dash__stkstatus--draft {
+  border-color: var(--gold);
+  background: rgba(201,162,39,0.07);
+}
+
+.dash__stkstatus-badge {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+
+.dash__stkstatus-badge--draft { background: var(--gold);   color: #1a1a10; }
+.dash__stkstatus-badge--ok    { background: var(--success); color: #fff;   }
+.dash__stkstatus-badge--none  { background: var(--bg-input); color: var(--text-muted); }
+
+.dash__stkstatus-text {
+  color: var(--text-secondary);
+}
+
+/* ── Quick actions ── */
+.dash__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.dash__action-btn {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.dash__action-btn:hover {
+  border-color: var(--gold);
+  background: rgba(201,162,39,0.07);
+  color: var(--gold);
+}
+
+/* ── Recent activity ── */
+.dash__activity {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.dash__activity-row {
+  border-bottom: 1px solid var(--border);
+}
+
+.dash__activity-row:last-child {
+  border-bottom: none;
+}
+
+.dash__activity-ts,
+.dash__activity-user,
+.dash__activity-action,
+.dash__activity-desc {
+  padding: 6px 8px;
+  vertical-align: middle;
+}
+
+.dash__activity-ts {
+  color: var(--text-muted);
+  white-space: nowrap;
+  width: 140px;
+}
+
+.dash__activity-action {
+  width: 120px;
+}
+
+.dash__activity-badge {
+  font-size: 10px;
+  font-family: monospace;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1px 5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.dash__activity-user {
+  color: var(--text-secondary);
+  white-space: nowrap;
+  width: 100px;
+}
+
+.dash__activity-desc {
+  color: var(--text-secondary);
+}
+
+.dash__link {
+  color: var(--gold);
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.dash__link:hover {
+  text-decoration: underline;
+}
+
+.dash__link--more {
+  display: inline-block;
+  margin-top: 8px;
+}
+
+/* =============================================================================
+   Platoon migration wizard table
+   ============================================================================= */
+
+.migrate__table-wrap {
+  overflow-x: auto;
+  margin-bottom: 16px;
+}
+
+.migrate__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.migrate__table th {
+  background: var(--bg-input);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 6px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.migrate__row {
+  border-bottom: 1px solid var(--border);
+}
+
+.migrate__row:last-child {
+  border-bottom: none;
+}
+
+.migrate__plt-label,
+.migrate__count,
+.migrate__row td {
+  padding: 8px 10px;
+  vertical-align: middle;
+}
+
+.migrate__plt-label strong {
+  color: var(--text-primary);
+  font-family: monospace;
+}
+
+.migrate__count {
+  color: var(--text-muted);
+  text-align: right;
+  width: 50px;
+}
+
+.migrate__table select {
+  width: 100%;
+  min-width: 130px;
+}
+
+/* =============================================================================
+   Inventory — loan history modal
+   ============================================================================= */
+
+.inv__hist-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 14px;
+}
+
+.inv__hist-overdue-warn {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.inv__hist-table-wrap {
+  overflow-x: auto;
+  max-height: 420px;
+  overflow-y: auto;
+  margin-bottom: 16px;
+}
+
+.inv__hist-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.inv__hist-table th {
+  background: var(--bg-input);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 6px 10px;
+  text-align: left;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  border-bottom: 1px solid var(--border);
+}
+
+.inv__hist-row {
+  border-bottom: 1px solid var(--border);
+}
+
+.inv__hist-row--returned {
+  opacity: 0.65;
+}
+
+.inv__hist-row--overdue td {
+  background: rgba(220,53,53,0.06);
+}
+
+.inv__hist-row td {
+  padding: 7px 10px;
+  vertical-align: middle;
+}
+
+.inv__hist-ref {
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.inv__hist-qty {
+  text-align: right;
+  width: 40px;
+}
+
+.inv__hist-empty {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 24px;
+}
+
+.inv__hist-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+
+.inv__hist-badge--active   { background: rgba(201,162,39,0.15); color: var(--gold);    border: 1px solid rgba(201,162,39,0.3); }
+.inv__hist-badge--overdue  { background: rgba(220,53,53,0.15);  color: var(--danger);  border: 1px solid rgba(220,53,53,0.3);  }
+.inv__hist-badge--returned { background: var(--bg-input);       color: var(--text-muted); border: 1px solid var(--border);    }
+
+/* =============================================================================
+   Category management
+   ============================================================================= */
+
+.cat__list {
+  list-style: none;
+  margin: 0 0 12px 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cat__item {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* Category editor (inside manage modal) */
+.cat__editor-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cat__editor-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.cat__editor-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.cat__editor-item:last-child {
+  border-bottom: none;
+}
+
+.cat__editor-name {
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.cat__editor-btns {
+  display: flex;
+  gap: 4px;
+}
+
+.cat__editor-add {
+  display: flex;
+  gap: 8px;
+}
+
+.cat__editor-input {
+  flex: 1;
+  padding: 6px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.cat__editor-input:focus {
+  outline: none;
+  border-color: var(--gold);
+}
+
+/* =============================================================================
+ * HAMBURGER BUTTON — always in the DOM; visible only on mobile via media query
+ * ============================================================================= */
+
+.shell__hamburger {
+  display: none;          /* hidden on desktop */
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 5px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 0.15s;
+}
+.shell__hamburger:hover {
+  border-color: var(--border);
+  background: var(--bg-input);
+}
+.shell__hamburger span {
+  display: block;
+  width: 20px;
+  height: 2px;
+  background: var(--text-primary);
+  border-radius: 2px;
+  transition: transform 0.22s ease, opacity 0.22s ease;
+  transform-origin: center;
+}
+/* Animate bars → X when the nav overlay is open */
+.shell__hamburger[aria-expanded="true"] span:nth-child(1) {
+  transform: translateY(7px) rotate(45deg);
+}
+.shell__hamburger[aria-expanded="true"] span:nth-child(2) {
+  opacity: 0;
+  transform: scaleX(0);
+}
+.shell__hamburger[aria-expanded="true"] span:nth-child(3) {
+  transform: translateY(-7px) rotate(-45deg);
+}
+
+/* Mobile-only: user block and sign-out inside the nav overlay.
+   Hidden on desktop via the min-width rule below. */
+.shell__nav-user {
+  display: none;
+}
+.shell__nav-signout {
+  display: none;
+}
+
+/* =============================================================================
+ * MOBILE SHELL LAYOUT — ≤ 768 px
+ * Collapses the nav bar to a hamburger; nav becomes a full-width overlay
+ * dropdown below the header.  Touch targets boosted to 44 px minimum.
+ * ============================================================================= */
+
+@media (max-width: 768px) {
+  /* ── Header: compact strip ───────────────────────────────────────────────── */
+  .shell__header {
+    padding: 8px 12px;
+    gap: 8px;
+    position: relative;  /* nav overlay is positioned relative to this */
+    flex-wrap: nowrap;
+  }
+
+  /* Smaller logo on mobile */
+  .shell__brand-logo {
+    height: 44px;
+    max-width: 72px;
+  }
+  .shell__brand-name { font-size: 15px; }
+  .shell__brand-code { font-size: 10px; }
+
+  /* Hide desktop-only header elements on mobile */
+  .shell__session  { display: none; }
+  .shell__logout   { display: none; }
+
+  /* Sync: keep the icon, hide the label text */
+  .shell__sync-label { display: none !important; }
+  .shell__sync {
+    min-width: 36px;
+    height: 36px;
+    justify-content: center;
+  }
+
+  /* Show hamburger */
+  .shell__hamburger { display: flex; }
+
+  /* ── Nav: hidden by default; becomes a dropdown overlay when .is-open ─────── */
+  .shell__nav {
+    display: none;
+    flex-direction: column;
+    position: absolute;
+    top: 100%;      /* flush below the header */
+    left: 0;
+    right: 0;
+    z-index: 300;
+    background: var(--bg-panel);
+    border-top: 1px solid var(--border);
+    border-bottom: 2px solid var(--gold);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+    padding: 8px 0 12px;
+    margin: 0;
+    gap: 0;
+    overflow-y: auto;
+    max-height: calc(100vh - 64px);
+  }
+  .shell__nav.is-open {
+    display: flex;
+  }
+
+  /* Nav links: full-width, touch-friendly rows */
+  .shell__nav-link {
+    width: 100%;
+    text-align: left;
+    border-radius: 0;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    padding: 13px 20px;
+    font-size: 15px;
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .shell__nav-link.is-active {
+    border-left: 3px solid var(--gold);
+    padding-left: 17px;
+    background: var(--bg-input);
+  }
+  .shell__nav-link:last-of-type {
+    border-bottom: none;
+  }
+
+  /* Mobile-only user block inside nav */
+  .shell__nav-user {
+    display: flex;
+    flex-direction: column;
+    padding: 12px 20px 8px;
+    border-top: 1px solid var(--border);
+    margin-top: 4px;
+  }
+  .shell__nav-username {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .shell__nav-userrole {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+
+  /* Mobile-only sign-out inside nav */
+  .shell__nav-signout {
+    display: flex;
+    align-items: center;
+    margin: 6px 12px 4px;
+    padding: 10px 14px;
+    min-height: 44px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    width: calc(100% - 24px);
+    text-align: left;
+  }
+  .shell__nav-signout:hover {
+    background: var(--bg-input-hi);
+    border-color: var(--gold);
+    color: var(--gold);
+  }
+
+  /* ── Touch targets: ensure 44 px minimum on all interactive elements ──────── */
+  .btn {
+    min-height: 44px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+  .btn--sm {
+    min-height: 36px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  input, select, textarea {
+    min-height: 44px;
+    font-size: 16px; /* prevents iOS auto-zoom on focus */
+  }
+  .form__input--pin {
+    min-height: 52px;
+    font-size: 20px;
+  }
+
+  /* ── Page toolbar: already wraps at 700px; ensure search fills full width ── */
+  .page__toolbar { gap: 8px; padding: 10px 12px; }
+
+  /* ── Main content: tighten padding ─────────────────────────────────────── */
+  .shell__main { }
+
+  /* ── Dashboard tiles: 2-column on tablet-ish sizes ─────────────────────── */
+  .dash__tiles { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ≤ 480 px — phone portrait: single-column dashboard, further simplification */
+@media (max-width: 480px) {
+  .dash__tiles { grid-template-columns: 1fr; }
+  .dash__actions { flex-direction: column; }
+  .dash__action-btn { width: 100%; }
+
+  /* Header: ultra-compact — just logo initial + name truncated */
+  .shell__brand-code { display: none; }
+  .shell__brand-name { font-size: 13px; }
+  .shell__brand-logo { height: 36px; max-width: 56px; }
+}
+
+/* Ensure desktop never shows hamburger or the mobile nav items */
+@media (min-width: 769px) {
+  .shell__hamburger { display: none !important; }
+  .shell__nav-user    { display: none !important; }
+  .shell__nav-signout { display: none !important; }
+  /* Restore nav to its desktop flex layout */
+  .shell__nav {
+    display: flex !important;
+    position: static;
+    flex-direction: row;
+    background: none;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    max-height: none;
+    overflow: visible;
+    gap: 4px;
+    flex: 1;
+    margin: 0 16px;
+  }
 }

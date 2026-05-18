@@ -26,6 +26,7 @@ import * as Storage   from '../storage.js';
 import * as AUTH      from '../auth.js';
 import * as Sync      from '../sync.js';
 import * as Login     from './login.js';
+import * as Dashboard from './dashboard.js';
 import * as Inventory from './inventory.js';
 import * as Loans     from './loans.js';
 import * as Cadets    from './cadets.js';
@@ -38,6 +39,7 @@ import { openModal }  from './modal.js';
 import { esc, $, render } from './util.js';
 
 const PAGES = {
+  dashboard: { label: 'Home',      perm: 'view',     mount: Dashboard.mount },
   inventory: { label: 'Inventory', perm: 'view',     mount: Inventory.mount },
   loans:     { label: 'Loans',     perm: 'view',     mount: Loans.mount     },
   cadets:    { label: 'Cadets',    perm: 'view',     mount: Cadets.mount    },
@@ -48,7 +50,7 @@ const PAGES = {
   help:      { label: 'Help',      perm: 'view',     mount: Help.mount      },
 };
 
-const DEFAULT_PAGE = 'inventory';
+const DEFAULT_PAGE = 'dashboard';
 
 let _root             = null;
 let _session          = null;
@@ -72,6 +74,20 @@ export async function boot(rootEl) {
   try {
     await Storage.init();
     await Storage.requestPersistence();
+
+    // Restore logo from localStorage mirror if IndexedDB has lost it.
+    // This helps when the HTML file is upgraded at the same origin/path
+    // (GitHub Pages update, or overwriting a local file at the same path).
+    try {
+      const existingLogo = await Storage.settings.get('unitLogo');
+      if (!existingLogo) {
+        const mirror = localStorage.getItem('qstore2_logo');
+        if (mirror) {
+          await Storage.settings.set('unitLogo', mirror);
+          console.info('[QStore IMS] Logo restored from local mirror.');
+        }
+      }
+    } catch (_) { /* non-fatal */ }
 
     // Push logo / unit name into the splash as soon as storage is ready.
     try {
@@ -142,6 +158,11 @@ async function _renderShell() {
         </div>
         <nav class="shell__nav" aria-label="Main">
           ${_navHtml(initialPage)}
+          <div class="shell__nav-user">
+            <div class="shell__nav-username">${esc(_session.name)}</div>
+            <div class="shell__nav-userrole">${esc(AUTH.ROLES[_session.role]?.label || _session.role)}</div>
+          </div>
+          <button type="button" class="shell__nav-signout" data-action="logout">Sign out</button>
         </nav>
         <div class="shell__sync" data-target="sync-indicator" title="Cloud sync status"></div>
         <div class="shell__session">
@@ -149,6 +170,10 @@ async function _renderShell() {
           <div class="shell__session-role">${esc(AUTH.ROLES[_session.role]?.label || _session.role)}</div>
         </div>
         <button type="button" class="shell__logout" data-action="logout">Sign out</button>
+        <button type="button" class="shell__hamburger" aria-expanded="false"
+                aria-label="Open menu" data-action="toggle-nav">
+          <span></span><span></span><span></span>
+        </button>
       </header>
 
       ${showBanner ? _defaultPinBannerHtml() : ''}
@@ -159,9 +184,42 @@ async function _renderShell() {
     </div>
   `);
 
-  $('.shell__logout', _root).addEventListener('click', _onLogout);
-  const nav = $('.shell__nav', _root);
+  // Wire logout buttons (desktop header + mobile nav).
+  _root.addEventListener('click', (e) => {
+    if (e.target.closest('[data-action="logout"]')) _onLogout();
+  });
+
+  const nav       = $('.shell__nav', _root);
+  const hamburger = $('.shell__hamburger', _root);
   if (nav) nav.addEventListener('click', _onNavClick);
+
+  // Hamburger toggle — shows/hides nav overlay on mobile.
+  if (hamburger && nav) {
+    hamburger.addEventListener('click', () => {
+      const open = nav.classList.toggle('is-open');
+      hamburger.setAttribute('aria-expanded', String(open));
+      hamburger.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+    });
+
+    // Close nav overlay when user clicks outside (tap on content area).
+    const _docClick = (e) => {
+      if (!_root) { document.removeEventListener('click', _docClick); return; }
+      if (!nav.classList.contains('is-open')) return;
+      if (!nav.contains(e.target) && !hamburger.contains(e.target)) {
+        nav.classList.remove('is-open');
+        hamburger.setAttribute('aria-expanded', 'false');
+        hamburger.setAttribute('aria-label', 'Open menu');
+      }
+    };
+    // Use capture so the outside-click fires before any other handler.
+    document.addEventListener('click', _docClick, true);
+  }
+
+  // Dashboard quick-action tiles dispatch a custom event to navigate.
+  _root.addEventListener('dash:navigate', (e) => {
+    const page = e.detail?.page;
+    if (page && PAGES[page]) _navigateTo(page);
+  });
 
   const syncIndicator = $('[data-target="sync-indicator"]', _root);
   if (syncIndicator) {
@@ -245,6 +303,14 @@ function _pickInitialPage() {
 async function _onNavClick(e) {
   const link = e.target.closest('[data-page]');
   if (!link) return;
+  // Close the mobile nav overlay if it's open.
+  const nav       = _root?.querySelector('.shell__nav');
+  const hamburger = _root?.querySelector('.shell__hamburger');
+  if (nav?.classList.contains('is-open')) {
+    nav.classList.remove('is-open');
+    hamburger?.setAttribute('aria-expanded', 'false');
+    hamburger?.setAttribute('aria-label', 'Open menu');
+  }
   await _navigateTo(link.dataset.page);
 }
 
@@ -263,6 +329,10 @@ async function _navigateTo(page) {
 async function _mountPage(pageKey) {
   await _teardownCurrentPage();
 
+  // Update overdue badge on the Loans nav item before each page mount.
+  // Non-blocking — badge update failure must not prevent navigation.
+  _updateOverdueBadge().catch(() => {});
+
   const target = $('[data-target="page-content"]', _root);
   if (!target) return;
   if (!pageKey || !PAGES[pageKey]) {
@@ -279,6 +349,24 @@ async function _mountPage(pageKey) {
         <pre class="fatal__detail">${esc(err.message || String(err))}</pre>
       </div>
     `;
+  }
+}
+
+async function _updateOverdueBadge() {
+  if (!_root) return;
+  const loansNavBtn = _root.querySelector('.shell__nav-link[data-page="loans"]');
+  if (!loansNavBtn) return;
+
+  const today = new Date().toISOString().slice(0, 10);
+  const active = await Storage.loans.listActive();
+  const overdueCount = active.filter(l => l.dueDate && l.dueDate < today).length;
+
+  // The label is always "Loans"; we replace it to add/remove the badge.
+  if (overdueCount > 0) {
+    loansNavBtn.innerHTML =
+      `Loans <span class="shell__nav-badge">${overdueCount}</span>`;
+  } else {
+    loansNavBtn.textContent = 'Loans';
   }
 }
 

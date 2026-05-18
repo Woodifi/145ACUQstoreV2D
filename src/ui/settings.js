@@ -34,6 +34,7 @@ import * as Migration  from '../migration.js';
 import * as CsvUi      from './csv-import.js';
 import { showToast }   from './toast.js';
 import * as Structure  from '../structure.js';
+import { CATEGORIES as DEFAULT_CATEGORIES } from './inventory.js';
 
 let _root = null;
 let _statusListener = null;
@@ -74,12 +75,18 @@ async function _render() {
     ? await Recovery.statusForUser(sess.userId)
     : { exists: false, createdAt: null };
   const unitStructure  = await Structure.load();
+  // Stored categories — null means "use defaults".
+  const storedCats     = await Storage.settings.get('categories');
+  const activeCats     = Array.isArray(storedCats) && storedCats.length > 0
+    ? storedCats
+    : DEFAULT_CATEGORIES;
 
   render(_root, `
     <section class="settings">
       <div class="settings__column">
         ${_unitSectionHtml(settings)}
         ${_structureSectionHtml(unitStructure)}
+        ${_categoriesSectionHtml(activeCats)}
         ${_recoverySectionHtml(recoveryStatus)}
         ${_cloudSectionHtml(settings, status)}
         ${_dataSectionHtml(settings)}
@@ -311,12 +318,180 @@ function _structureSectionHtml(structure) {
         <button type="button" class="btn btn--ghost" data-action="configure-structure">
           ${configured ? 'Edit structure' : 'Configure structure'}
         </button>
-        ${configured
-          ? `<button type="button" class="btn btn--danger btn--sm" data-action="clear-structure">Clear structure</button>`
+        ${configured ? `
+          <button type="button" class="btn btn--ghost" data-action="migrate-platoons"
+                  title="Map existing free-text platoon values to the configured company/platoon/section hierarchy">
+            ↝ Migrate platoon data
+          </button>
+          <button type="button" class="btn btn--danger btn--sm" data-action="clear-structure">Clear structure</button>
+        ` : ''}
+      </div>
+    </section>
+  `;
+}
+
+// -----------------------------------------------------------------------------
+// Category management section
+// -----------------------------------------------------------------------------
+
+function _categoriesSectionHtml(categories) {
+  const isCustom = JSON.stringify(categories) !== JSON.stringify(DEFAULT_CATEGORIES);
+  return `
+    <section class="settings__section" data-section="categories">
+      <header class="settings__section-header">
+        <h2 class="settings__section-title">Item categories</h2>
+        <p class="settings__section-hint">
+          Manage the category list shown in the inventory add/edit form and
+          the category filter. ${isCustom
+            ? 'Custom list active.'
+            : 'Using default list — customise below to add or remove categories.'}
+        </p>
+      </header>
+      <ul class="cat__list">
+        ${categories.map(c => `
+          <li class="cat__item">
+            <span class="cat__name">${esc(c)}</span>
+          </li>
+        `).join('')}
+      </ul>
+      <div class="settings__actions">
+        <button type="button" class="btn btn--ghost" data-action="manage-categories">
+          Manage categories
+        </button>
+        ${isCustom
+          ? `<button type="button" class="btn btn--ghost btn--sm" data-action="reset-categories">
+               Reset to defaults
+             </button>`
           : ''}
       </div>
     </section>
   `;
+}
+
+async function _onManageCategories() {
+  const storedRaw = await Storage.settings.get('categories');
+  const current   = Array.isArray(storedRaw) && storedRaw.length > 0
+    ? storedRaw
+    : [...DEFAULT_CATEGORIES];
+
+  // Draft is a mutable copy.
+  let draft = [...current];
+
+  function buildListHtml(d) {
+    if (d.length === 0) {
+      return `<p class="settings__section-hint">No categories — add one below.</p>`;
+    }
+    return `<ul class="cat__editor-list">` +
+      d.map((c, i) => `
+        <li class="cat__editor-item" data-idx="${i}">
+          <span class="cat__editor-name">${esc(c)}</span>
+          <div class="cat__editor-btns">
+            <button type="button" class="btn btn--ghost btn--sm" data-cat-action="up"   data-idx="${i}" ${i === 0 ? 'disabled' : ''}>↑</button>
+            <button type="button" class="btn btn--ghost btn--sm" data-cat-action="down" data-idx="${i}" ${i === d.length - 1 ? 'disabled' : ''}>↓</button>
+            <button type="button" class="btn btn--danger btn--sm" data-cat-action="remove" data-idx="${i}">✕</button>
+          </div>
+        </li>
+      `).join('') + `</ul>`;
+  }
+
+  openModal({
+    titleHtml: 'Manage item categories',
+    size:      'sm',
+    bodyHtml:  `
+      <div class="cat__editor-wrap">
+        <div data-target="cat-list">${buildListHtml(draft)}</div>
+        <div class="cat__editor-add">
+          <input type="text" class="cat__editor-input" placeholder="New category name…"
+                 maxlength="60" aria-label="New category">
+          <button type="button" class="btn btn--ghost" data-cat-action="add">+ Add</button>
+        </div>
+      </div>
+      <div class="form__actions" style="margin-top:16px">
+        <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
+        <button type="button" class="btn btn--primary" data-cat-action="save">Save</button>
+      </div>
+    `,
+    onMount(panel, close) {
+      const listEl  = panel.querySelector('[data-target="cat-list"]');
+      const addInput = panel.querySelector('.cat__editor-input');
+
+      function refresh() {
+        listEl.innerHTML = buildListHtml(draft);
+      }
+
+      panel.addEventListener('click', async (e) => {
+        const catAction = e.target.dataset.catAction;
+        const idx = e.target.dataset.idx != null ? parseInt(e.target.dataset.idx, 10) : -1;
+
+        if (catAction === 'up' && idx > 0) {
+          [draft[idx - 1], draft[idx]] = [draft[idx], draft[idx - 1]];
+          refresh();
+        } else if (catAction === 'down' && idx < draft.length - 1) {
+          [draft[idx], draft[idx + 1]] = [draft[idx + 1], draft[idx]];
+          refresh();
+        } else if (catAction === 'remove' && idx >= 0) {
+          draft.splice(idx, 1);
+          refresh();
+        } else if (catAction === 'add') {
+          const name = addInput.value.trim();
+          if (!name) { addInput.focus(); return; }
+          if (draft.includes(name)) {
+            showToast(`"${name}" is already in the list.`, 'warn');
+            return;
+          }
+          draft.push(name);
+          addInput.value = '';
+          refresh();
+          addInput.focus();
+        } else if (catAction === 'save') {
+          if (draft.length === 0) {
+            showToast('Category list must not be empty.', 'warn');
+            return;
+          }
+          await Storage.settings.set('categories', draft);
+          Sync.notifyChanged();
+          close();
+          showToast('Categories saved.', 'success');
+          await _render();
+        }
+      });
+
+      // Allow pressing Enter in the add input.
+      addInput?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          panel.querySelector('[data-cat-action="add"]')?.click();
+        }
+      });
+    },
+  });
+}
+
+async function _onResetCategories() {
+  openModal({
+    titleHtml: 'Reset categories to defaults?',
+    size:      'sm',
+    bodyHtml:  `
+      <p class="modal__body">
+        This will replace your custom category list with the built-in defaults.
+        Existing items keep their category values — only the selectable list changes.
+      </p>
+      <div class="form__actions">
+        <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
+        <button type="button" class="btn btn--danger" data-action="confirm-reset-cats">Reset to defaults</button>
+      </div>
+    `,
+    onMount(panel, close) {
+      panel.querySelector('[data-action="confirm-reset-cats"]')
+        ?.addEventListener('click', async () => {
+          await Storage.settings.delete('categories');
+          Sync.notifyChanged();
+          close();
+          showToast('Categories reset to defaults.', 'success');
+          await _render();
+        });
+    },
+  });
 }
 
 function _openStructureModal(existingStructure) {
@@ -1095,6 +1270,9 @@ async function _onRootClick(e) {
     case 'logo-remove':          await _doRemoveLogo(); break;
     case 'configure-structure':  await _onConfigureStructure(); break;
     case 'clear-structure':      await _onClearStructure(e.target.closest('button')); break;
+    case 'migrate-platoons':     await _onMigratePlatoons(); break;
+    case 'manage-categories':   await _onManageCategories(); break;
+    case 'reset-categories':    await _onResetCategories();  break;
   }
 }
 
@@ -1130,6 +1308,231 @@ async function _onClearStructure(btn) {
     },
   });
   if (btn) btn.disabled = false;
+}
+
+// -----------------------------------------------------------------------------
+// Platoon migration wizard
+// -----------------------------------------------------------------------------
+// Reads all cadets that have a `plt` value but no `company` set, groups them
+// by unique plt string, then shows a mapping table so the QM can assign each
+// existing plt value to a company → platoon → section in the new structure.
+// On confirm, rewrites each cadet record with the selected structure fields.
+// -----------------------------------------------------------------------------
+
+async function _onMigratePlatoons() {
+  const structure = await Structure.load();
+  if (structure.length === 0) {
+    showToast('Configure a unit structure before migrating platoon data.', 'warn');
+    return;
+  }
+
+  const allCadets = await Storage.cadets.list();
+  // Only cadets with a legacy plt value AND no company assignment yet.
+  const unmigrated = allCadets.filter(c => (c.plt || c.platoon) && !c.company);
+
+  if (unmigrated.length === 0) {
+    openModal({
+      titleHtml: 'Platoon migration',
+      size: 'sm',
+      bodyHtml: `
+        <p class="modal__body">
+          All cadets are already assigned to a company, or have no platoon
+          value to migrate. Nothing to do.
+        </p>
+        <div class="form__actions">
+          <button type="button" class="btn btn--primary" data-action="modal-close">OK</button>
+        </div>
+      `,
+    });
+    return;
+  }
+
+  // Group by unique plt value (case-insensitive, trimmed).
+  const pltGroups = new Map();
+  for (const c of unmigrated) {
+    const key = (c.plt || c.platoon || '').trim();
+    if (!pltGroups.has(key)) pltGroups.set(key, []);
+    pltGroups.get(key).push(c);
+  }
+
+  // Build options for the company select.
+  const coOptions = structure.map((co, ci) =>
+    `<option value="${esc(String(ci))}">${esc(co.name)}</option>`
+  ).join('');
+
+  // Each row: [plt label | count | company dropdown | platoon dropdown | section dropdown]
+  const rowsHtml = [...pltGroups.entries()].map(([plt, cadets], rowIdx) => {
+    const count = cadets.length;
+    // Platoon options — empty until company is chosen; populated via JS.
+    return `
+      <tr class="migrate__row" data-plt="${esc(plt)}" data-row="${rowIdx}">
+        <td class="migrate__plt-label"><strong>${esc(plt || '(blank)')}</strong></td>
+        <td class="migrate__count">${count}</td>
+        <td>
+          <select class="migrate__co-sel" data-row="${rowIdx}" aria-label="Company">
+            <option value="">— skip —</option>
+            ${coOptions}
+          </select>
+        </td>
+        <td>
+          <select class="migrate__plt-sel" data-row="${rowIdx}" aria-label="Platoon" disabled>
+            <option value="">— select company first —</option>
+          </select>
+        </td>
+        <td>
+          <select class="migrate__sec-sel" data-row="${rowIdx}" aria-label="Section" disabled>
+            <option value="">— none —</option>
+          </select>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  openModal({
+    titleHtml: 'Migrate platoon data to company structure',
+    size: 'lg',
+    bodyHtml: `
+      <p class="modal__body">
+        ${unmigrated.length} cadet${unmigrated.length === 1 ? '' : 's'} have a free-text platoon
+        value but no company assignment. Map each platoon below to your configured structure.
+        Rows set to <em>— skip —</em> are left unchanged.
+      </p>
+      <div class="migrate__table-wrap">
+        <table class="migrate__table">
+          <thead>
+            <tr>
+              <th>Existing platoon</th>
+              <th>Cadets</th>
+              <th>→ Company</th>
+              <th>→ Platoon</th>
+              <th>→ Section</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+      </div>
+      <div class="form__actions">
+        <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
+        <button type="button" class="btn btn--primary" data-action="confirm-migrate">
+          Apply migration
+        </button>
+      </div>
+    `,
+    onMount(panel, close) {
+      // Wire each company dropdown to repopulate platoon/section children.
+      panel.querySelectorAll('.migrate__co-sel').forEach(coSel => {
+        coSel.addEventListener('change', () => {
+          const row  = coSel.dataset.row;
+          const ci   = coSel.value !== '' ? parseInt(coSel.value, 10) : -1;
+          const pltSel = panel.querySelector(`.migrate__plt-sel[data-row="${row}"]`);
+          const secSel = panel.querySelector(`.migrate__sec-sel[data-row="${row}"]`);
+
+          if (ci < 0 || !structure[ci]) {
+            pltSel.innerHTML = '<option value="">— select company first —</option>';
+            pltSel.disabled = true;
+            secSel.innerHTML = '<option value="">— none —</option>';
+            secSel.disabled = true;
+            return;
+          }
+          const platoons = structure[ci].platoons || [];
+          pltSel.innerHTML = `<option value="">— none —</option>` +
+            platoons.map((p, pi) =>
+              `<option value="${esc(String(pi))}">${esc(p.name)}</option>`
+            ).join('');
+          pltSel.disabled = platoons.length === 0;
+          // Reset section when company changes.
+          secSel.innerHTML = '<option value="">— none —</option>';
+          secSel.disabled = true;
+        });
+      });
+
+      // Wire each platoon dropdown to repopulate sections.
+      panel.querySelectorAll('.migrate__plt-sel').forEach(pltSel => {
+        pltSel.addEventListener('change', () => {
+          const row    = pltSel.dataset.row;
+          const coSel  = panel.querySelector(`.migrate__co-sel[data-row="${row}"]`);
+          const secSel = panel.querySelector(`.migrate__sec-sel[data-row="${row}"]`);
+          const ci     = coSel.value !== '' ? parseInt(coSel.value, 10) : -1;
+          const pi     = pltSel.value !== '' ? parseInt(pltSel.value, 10) : -1;
+
+          if (ci < 0 || pi < 0 || !structure[ci] || !structure[ci].platoons[pi]) {
+            secSel.innerHTML = '<option value="">— none —</option>';
+            secSel.disabled = true;
+            return;
+          }
+          const sections = structure[ci].platoons[pi].sections || [];
+          secSel.innerHTML = `<option value="">— none —</option>` +
+            sections.map((s, si) =>
+              `<option value="${esc(String(si))}">${esc(s.name)}</option>`
+            ).join('');
+          secSel.disabled = sections.length === 0;
+        });
+      });
+
+      // Confirm button: build mapping and write cadets.
+      panel.querySelector('[data-action="confirm-migrate"]')
+        ?.addEventListener('click', async (evt) => {
+          const btn = evt.target;
+          btn.disabled = true;
+          btn.textContent = 'Migrating…';
+
+          // Collect mapping: plt string → { company, platoon, section }.
+          const mapping = new Map();
+          panel.querySelectorAll('.migrate__row').forEach(tr => {
+            const plt    = tr.dataset.plt;
+            const coSel  = tr.querySelector('.migrate__co-sel');
+            const pltSel = tr.querySelector('.migrate__plt-sel');
+            const secSel = tr.querySelector('.migrate__sec-sel');
+            const ci     = coSel.value !== '' ? parseInt(coSel.value, 10) : -1;
+            if (ci < 0) return;  // skip
+            const pi = pltSel.value !== '' ? parseInt(pltSel.value, 10) : -1;
+            const si = secSel.value !== '' ? parseInt(secSel.value, 10) : -1;
+            const co     = structure[ci];
+            const pltObj = (pi >= 0 && co.platoons[pi]) ? co.platoons[pi] : null;
+            const secObj = (si >= 0 && pltObj?.sections?.[si]) ? pltObj.sections[si] : null;
+            mapping.set(plt, {
+              company:  co.name,
+              platoon:  pltObj ? pltObj.name : '',
+              section:  secObj ? secObj.name : '',
+            });
+          });
+
+          if (mapping.size === 0) {
+            showToast('No rows mapped — nothing to migrate.', 'warn');
+            btn.disabled = false;
+            btn.textContent = 'Apply migration';
+            return;
+          }
+
+          let updated = 0;
+          for (const c of unmigrated) {
+            const key  = (c.plt || c.platoon || '').trim();
+            const dest = mapping.get(key);
+            if (!dest) continue;
+            await Storage.cadets.put({
+              ...c,
+              company:   dest.company,
+              platoon:   dest.platoon,
+              section:   dest.section,
+              // Keep plt for backward compat with any legacy reads.
+              plt:       dest.platoon || c.plt || '',
+              updatedAt: new Date().toISOString(),
+            });
+            updated++;
+          }
+
+          await Storage.audit.append({
+            action: 'cadet_platoon_migration',
+            user:   AUTH.getSession()?.name || 'unknown',
+            desc:   `Platoon migration: ${updated} cadet${updated === 1 ? '' : 's'} assigned to structure via ${mapping.size} mapping${mapping.size === 1 ? '' : 's'}.`,
+          });
+          Sync.notifyChanged();
+
+          close();
+          showToast(`Migrated ${updated} cadet${updated === 1 ? '' : 's'} to company structure.`, 'success');
+        });
+    },
+  });
 }
 
 async function _doSignIn() {
@@ -1534,6 +1937,9 @@ async function _onLogoFileChange(e) {
   try {
     const dataUrl = await _processLogo(file);
     await Storage.settings.set('unitLogo', dataUrl);
+    // Mirror to localStorage so the logo survives an HTML file upgrade at the
+    // same origin/path (GitHub Pages updates, same-path file replacement).
+    try { localStorage.setItem('qstore2_logo', dataUrl); } catch (_) {}
     _softUpdateHeaderLogo(dataUrl);
     await _render();
     _flashSuccess('Logo updated.');
@@ -1544,6 +1950,8 @@ async function _onLogoFileChange(e) {
 
 async function _doRemoveLogo() {
   await Storage.settings.set('unitLogo', null);
+  // Clear the localStorage mirror as well.
+  try { localStorage.removeItem('qstore2_logo'); } catch (_) {}
   _softUpdateHeaderLogo(null);
   await _render();
   _flashSuccess('Logo removed.');
