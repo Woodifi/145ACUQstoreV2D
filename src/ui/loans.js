@@ -1098,9 +1098,12 @@ function _borrowerPickerHtml(context, currentSvcNo, cadets, currentCadet) {
       <datalist id="${listId}">
         ${cadets
           .slice()
-          .sort((a, b) =>
-            compareRanks(a.rank, b.rank) ||
-            (a.surname || '').localeCompare(b.surname || ''))
+          .sort((a, b) => {
+            const typeA = a.personType === 'staff' ? 0 : 1;
+            const typeB = b.personType === 'staff' ? 0 : 1;
+            return (typeA - typeB) || compareRanks(a.rank, b.rank) ||
+              (a.surname || '').localeCompare(b.surname || '');
+          })
           .map((c) =>
             `<option value="${esc(c.rank)} ${esc(c.surname)} (${esc(c.svcNo)})">`)
           .join('')}

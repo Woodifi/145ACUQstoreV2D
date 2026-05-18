@@ -109,8 +109,13 @@ const _RANK_PRIORITY = (() => {
 })();
 
 export function compareRanks(rankA, rankB) {
-  const a = _RANK_PRIORITY.has(rankA) ? _RANK_PRIORITY.get(rankA) : 9999;
-  const b = _RANK_PRIORITY.has(rankB) ? _RANK_PRIORITY.get(rankB) : 9999;
+  // Normalise before lookup: strips spaces/dots, uppercases, and converts bare
+  // officer bases to canonical form (e.g. 'CAPT' → 'CAPT-AAC') so legacy and
+  // hand-typed values resolve to the same priority as canonical stored values.
+  const normA = normalizeRank(rankA) || '';
+  const normB = normalizeRank(rankB) || '';
+  const a = _RANK_PRIORITY.has(normA) ? _RANK_PRIORITY.get(normA) : 9999;
+  const b = _RANK_PRIORITY.has(normB) ? _RANK_PRIORITY.get(normB) : 9999;
   return a - b;
 }
 

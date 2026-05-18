@@ -88,10 +88,14 @@ export async function mount(rootEl) {
 async function _render() {
   const all = await Storage.cadets.list();
 
-  // Sort: rank highest-to-lowest, then surname A-Z within same rank.
-  all.sort((a, b) =>
-    compareRanks(a.rank, b.rank) ||
-    (a.surname || '').localeCompare(b.surname || ''));
+  // Sort: staff before cadets, then rank highest-to-lowest within each group,
+  // then surname A-Z as the final tie-break.
+  all.sort((a, b) => {
+    const typeA = a.personType === 'staff' ? 0 : 1;
+    const typeB = b.personType === 'staff' ? 0 : 1;
+    return (typeA - typeB) || compareRanks(a.rank, b.rank) ||
+      (a.surname || '').localeCompare(b.surname || '');
+  });
 
   // Apply filters in JS — the dataset is small (typical AAC unit < 200
   // cadets) so a single-pass filter is fast enough without indexes.
@@ -289,9 +293,12 @@ async function _doPrintRoll(button) {
         if (!hay.includes(term)) return false;
       }
       return true;
-    }).sort((a, b) =>
-      compareRanks(a.rank, b.rank) ||
-      (a.surname || '').localeCompare(b.surname || ''));
+    }).sort((a, b) => {
+      const typeA = a.personType === 'staff' ? 0 : 1;
+      const typeB = b.personType === 'staff' ? 0 : 1;
+      return (typeA - typeB) || compareRanks(a.rank, b.rank) ||
+        (a.surname || '').localeCompare(b.surname || '');
+    });
 
     // Subtitle describes the current filter state so the printout makes
     // sense out of context (a roll labelled "Plt 2 only" tells the reader
