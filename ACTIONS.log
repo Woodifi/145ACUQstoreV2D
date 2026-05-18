@@ -260,3 +260,19 @@ END OF LOG — append new entries above this line
   qstore.css          — breakdown section, bd-label colour chips, bd-total states
   Build: 20260518-CD24C150  Bundle: 1743.6 KB  Tests: 42/42
   Commit: 6bee5dc  →  master
+
+[2026-05-19] AAC QStore Orders plugin
+  npm install pdfjs-dist@5.7.284
+  src/order-parser.js (new) — PDF text extractor using pdfjs FakeWorker mode
+    (globalThis.pdfjsWorker = { WorkerMessageHandler }); coordinate-based
+    table parsing; REQUEST/ISSUE detection; NSN matching; CSV export
+  src/ui/orders.js (new) — full Orders page: import PDF, list, detail view,
+    Approve & Receive modal (updates IMS onHand / creates new items), CSV export
+  src/storage.js — DB_VERSION 2→3; supplyOrders store; Storage.orders API;
+    exportAll/importAll/wipe updated
+  src/ui/shell.js — Orders page added (editItem perm)
+  qstore.css — Orders page styles (~200 lines)
+  src/ui/help.js — Orders section added
+  MANUAL.md — section 8 (AAC QStore Orders), TOC renumbered 8-17,
+    audit actions table updated
+  Build: 20260518-54565DBD  Bundle: 3459.2 KB  Commits: 52f4750, 156bc9b  →  master
