@@ -56,6 +56,58 @@ Format: [TIMESTAMP UTC] ACTION — details
   Authentication via system credential manager (existing stored credential for Woodifi)
 
 -------------------------------------------------------------------------------
+
+[2026-05-15T00:00:00Z] GIT COMMIT + PUSH — search cursor fix (split render) (multiple commits)
+  src/ui/inventory.js: split _render() into one-time shell render + repeated content-only render
+  Toolbar (search input) never replaced after mount — cursor no longer resets
+
+[2026-05-15T01:00:00Z] BUILD MODE SPLIT — dist vs GitHub Pages
+  build.js: added --dist mode; writes named output to dist/ only, never touches docs/
+  package.json: added "dist" script
+  Each --dist build gets a unique build ID (YYYYMMDD-XXXXXXXX) via crypto.randomBytes
+  build ID embedded in HTML comment, meta tag, and JS bundle for copyright tracing
+
+[2026-05-15T01:30:00Z] FILES CREATED — fingerprint, licence, manuals
+  NEW: src/fingerprint.js — logBanner(), checkOrigin(), checkIntegrity() for unauthorised copy detection
+  NEW: LICENSE — proprietary licence, Queensland law, Sean Scales
+  NEW: MANUAL.md — 16-chapter public user manual (distribution section excluded)
+  NEW: MANUAL_ADDENDUM_OWNER.md — owner-only addendum (gitignored)
+  NEW: dist/manual-owner.html — print-ready HTML manual with addendum (gitignored)
+  MODIFIED: .gitignore — added DIST_LOG.md, MANUAL_ADDENDUM_OWNER.md, dist/manual-owner.html
+  MODIFIED: src/ui/shell.js — logBanner/checkOrigin/checkIntegrity on boot; Help page added
+  MODIFIED: src/ui/settings.js — About section; Azure client ID hold-to-reveal button
+
+[2026-05-15T02:00:00Z] GIT COMMIT + PUSH — about section + fingerprint (8d4f820, 223e175, 328db24, bbbada6, 4d54861)
+
+[2026-05-18T00:00:00Z] GIT COMMIT + PUSH — header logo 2x (da4d72a)
+  qstore.css: .shell__brand-logo height 40px → 80px
+
+[2026-05-18T00:05:00Z] MEMORY FILE CREATED — feedback_pin_screens.md
+  Global rule: when browser hits PIN/login prompt, ask user to complete it then continue verification
+
+[2026-05-18T00:10:00Z] GIT COMMIT + PUSH — kit form UX fixes (adf649c, 582f877)
+  src/ui/kits.js: persistent:true on kit form modal (no data loss on backdrop click)
+  src/ui/kits.js: scrollable item list (max-height 260px, auto-scroll on new line)
+  src/ui/kits.js: Cancel button requires "Discard changes?" confirmation before closing
+  qstore.css: .kit__form-lines max-height + overflow-y
+
+[2026-05-18T00:15:00Z] GIT COMMIT + PUSH — launch splash screen (87193a1, 978007c)
+  NEW: src/ui/splash.js — fullscreen splash, 5-second countdown, animated dots
+  MODIFIED: src/ui/shell.js — showSplash() called at boot; logo injected after storage.init()
+  qstore.css: .splash* styles
+  qstore.css: splash logo 60vmin for fullscreen presence
+
+[2026-05-18T00:20:00Z] GIT COMMIT + PUSH — logo storage cap raised (783cf68)
+  src/ui/settings.js: _processLogo() MAX raised 160→1024px; imageSmoothingQuality high
+
+[2026-05-18T06:00:00Z] GIT COMMIT + PUSH — rank sort (b0092be, b508a18, e062c88)
+  NEW: src/ranks.js — compareRanks() with _RANK_PRIORITY map
+  MODIFIED: src/ui/cadets.js — sort by personType then compareRanks then surname
+  MODIFIED: src/ui/loans.js — borrower picker datalist sorted same way
+  Root cause fix: _RANK_PRIORITY now maps BOTH canonical (CDTCPL) AND shorthand
+    (CPL, SGT, LCPL etc.) forms that v1/legacy records store on disk
+
+-------------------------------------------------------------------------------
 END OF LOG — append new entries above this line
 
 [2026-05-13T06:00:00Z] GIT COMMIT + PUSH — per-user PIN lockout (f53d9cc)
