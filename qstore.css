@@ -5312,3 +5312,207 @@ details[open] > .help__section-summary::after {
 
 /* Settings security section */
 .settings__idle-select { width: auto; min-width: 140px; }
+
+/* ==========================================================================
+   Reference page
+   ========================================================================== */
+
+.ref {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+}
+
+.ref__header {
+  margin-bottom: 24px;
+}
+
+.ref__title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 6px;
+}
+
+.ref__subtitle {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+/* --- Tab navigation --- */
+
+.ref__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 20px;
+  border-bottom: 2px solid var(--border);
+  padding-bottom: 0;
+}
+
+.ref__tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: none;
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  position: relative;
+  bottom: -2px;
+}
+
+.ref__tab-btn:hover {
+  background: var(--bg-input);
+  color: var(--text-primary);
+}
+
+.ref__tab-btn--active {
+  background: var(--bg-panel);
+  color: var(--accent);
+  border-color: var(--border);
+  border-bottom-color: var(--bg-panel);
+  font-weight: 600;
+}
+
+.ref__tab-icon {
+  font-size: 1rem;
+}
+
+/* --- Content area --- */
+
+.ref__content {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 0 var(--radius-md) var(--radius-md) var(--radius-md);
+  padding: 20px;
+}
+
+/* --- Measurement guide box --- */
+
+.ref__measure-box {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  margin-bottom: 20px;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+.ref__measure-box strong {
+  display: block;
+  margin-top: 10px;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.ref__measure-box strong:first-child {
+  margin-top: 0;
+}
+
+.ref__measure-box p {
+  margin: 0 0 6px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.ref__measure-box p:last-child {
+  margin-bottom: 0;
+}
+
+/* --- Table wrapper (horizontal scroll on small screens) --- */
+
+.ref__table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin-bottom: 12px;
+}
+
+.ref__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  min-width: 400px;
+}
+
+.ref__table th {
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 2px solid var(--border);
+  white-space: nowrap;
+}
+
+.ref__table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
+  vertical-align: middle;
+}
+
+.ref__table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.ref__table tbody tr:hover td {
+  background: var(--bg-hover, var(--bg-input));
+}
+
+.ref__td--center {
+  text-align: center;
+}
+
+.ref__td--small {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* --- Footer note --- */
+
+.ref__note {
+  font-size: 0.78rem;
+  color: var(--text-tertiary, var(--text-secondary));
+  margin: 4px 0 0;
+  line-height: 1.4;
+}
+
+/* --- Mobile --- */
+
+@media (max-width: 600px) {
+  .ref__tab-btn {
+    padding: 7px 10px;
+    font-size: 0.8rem;
+  }
+
+  .ref__tab-label {
+    display: none;
+  }
+
+  .ref__tab-icon {
+    font-size: 1.2rem;
+  }
+
+  .ref__content {
+    padding: 14px 10px;
+  }
+
+  .ref__measure-box {
+    font-size: 0.8rem;
+    padding: 10px 12px;
+  }
+}

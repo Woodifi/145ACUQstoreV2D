@@ -36,6 +36,7 @@ import * as Users     from './users.js';
 import * as Settings  from './settings.js';
 import * as Help      from './help.js';
 import * as Orders    from './orders.js';
+import * as Reference from './reference.js';
 import { openModal }  from './modal.js';
 import { esc, $, render } from './util.js';
 
@@ -49,6 +50,7 @@ const PAGES = {
   audit:     { label: 'Audit',     perm: 'audit',    mount: Audit.mount     },
   users:     { label: 'Users',     coOnly: true,     mount: Users.mount     },
   settings:  { label: 'Settings',  coOnly: true,     mount: Settings.mount  },
+  reference: { label: 'Reference',  perm: 'view',     mount: Reference.mount },
   help:      { label: 'Help',      perm: 'view',     mount: Help.mount      },
 };
 

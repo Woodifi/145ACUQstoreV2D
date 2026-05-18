@@ -479,6 +479,28 @@ const SECTIONS = [
       </dl>
     `,
   },
+  {
+    id: 'reference',
+    title: 'Uniform sizing reference',
+    icon: '📐',
+    body: `
+      <p>The <strong>Reference</strong> page (accessible from the main navigation) provides ADF uniform and equipment sizing tables with conversion between AU/NATO (centimetres), US (inches) and generalised sizes (XS–3XL), together with measurement guides for each garment type.</p>
+
+      <h4>Shirts &amp; Jackets</h4>
+      <p>ADF shirts and jackets use NATO sizing in the format <code>CHEST(cm) / HEIGHT-BAND</code>. Height bands: <strong>S</strong> (Short, under 170 cm), <strong>R</strong> (Regular, 170–183 cm), <strong>L</strong> (Long/Tall, over 183 cm).</p>
+      <p><em>How to measure chest:</em> Tape around the fullest part of the chest, under the armpits and across the shoulder blades. Keep horizontal and snug.</p>
+
+      <h4>Trousers</h4>
+      <p>NATO trouser sizing uses <code>WAIST(cm) / LEG-BAND</code>. Leg bands: <strong>S</strong> (inside leg ≤ 76 cm), <strong>R</strong> (77–84 cm), <strong>L</strong> (≥ 85 cm).</p>
+      <p><em>How to measure waist:</em> Around the natural waist, approximately 2.5 cm above the navel. <em>Inside leg:</em> From crotch seam down to ankle bone, standing straight.</p>
+
+      <h4>Boots</h4>
+      <p>AU boot sizes use the same scale as UK sizes. Add half a size when wearing thick military socks. Measure foot length from heel to longest toe on a flat surface.</p>
+
+      <h4>Hats &amp; Berets</h4>
+      <p>Sized by head circumference in centimetres. Wrap tape around the head 2 cm above the eyebrows and across the widest part at the back. Round up if between sizes.</p>
+    `,
+  },
 ];
 
 // -----------------------------------------------------------------------------
