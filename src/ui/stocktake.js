@@ -54,7 +54,6 @@ import * as Sync    from '../sync.js';
 import { generateStocktakeReport, downloadPdf } from '../pdf.js';
 import { openModal } from './modal.js';
 import { esc, $, $$, render } from './util.js';
-import { CONDITIONS } from '../conditions.js';
 import { showToast } from './toast.js';
 
 let _root = null;
@@ -182,37 +181,37 @@ function _tableHtml(items) {
     </div>`;
   }
   return `
-    <table class="stk__table">
-      <thead>
-        <tr>
-          <th class="stk__col-nsn">NSN</th>
-          <th class="stk__col-name">Item</th>
-          <th class="stk__col-cat">Cat.</th>
-          <th class="stk__col-num">Auth</th>
-          <th class="stk__col-num" data-sys-col>On hand</th>
-          <th class="stk__col-num">On loan</th>
-          <th class="stk__col-count" title="Serviceable — items in good working order">Svc</th>
-          <th class="stk__col-count" title="Unserviceable — damaged or non-functional, awaiting repair">U/S</th>
-          <th class="stk__col-count" title="In repair — temporarily unserviceable, currently being repaired">Repr</th>
-          <th class="stk__col-count" title="Calibration due — must be calibrated before issue">Cal</th>
-          <th class="stk__col-count" title="Written off — beyond economic repair, pending board of survey">W/O</th>
-          <th class="stk__col-total">Total</th>
-          <th class="stk__col-var">Variance</th>
-          <th class="stk__col-cond">Condition</th>
-          <th class="stk__col-notes">Notes</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${items.map((item) => _itemRowHtml(item, canEdit)).join('')}
-      </tbody>
-    </table>
+    <div class="stk__table-wrap">
+      <table class="stk__table">
+        <thead>
+          <tr>
+            <th class="stk__col-nsn">NSN</th>
+            <th class="stk__col-name">Item</th>
+            <th class="stk__col-cat">Cat.</th>
+            <th class="stk__col-num" title="Authorised quantity">Auth</th>
+            <th class="stk__col-num" data-sys-col title="System on-hand count">On hand</th>
+            <th class="stk__col-num" title="Currently on loan">On loan</th>
+            <th class="stk__col-count" title="Serviceable — items in good working order">Svc</th>
+            <th class="stk__col-count" title="Unserviceable — damaged or non-functional, awaiting repair">U/S</th>
+            <th class="stk__col-count" title="In repair — temporarily unserviceable, currently being repaired">Repr</th>
+            <th class="stk__col-count" title="Calibration due — must be calibrated before issue">Cal</th>
+            <th class="stk__col-count" title="Written off — beyond economic repair, pending board of survey">W/O</th>
+            <th class="stk__col-total">Total</th>
+            <th class="stk__col-var">Variance</th>
+            <th class="stk__col-notes">Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map((item) => _itemRowHtml(item, canEdit)).join('')}
+        </tbody>
+      </table>
+    </div>
   `;
 }
 
 function _itemRowHtml(item, canEdit) {
-  const stk     = _countsByItem.get(item.id);
-  const condVal = stk?.condition || item.condition || 'serviceable';
-  const notes   = stk?.notes || '';
+  const stk   = _countsByItem.get(item.id);
+  const notes = stk?.notes || '';
   const sys     = Number(item.onHand) || 0;
   const onLoan  = Number(item.onLoan) || 0;
   const authQty = Number(item.authQty) || 0;
@@ -299,14 +298,6 @@ function _itemRowHtml(item, canEdit) {
         ${total != null ? String(total) : '—'}
       </td>
       <td class="stk__col-var ${varClass}" data-target="var-cell">${varText}</td>
-      <td class="stk__col-cond">
-        <select class="stk__cond" data-field="condition" ${canEdit ? '' : 'disabled'}>
-          ${CONDITIONS.map((c) => `
-            <option value="${esc(c.value)}" ${c.value === condVal ? 'selected' : ''}>
-              ${esc(c.label)}
-            </option>`).join('')}
-        </select>
-      </td>
       <td class="stk__col-notes">
         <input type="text" maxlength="200"
                class="stk__notes"
@@ -333,14 +324,9 @@ function _wire() {
   $('[data-action="discard"]', _root)?.addEventListener('click', _onDiscard);
   $('[data-action="finalise"]', _root)?.addEventListener('click', _onFinalise);
 
-  // Per-row input handlers. Use blur (and change for selects) rather than
-  // input — blur fires after the user is done editing, which keeps IDB
-  // writes from happening on every keystroke. For select dropdowns,
-  // change is the natural event.
-  //
-  // For the three count inputs (Svc / U/S / W/O) we ALSO listen to input
-  // so the Total and Variance cells update visually as the user types —
-  // but we only persist on blur.
+  // Per-row input handlers. Use blur rather than input for IDB writes.
+  // For count inputs we ALSO listen to input so Total/Variance cells update
+  // live as the user types without writing to IDB on every keystroke.
   const countFields = ['qty-svc', 'qty-uns', 'qty-repr', 'qty-cal', 'qty-wof'];
   for (const field of countFields) {
     $$(`input[data-field="${field}"]`, _root).forEach((input) => {
@@ -349,9 +335,6 @@ function _wire() {
       input.addEventListener('blur',   _onCountChange);
     });
   }
-  $$('select[data-field="condition"]', _root).forEach((sel) => {
-    sel.addEventListener('change', _onConditionChange);
-  });
   $$('input[data-field="notes"]', _root).forEach((input) => {
     input.addEventListener('change', _onNotesChange);
     input.addEventListener('blur',   _onNotesChange);
@@ -431,7 +414,6 @@ async function _onCountChange(e) {
 
   await Storage.stocktake.set(itemId, total, {
     countedBy:         AUTH.getSession()?.name || 'unknown',
-    condition:         existing.condition || null,
     notes:             existing.notes || '',
     qtyServiceable:    bd.qtyServiceable,
     qtyUnserviceable:  bd.qtyUnserviceable,
@@ -455,35 +437,6 @@ async function _onCountChange(e) {
   Sync.notifyChanged();
 }
 
-async function _onConditionChange(e) {
-  const sel      = e.target;
-  const row      = sel.closest('.stk__row');
-  if (!row) return;
-  const itemId   = row.dataset.itemId;
-  const existing = _countsByItem.get(itemId);
-  // If no count entered yet, condition change alone doesn't create a
-  // session row — the count is the trigger. Without a count, finalisation
-  // doesn't act on this row, so a condition override would be lost.
-  if (!existing) {
-    sel.classList.add('stk__cond--orphan');
-    sel.title = 'Enter a count to record this condition change.';
-    return;
-  }
-  sel.classList.remove('stk__cond--orphan');
-  await Storage.stocktake.set(itemId, existing.counted, {
-    countedBy:         AUTH.getSession()?.name || 'unknown',
-    condition:         sel.value,
-    notes:             existing.notes || '',
-    qtyServiceable:    existing.qtyServiceable    ?? existing.counted ?? 0,
-    qtyUnserviceable:  existing.qtyUnserviceable   ?? 0,
-    qtyRepair:         existing.qtyRepair          ?? 0,
-    qtyCalibrationDue: existing.qtyCalibrationDue  ?? 0,
-    qtyWrittenOff:     existing.qtyWrittenOff      ?? 0,
-  });
-  existing.condition = sel.value;
-  Sync.notifyChanged();
-}
-
 async function _onNotesChange(e) {
   const input    = e.target;
   const row      = input.closest('.stk__row');
@@ -493,7 +446,6 @@ async function _onNotesChange(e) {
   if (!existing) return;  // Notes without a count are lost — no orphan UI needed.
   await Storage.stocktake.set(itemId, existing.counted, {
     countedBy:         AUTH.getSession()?.name || 'unknown',
-    condition:         existing.condition || null,
     notes:             input.value,
     qtyServiceable:    existing.qtyServiceable    ?? existing.counted ?? 0,
     qtyUnserviceable:  existing.qtyUnserviceable   ?? 0,
@@ -700,13 +652,21 @@ async function _doFinalise(matches, overs, shorts, itemsById) {
     const qtyW = stk.qtyWrittenOff     != null ? Number(stk.qtyWrittenOff)     : 0;
     const total = qtyS + qtyU + qtyR + qtyC + qtyW;
 
+    // Derive item condition from the breakdown — highest-severity condition
+    // present wins. This replaces the old manual condition-dropdown override.
+    const derivedCondition = qtyW > 0 ? 'written-off'
+      : qtyR > 0 ? 'repair'
+      : qtyC > 0 ? 'calibration-due'
+      : qtyU > 0 ? 'unserviceable'
+      : 'serviceable';
+
     const updated = {
       ...item,
       onHand:         Math.max(0, total),
       // unsvc = all items not ready for issue: U/S + In Repair + Cal Due
       unsvc:          Math.max(0, qtyU + qtyR + qtyC),
       writtenOff:     Math.max(0, qtyW),
-      condition:      stk.condition || item.condition,
+      condition:      derivedCondition,
       lastStocktakeAt: finalisedAt,
       updatedAt:      finalisedAt,
     };

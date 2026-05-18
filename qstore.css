@@ -2865,9 +2865,16 @@ input {
 .stk__summary-tile--over    { border-color: rgba(255, 184, 107, 0.3); }
 .stk__summary-tile--short   { border-color: rgba(255, 107, 107, 0.3); }
 
+/* Scroll wrapper keeps the table from squashing columns on narrow screens. */
+.stk__table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* Main table. Same shape as inventory but with input cells. */
 .stk__table {
   width: 100%;
+  min-width: 900px;     /* prevent column compression — enables horizontal scroll */
   border-collapse: collapse;
   margin-top: 8px;
   font-size: 13px;
@@ -2902,13 +2909,12 @@ input {
 .stk__col-total,
 .stk__col-var { text-align: right; }
 
-.stk__col-cat   { width: 90px; }
-.stk__col-num   { width: 52px; }
-.stk__col-count { width: 48px; }   /* Svc / U/S / Repr / Cal / W/O — 5 narrow cols */
-.stk__col-total { width: 52px; font-weight: 600; }
-.stk__col-var   { width: 62px; font-weight: 600; }
-.stk__col-cond  { width: 120px; }
-.stk__col-notes { width: 150px; }
+.stk__col-cat   { width: 80px; }
+.stk__col-num   { width: 60px; }   /* wide enough for 2-digit quantities */
+.stk__col-count { width: 50px; }   /* Svc / U/S / Repr / Cal / W/O — 5 input cols */
+.stk__col-total { width: 54px; font-weight: 600; }
+.stk__col-var   { width: 64px; font-weight: 600; }
+.stk__col-notes { width: 160px; }
 
 /* Total cell */
 .stk__total { color: var(--text-primary); }
@@ -2921,7 +2927,6 @@ input {
 .stk__count-repr,
 .stk__count-cal,
 .stk__count-wof,
-.stk__cond,
 .stk__notes {
   width: 100%;
   padding: 4px 6px;
@@ -2970,18 +2975,12 @@ input {
   background: rgba(255, 107, 107, 0.08);
 }
 
-.stk__cond--orphan {
-  border-color: var(--warn);
-  background: rgba(255, 184, 107, 0.08);
-}
-
 .stk__count:focus,
 .stk__count-svc:focus,
 .stk__count-uns:focus,
 .stk__count-repr:focus,
 .stk__count-cal:focus,
 .stk__count-wof:focus,
-.stk__cond:focus,
 .stk__notes:focus {
   outline: none;
   border-color: var(--gold);
