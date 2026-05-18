@@ -1,7 +1,7 @@
 # QStore IMS v2 — User Manual
 
 **Author:** Sean Scales  
-**Version:** 2.1  
+**Version:** 2.3.0  
 **Licence:** Proprietary — see [LICENSE](LICENSE)  
 **Contact:** admin@seanscales.com.au
 
@@ -34,13 +34,14 @@
 QStore IMS (Inventory Management System) is a self-contained browser-based application for managing Australian Army Cadet Q-Store operations. It runs entirely in the browser using local storage — no internet connection or server is required for day-to-day use.
 
 **Key capabilities:**
-- Inventory tracking with photo support and QR codes
-- Loan issue and return workflow with printable vouchers
-- Nominal roll (cadets and staff)
-- Stocktake with discrepancy reporting
+- Inventory tracking with five-state condition breakdown, photo support, and QR codes
+- Loan issue and return workflow with printable vouchers and overdue tracking
+- Nominal roll (cadets and staff) with company / platoon / section grouping
+- Stocktake with full condition breakdown and blank worksheet PDF
+- AAC QStore order PDF import with IMS receive workflow
 - Tamper-evident audit log
 - Optional cloud backup via Microsoft OneDrive
-- Role-based access for OC, QM, Staff, and Cadets
+- Role-based access for OC, QM, Staff, Cadets, and Read-Only users
 
 **Data storage:** All data is stored in IndexedDB in the browser on the device running the app. Data does not leave the device unless cloud sync is configured or a manual backup is exported.
 
@@ -75,6 +76,17 @@ After changing the default PIN, complete unit setup:
 3. Upload a unit logo if desired
 4. Click **Save unit details**
 
+### Dashboard
+
+After logging in, the **Dashboard** (home page) gives an at-a-glance overview of the Q-Store:
+
+- **Stat tiles** — total items, items on loan, overdue loans, and unserviceable items
+- **Stocktake status** — date and readiness of the last stocktake
+- **Quick actions** — shortcuts to Issue, Return, Add Item, and run a Stocktake
+- **Recent audit** — the five most recent audit log entries
+
+The Dashboard is the first page shown after login. Click **Dashboard** in the navigation bar to return to it at any time.
+
 ### Adding Users
 
 Before other staff and cadets can log in, add them from the **Users** page:
@@ -95,8 +107,8 @@ QStore IMS has five roles. Assign the appropriate role when creating each user a
 | Role | Code | Description |
 |------|------|-------------|
 | Commanding Officer | OC | Full access including Settings. Only one OC account should exist. |
-| Quartermaster (Staff) | QM | Full operational access — inventory, loans, cadets, stocktake, audit. Cannot access Settings. |
-| Staff | Staff | Can view all pages and request issues. Cannot add/edit inventory or manage cadets. |
+| Quartermaster (Staff) | QM | Full operational access — inventory, loans, cadets, stocktake, orders, audit. Cannot access Settings. |
+| Staff | Staff | Can view all pages. Cannot add/edit inventory or manage cadets. |
 | Cadet | Cadet | Can view inventory and their own loans. |
 | Read-Only | RO | View-only access. No actions. |
 
@@ -111,8 +123,9 @@ QStore IMS has five roles. Assign the appropriate role when creating each user a
 | Return loans | ✓ | ✓ | | | |
 | View own loans | ✓ | ✓ | ✓ | ✓ | |
 | View all loans | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Manage cadets/staff | ✓ | ✓ | | | |
+| Manage cadets / staff | ✓ | ✓ | | | |
 | Run stocktake | ✓ | ✓ | | | |
+| Import / manage orders | ✓ | ✓ | | | |
 | View audit log | ✓ | ✓ | | | |
 | Print / QR codes | ✓ | ✓ | | | |
 | Import CSV | ✓ | ✓ | | | |
@@ -134,7 +147,7 @@ The **Users** page (OC only, visible in the top navigation bar) is the central h
    - **Service number** — optional; stored for reference only
    - **Initial PIN** — 4-digit PIN for the user's first login; enter it twice to confirm. The PIN is visible while you type.
 4. Click **Add User**
-5. A **show-once screen** displays the new PIN — note it down immediately and give it to the user verbally. Click Done to close.
+5. A **show-once screen** displays the new PIN — note it down immediately and give it to the user verbally. Click **Done** to close.
 
 > **Security policy:** Only the OC can set or reset PINs. Users cannot change their own PINs. If a user forgets their PIN, they must ask the OC to reset it. Once set, the PIN cannot be retrieved — even the OC cannot view it again.
 
@@ -187,7 +200,7 @@ The **Condition badge** and **Unsvc** count are derived automatically from these
 2. Complete the form:
    - **NSN** — National Stock Number in 4-2-3-4 format (e.g., *8470-66-001-0001*). Non-standard NSNs are accepted with a warning.
    - **Name** — Item description
-   - **Category** — Uniform, Equipment, Safety, Training Aids, Field Stores, Medical, or ICT
+   - **Category** — Select from the unit's configured categories (see [Section 10 — Settings](#10-settings))
    - **Authorised qty** — Establishment quantity
    - **On hand** — Current physical quantity
    - **Condition breakdown** — Enter a qty in each applicable condition field. The running total (shown top-right of the section) must equal On hand. Changing On hand automatically adjusts Svc to keep the total consistent.
@@ -227,7 +240,7 @@ Click **⎙ QR codes** to generate printable QR code labels for all currently-vi
 
 ## 5. Loans
 
-The Loans page manages equipment issue and return.
+The Loans page manages equipment issue and return. When any active loans are past their due date, a **red badge** showing the overdue count appears on the **Loans** navigation item as a reminder.
 
 ### Issuing Equipment (OC / QM)
 
@@ -260,7 +273,7 @@ If you have pre-defined kits (e.g., *Initial Issue — Male Cadet*):
 2. Select the kit from the list
 3. The item lines are pre-filled — adjust quantities as needed before issuing
 
-See [Section 14 — Issue Kits](#14-issue-kits) for creating kits.
+See [Section 15 — Issue Kits](#15-issue-kits) for creating kits.
 
 ### Returning Equipment (OC / QM)
 
@@ -316,6 +329,10 @@ If your unit is organised into companies, platoons, and sections, configure this
 
 Existing records that only have a free-text **Plt** value remain fully functional — they display in legacy mode until re-saved with the new dropdowns. No data migration step is required.
 
+#### Platoon Migration Wizard
+
+If you previously used the free-text platoon field and have since configured unit sub-structure, use **Settings → Unit sub-structure → ↝ Migrate** to bulk-reassign cadets to the new structure. The wizard maps existing free-text platoon values to the configured platoon names.
+
 ### Adding a Person (OC / QM)
 
 1. Click **+ Add cadet/staff**
@@ -329,6 +346,17 @@ Existing records that only have a free-text **Plt** value remain fully functiona
    - **Notes** — optional free text
 3. The **person type** (cadet or staff) is derived automatically from the rank entered
 4. Click **Save**
+
+### Bulk CSV Import (OC / QM)
+
+Import multiple cadets or staff from a spreadsheet in one operation:
+
+1. Click **⇪ Import CSV** in the Cadets toolbar
+2. Prepare your CSV with columns: `svcNo`, `surname`, `givenNames`, `rank`, `company`, `platoon`, `section` (company/platoon/section accept aliases matching your configured structure)
+3. Upload the file and review the preview — rows with validation errors are highlighted
+4. Click **Confirm import** to add all valid rows
+
+Existing records with the same service number are skipped (no overwrite). The import is audited as `cadet_add` for each person created.
 
 ### Editing and Deactivating
 
@@ -363,6 +391,10 @@ The Stocktake page guides you through a physical count of all Q-Store items.
 
 > **Tip:** Leave any column blank (or at 0) if there are none of that condition. You only need to fill in the columns that apply. The In Repair and Calibration Due inputs turn amber when filled as a visual reminder.
 
+### Blank Stocktake Worksheet PDF
+
+Click **⎙ Worksheet** to generate a blank printed count sheet. The worksheet lists all current inventory items with empty count columns for each condition state — use it to record physical counts on the floor before entering them into the system.
+
 ### Finalising
 
 1. Once all items are counted, click **Finalise stocktake**
@@ -375,7 +407,7 @@ The Stocktake page guides you through a physical count of all Q-Store items.
    - **Condition badge** ← derived automatically from the highest-severity count present (W/O > Repr > Cal > U/S > Svc)
 4. Each discrepancy is recorded in the audit log with a full condition breakdown
 5. Write-off items get a separate `stocktake_writeoff` audit entry flagging them for formal action
-6. A stocktake report PDF (with all five condition columns) is available
+6. A stocktake report PDF (with all five condition columns) is available after finalising
 
 > **Note:** Finalising is irreversible. Ensure all counts are correct before confirming. Written-off items must be formally struck off charge via a Board of Survey (AB174) — this is not done automatically by the system.
 
@@ -405,11 +437,14 @@ The **Orders** page is a unit-only tracking module for supply orders placed thro
    - Order status (Request or Issue)
    - Date, requestor name, rank, service number, and unit
    - All line items: NSN, description, qty required, qty requisitioned, qty received
-4. The order is saved and the detail view opens
+4. An **editable review screen** opens before the order is saved — check all extracted fields and correct any parsing errors (e.g., truncated descriptions or misread quantities) by editing inline
+5. Click **Save** to store the order and open the detail view
+
+> **Note:** PDF parsing is automatic but not perfect. Always review the extracted items before saving. Sizes or product codes near the quantity column may be misread — correct them in the review screen.
 
 If an order with the same number was already imported you will be prompted to confirm before creating a duplicate record.
 
-### Viewing Order Details
+### Viewing and Editing Order Details
 
 The detail view shows:
 - **Metadata:** order number, category, type, AAC status, date, requestor, unit
@@ -420,6 +455,8 @@ The detail view shows:
 | In IMS | NSN exists — onHand will be incremented on receive |
 | New | NSN not in IMS — a new item will be created on receive |
 | No NSN | Item has no NSN and will be skipped on receive |
+
+Click **Edit** on any saved order to return to the editable review screen and correct any fields.
 
 ### Approving and Receiving an Issue Order (OC / QM)
 
@@ -488,7 +525,10 @@ Both exports honour the active search and action filter — use filters to narro
 | cadet_add | Person added to nominal roll |
 | cadet_update | Person record updated |
 | cadet_delete | Person deactivated/deleted |
-| pin_change | User changed their PIN |
+| user_add | User account created |
+| user_update | User account edited |
+| user_delete | User account deleted |
+| pin_change | PIN set or reset by administrator |
 | recovery_set | OC recovery code generated |
 | recovery_reset | OC PIN reset using recovery code |
 | login | Successful login |
@@ -496,6 +536,7 @@ Both exports honour the active search and action filter — use filters to narro
 | data_export | Backup exported |
 | data_imported | Backup imported |
 | stocktake | Stocktake finalised |
+| stocktake_writeoff | Written-off items flagged during stocktake |
 | order-import | AAC QStore order PDF imported |
 | order-received | Order approved and items received into IMS |
 | order-delete | Order record deleted |
@@ -506,7 +547,7 @@ Each entry is cryptographically linked to the previous one. If any entry is alte
 
 ---
 
-## 9. Settings
+## 10. Settings
 
 Settings is accessible to the **OC only**. Navigate to **Settings** from the top navigation.
 
@@ -537,6 +578,22 @@ Use the **×** buttons to remove companies, platoons, or sections. Click **Clear
 
 > **Note:** Changing or removing entries in the structure does not alter existing cadet records — the stored company/platoon/section names on each record remain unchanged. Update individual cadet records if you rename a company or platoon.
 
+### Categories
+
+Manage the item categories available in the Inventory and stocktake pages. The default categories are:
+
+- Uniform
+- Equipment
+- Safety
+- Training Aids
+- Field Stores
+- Medical
+- ICT
+
+To customise: click each chip to remove a category, or type a new name in the text field and press **Enter** to add it. Click **Save categories** to apply. Click **Reset to defaults** to restore the original list.
+
+> **Note:** Removing a category does not affect existing items — they retain their stored category name. Update affected items individually if needed.
+
 ### User Accounts
 
 Add, edit, and manage user accounts. Each user has:
@@ -544,6 +601,8 @@ Add, edit, and manage user accounts. Each user has:
 - Role (OC, QM, Staff, Cadet, Read-Only)
 - Service number
 - PIN (set and reset exclusively by the OC; users cannot change their own PINs)
+
+See [Section 3 — Managing User Accounts](#3-user-roles-and-permissions) for full details.
 
 ### OC PIN Recovery
 
@@ -559,7 +618,7 @@ Displays version information, authorship, and the proprietary licence.
 
 ---
 
-## 10. Cloud Sync (OneDrive)
+## 11. Cloud Sync (OneDrive)
 
 Cloud sync is optional. It backs up all data to a Microsoft OneDrive folder so it can be accessed from other devices and is protected against device loss.
 
@@ -590,7 +649,7 @@ Cloud sync is optional. It backs up all data to a Microsoft OneDrive folder so i
 
 ---
 
-## 11. Backup and Restore
+## 12. Backup and Restore
 
 Manual backup/restore is available in **Settings → Data backup & restore**. Use this to:
 - Keep a local copy off-device
@@ -603,7 +662,7 @@ Manual backup/restore is available in **Settings → Data backup & restore**. Us
 2. A JSON file is downloaded named `qstore-backup-<unitcode>-<date>.json`
 3. Store this file in a safe location (not on the same device)
 
-The backup includes all inventory, photos, loans, cadets, users, settings, and the full audit chain.
+The backup includes all inventory, photos, loans, cadets, users, settings, supply orders, and the full audit chain.
 
 ### Importing a Backup
 
@@ -623,7 +682,7 @@ Inventory items can be bulk-imported from a spreadsheet:
 
 ---
 
-## 12. PIN Security
+## 13. PIN Security
 
 Each user authenticates with a 4-digit PIN.
 
@@ -655,24 +714,39 @@ Lockouts apply per user account. Other users are unaffected.
 
 ---
 
-## 13. OC PIN Recovery
+## 14. OC PIN Recovery
 
-If the OC forgets their PIN and no recovery code was generated:
+The OC account has an additional recovery mechanism that is not available to other roles. It is important to set this up before it is needed.
 
-- The OC account cannot be recovered without a recovery code
-- **Prevention:** Always generate and securely store a recovery code in **Settings → OC PIN recovery**
+### Setting Up a Recovery Code (OC)
+
+1. Navigate to **Settings → OC PIN recovery**
+2. Click **Generate new code**
+3. The 12-character recovery code is displayed once — write it down immediately
+4. Store the code **off-device**: a printed copy in the unit safe, on a key cabinet, or in a secured off-device location
+5. Treat it with the same care as the safe combination — anyone with this code can reset the OC PIN and gain full administrative access
+
+> **Warning:** Recovery codes are single-use. After using a code to reset the OC PIN, generate a new one immediately. Without a recovery code, a lost OC PIN cannot be recovered.
 
 ### Using a Recovery Code
+
+If the OC forgets their PIN:
 
 1. On the login screen, select the OC account
 2. Click **Forgot PIN?**
 3. Enter the 12-character recovery code
 4. Enter and confirm a new PIN
-5. The recovery code is consumed — generate a new one immediately
+5. The recovery code is consumed — generate a new one immediately from Settings
+
+### If the Recovery Code Is Also Lost
+
+There is no bypass for a lost OC PIN without a recovery code. Options:
+- Import a recent backup (data is restored, but the PIN issue remains — you will need to contact support)
+- Contact admin@seanscales.com.au for assistance
 
 ---
 
-## 14. Issue Kits
+## 15. Issue Kits
 
 Issue kits are pre-defined bundles of items (e.g., *Initial Issue — Male Cadet*) that pre-fill the loan issue form with a single click.
 
@@ -705,7 +779,7 @@ Issue kits are pre-defined bundles of items (e.g., *Initial Issue — Male Cadet
 
 ---
 
-## 15. QR Codes
+## 16. QR Codes
 
 QR code labels allow quick item lookup using a phone or tablet camera.
 
@@ -724,7 +798,7 @@ QR code labels allow quick item lookup using a phone or tablet camera.
 
 ---
 
-## 16. Troubleshooting
+## 17. Troubleshooting
 
 ### App won't load / blank screen
 
@@ -732,11 +806,21 @@ QR code labels allow quick item lookup using a phone or tablet camera.
 - Try a hard refresh: `Ctrl + Shift + R` (Windows) or `Cmd + Shift + R` (Mac)
 - Check the browser console (F12 → Console) for error messages
 
-### Forgot OC PIN and no recovery code
+### User forgot their PIN
+
+Users cannot reset their own PINs. The OC must click **Reset PIN** on the **Users** page to set a new PIN, then give it to the user verbally.
+
+### Forgot OC PIN — have recovery code
+
+Follow the steps in [Section 14 — OC PIN Recovery](#14-oc-pin-recovery). The recovery code is single-use — generate a new one immediately after use.
+
+### Forgot OC PIN — no recovery code
 
 There is no bypass for a lost OC PIN without a recovery code. Options:
-- Import a recent backup (data is restored but the PIN issue remains — you will need to reset the PIN via the default admin account if it still exists)
+- Import a recent backup (data is restored but the PIN issue remains — contact support)
 - Contact admin@seanscales.com.au for assistance
+
+**Prevention:** Always generate and securely store a recovery code in Settings before it is needed.
 
 ### Data appears missing after a browser update or profile change
 
@@ -761,7 +845,11 @@ Run a stocktake to reconcile physical counts with the system. Check the Audit lo
 
 A broken audit chain indicates that data has been modified outside the application (e.g., via browser DevTools or a corrupted import). Import from your most recent known-good backup.
 
+### Orders — extracted items look wrong after PDF import
+
+The PDF parser reads text positions to assign items to columns. Complex PDFs (e.g., multi-line descriptions, unusual fonts) may misread quantities or truncate descriptions. Use the **editable review screen** that appears before saving to correct any errors. If a size or code has been placed in the quantity field, zero it out and enter the correct quantity manually.
+
 ---
 
-*QStore IMS v2 — © 2025 Sean Scales. All rights reserved.*  
+*QStore IMS v2.3.0 — © 2026 Sean Scales. All rights reserved.*  
 *Proprietary software — redistribution and modification prohibited without written consent.*
