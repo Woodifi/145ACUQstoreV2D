@@ -96,15 +96,31 @@ export function normalizeRank(rank) {
  *     (a.surname || '').localeCompare(b.surname || ''));
  */
 const _RANK_PRIORITY = (() => {
-  const order = [
+  // Each entry is a group of aliases that share the same priority.
+  // Canonical CDT-prefixed forms AND the shorthand army forms (CPL, SGT, etc.)
+  // that v1/legacy records may have stored are both included so they sort
+  // identically regardless of which form is on disk.
+  const groups = [
     // Staff — highest to lowest
-    'COL-AAC', 'LTCOL-AAC', 'MAJ-AAC', 'CAPT-AAC', 'LT-AAC', '2LT-AAC',
-    'DAH',
-    // Cadets — highest to lowest (CADET_RANKS is defined lowest→highest)
-    'UO', 'CDTWO1', 'CDTWO2', 'CDTSSGT', 'CDTSGT', 'CDTCPL', 'CDTLCPL', 'CDT',
+    ['COL-AAC'],
+    ['LTCOL-AAC'],
+    ['MAJ-AAC'],
+    ['CAPT-AAC'],
+    ['LT-AAC'],
+    ['2LT-AAC'],
+    ['DAH'],
+    // Cadets — highest to lowest
+    ['UO'],
+    ['CDTWO1', 'WO1'],
+    ['CDTWO2', 'WO2'],
+    ['CDTSSGT', 'SSGT'],
+    ['CDTSGT',  'SGT'],
+    ['CDTCPL',  'CPL'],
+    ['CDTLCPL', 'LCPL'],
+    ['CDT'],
   ];
   const map = new Map();
-  order.forEach((r, i) => map.set(r, i));
+  groups.forEach((aliases, i) => aliases.forEach((r) => map.set(r, i)));
   return map;
 })();
 
