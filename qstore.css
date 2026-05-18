@@ -1315,7 +1315,7 @@ input {
  * ============================================================================= */
 
 .settings {
-  padding: 24px;
+  padding: 20px 24px;
   max-width: 900px;
   margin: 0 auto;
 }
@@ -1654,6 +1654,12 @@ input {
  * feel like siblings. Rules duplicated rather than aliased so future
  * tweaks to one don't accidentally drag the other along.
  * ============================================================================= */
+
+.cad {
+  padding: 20px 24px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
 
 .cad__toolbar {
   display: flex;
@@ -2273,6 +2279,12 @@ input {
  * AUDIT log viewer — toolbar, verify block, table
  * ============================================================================= */
 
+.aud {
+  padding: 20px 24px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
 .aud__toolbar {
   display: flex;
   align-items: center;
@@ -2883,7 +2895,7 @@ input {
  * ============================================================================= */
 
 .stk {
-  padding: 0 16px 24px;
+  padding: 0 24px 24px;
   max-width: 1400px;
   margin: 0 auto;
 }
@@ -3515,7 +3527,7 @@ details[open] .about__license-summary::before {
 .help {
   max-width: 860px;
   margin: 0 auto;
-  padding: 24px 16px 48px;
+  padding: 20px 24px 48px;
 }
 
 .help__header {
@@ -3811,8 +3823,9 @@ details[open] > .help__section-summary::after {
  * ============================================================================= */
 
 .usr {
-  padding: 24px;
+  padding: 20px 24px;
   max-width: 1000px;
+  margin: 0 auto;
 }
 
 .usr__toolbar {
@@ -4066,7 +4079,7 @@ details[open] > .help__section-summary::after {
    ============================================================================= */
 
 .dash {
-  padding: 24px;
+  padding: 20px 24px;
   max-width: 900px;
   margin: 0 auto;
 }
@@ -4775,7 +4788,7 @@ details[open] > .help__section-summary::after {
   gap: 0;
   max-width: 1100px;
   margin: 0 auto;
-  padding: 0 0 48px;
+  padding: 20px 24px 48px;
 }
 
 .orders__header {
@@ -4783,7 +4796,7 @@ details[open] > .help__section-summary::after {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 20px 0 16px;
+  padding: 0 0 16px;
   border-bottom: 1px solid var(--border);
   margin-bottom: 20px;
   flex-wrap: wrap;
