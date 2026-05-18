@@ -280,6 +280,7 @@ function _itemRowHtml(item, photoUrl, { canEdit, canDel }) {
   // that v1 had no visual marker for.
   const { label: condLabel, modifier: condModifier } = _deriveCondition(item.condition, onHand, unsvc);
   const condCss = `inv__cond inv__cond--${condModifier}`;
+  const bdText  = _breakdownText(item);
 
   const photoCell = photoUrl
     ? `<img class="inv__thumb" src="${esc(photoUrl)}" alt="" loading="lazy"
@@ -322,7 +323,10 @@ function _itemRowHtml(item, photoUrl, { canEdit, canDel }) {
       </td>
       <td class="inv__col-qty inv__col-qty--loan">${onLoan}</td>
       <td class="inv__col-qty inv__col-qty--unsvc">${unsvc || ''}</td>
-      <td class="inv__col-cond"><span class="${condCss}">${esc(condLabel)}</span></td>
+      <td class="inv__col-cond">
+        <span class="${condCss}">${esc(condLabel)}</span>
+        ${bdText ? `<div class="inv__cond-bd">${esc(bdText)}</div>` : ''}
+      </td>
       <td class="inv__col-loc">${esc(item.loc || '—')}</td>
       ${actionsCell}
     </tr>
@@ -615,31 +619,63 @@ async function _openItemFormModal({ mode, item }) {
           <label class="form__field">
             <span class="form__label">On hand</span>
             <input type="number" name="onHand" min="0" step="1" inputmode="numeric"
-                   value="${esc(item?.onHand ?? (isEdit ? 0 : 1))}">
-          </label>
-          ${isEdit ? `
-          <label class="form__field">
-            <span class="form__label">Unsvc</span>
-            <input type="number" name="unsvc" min="0" step="1" inputmode="numeric"
-                   value="${esc(item?.unsvc ?? 0)}">
-          </label>` : ''}
-        </div>
-        <div class="form__row">
-          <label class="form__field form__field--grow">
-            <span class="form__label">Condition</span>
-            <select name="condition">
-              ${CONDITIONS.map(c =>
-                `<option value="${esc(c.value)}" ${c.value === (item?.condition || 'serviceable') ? 'selected' : ''}>${esc(c.label)}</option>`
-              ).join('')}
-            </select>
-          </label>
-          <label class="form__field form__field--grow">
-            <span class="form__label">Location</span>
-            <input type="text" name="loc" maxlength="80"
-                   value="${esc(item?.loc || '')}"
-                   placeholder="e.g. Bay 3, Shelf A">
+                   value="${esc(item?.onHand ?? (isEdit ? 0 : 1))}"
+                   data-target="onhand-input">
           </label>
         </div>
+        ${(() => {
+          const bd = _seedBreakdown(item);
+          const total = bd.qtyServiceable + bd.qtyUnserviceable + bd.qtyRepair + bd.qtyCalibrationDue + bd.qtyWrittenOff;
+          const oh = item?.onHand ?? (isEdit ? 0 : 1);
+          const totalClass = total === oh ? 'inv__bd-total--ok' : 'inv__bd-total--warn';
+          return `
+        <div class="inv__breakdown">
+          <div class="inv__breakdown-header">
+            <span class="form__label">Condition breakdown</span>
+            <span class="inv__bd-total ${totalClass}" data-target="bd-total">
+              Total: ${total} / ${oh}
+            </span>
+          </div>
+          <div class="inv__breakdown-row">
+            <label class="inv__bd-field">
+              <span class="inv__bd-label inv__bd-label--svc">Svc</span>
+              <input type="number" name="qtyServiceable" min="0" step="1" inputmode="numeric"
+                     value="${esc(String(bd.qtyServiceable))}" class="inv__bd-input"
+                     title="Serviceable — ready for issue">
+            </label>
+            <label class="inv__bd-field">
+              <span class="inv__bd-label inv__bd-label--uns">U/S</span>
+              <input type="number" name="qtyUnserviceable" min="0" step="1" inputmode="numeric"
+                     value="${esc(String(bd.qtyUnserviceable))}" class="inv__bd-input"
+                     title="Unserviceable — damaged or non-functional">
+            </label>
+            <label class="inv__bd-field">
+              <span class="inv__bd-label inv__bd-label--repr">Repr</span>
+              <input type="number" name="qtyRepair" min="0" step="1" inputmode="numeric"
+                     value="${esc(String(bd.qtyRepair))}" class="inv__bd-input"
+                     title="In repair — temporarily unavailable">
+            </label>
+            <label class="inv__bd-field">
+              <span class="inv__bd-label inv__bd-label--cal">Cal</span>
+              <input type="number" name="qtyCalibrationDue" min="0" step="1" inputmode="numeric"
+                     value="${esc(String(bd.qtyCalibrationDue))}" class="inv__bd-input"
+                     title="Calibration due — must be calibrated before issue">
+            </label>
+            <label class="inv__bd-field">
+              <span class="inv__bd-label inv__bd-label--wo">W/O</span>
+              <input type="number" name="qtyWrittenOff" min="0" step="1" inputmode="numeric"
+                     value="${esc(String(bd.qtyWrittenOff))}" class="inv__bd-input"
+                     title="Written off — beyond repair, pending Board of Survey">
+            </label>
+          </div>
+        </div>`;
+        })()}
+        <label class="form__field">
+          <span class="form__label">Location</span>
+          <input type="text" name="loc" maxlength="80"
+                 value="${esc(item?.loc || '')}"
+                 placeholder="e.g. Bay 3, Shelf A">
+        </label>
         <label class="form__field">
           <span class="form__label">Notes</span>
           <textarea name="notes" maxlength="500" rows="2">${esc(item?.notes || '')}</textarea>
@@ -668,6 +704,33 @@ async function _openItemFormModal({ mode, item }) {
       };
       nsnInput.addEventListener('input', updateNsnHint);
       updateNsnHint();
+
+      // Live breakdown total — updates as the user types.
+      const onHandInput  = $('[data-target="onhand-input"]', panel);
+      const bdInputs     = $$('.inv__bd-input', panel);
+      const bdTotalEl    = $('[data-target="bd-total"]', panel);
+      const _updateBdTotal = () => {
+        if (!bdTotalEl) return;
+        const oh    = Math.max(0, Number(onHandInput?.value) || 0);
+        const total = bdInputs.reduce((s, el) => s + (Math.max(0, Number(el.value) || 0)), 0);
+        bdTotalEl.textContent = `Total: ${total} / ${oh}`;
+        bdTotalEl.className = `inv__bd-total ${total === oh ? 'inv__bd-total--ok' : 'inv__bd-total--warn'}`;
+      };
+      bdInputs.forEach(el => el.addEventListener('input', _updateBdTotal));
+      if (onHandInput) {
+        onHandInput.addEventListener('input', () => {
+          // Auto-adjust Svc to absorb any change in onHand so the total stays consistent.
+          const oh    = Math.max(0, Number(onHandInput.value) || 0);
+          const svcEl = $('input[name="qtyServiceable"]', panel);
+          if (svcEl) {
+            const nonSvc = bdInputs
+              .filter(el => el.name !== 'qtyServiceable')
+              .reduce((s, el) => s + (Math.max(0, Number(el.value) || 0)), 0);
+            svcEl.value = String(Math.max(0, oh - nonSvc));
+          }
+          _updateBdTotal();
+        });
+      }
 
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -698,15 +761,38 @@ function _readFormData(form, isEdit) {
 
   const authQty = _readNonNegInt(fd, 'authQty', 'Authorised qty');
   const onHand  = _readNonNegInt(fd, 'onHand',  'On hand');
-  const unsvc   = isEdit ? _readNonNegInt(fd, 'unsvc', 'Unsvc') : 0;
+
+  // Condition breakdown — always present (both add and edit).
+  const qtyServiceable    = _readNonNegInt(fd, 'qtyServiceable',    'Svc count');
+  const qtyUnserviceable  = _readNonNegInt(fd, 'qtyUnserviceable',  'U/S count');
+  const qtyRepair         = _readNonNegInt(fd, 'qtyRepair',         'Repr count');
+  const qtyCalibrationDue = _readNonNegInt(fd, 'qtyCalibrationDue', 'Cal count');
+  const qtyWrittenOff     = _readNonNegInt(fd, 'qtyWrittenOff',     'W/O count');
+  const bdTotal = qtyServiceable + qtyUnserviceable + qtyRepair + qtyCalibrationDue + qtyWrittenOff;
+  if (bdTotal !== onHand) {
+    throw new Error(
+      `Condition breakdown total (${bdTotal}) must equal On hand (${onHand}).`
+    );
+  }
+
+  // Derive legacy aggregated fields from the breakdown (kept for backward compat
+  // and for any code that still reads .unsvc / .condition directly).
+  const unsvc     = qtyUnserviceable + qtyRepair + qtyCalibrationDue;
+  const writtenOff = qtyWrittenOff;
+  const condition  = qtyWrittenOff > 0     ? 'written-off'
+    : qtyRepair > 0         ? 'repair'
+    : qtyCalibrationDue > 0 ? 'calibration-due'
+    : qtyUnserviceable > 0  ? 'unserviceable'
+    : 'serviceable';
 
   return {
     nsn, name,
-    cat:        String(fd.get('cat') || 'Equipment'),
-    authQty, onHand, unsvc,
-    condition:  String(fd.get('condition') || 'serviceable'),
-    loc:        String(fd.get('loc')   || '').trim(),
-    notes:      String(fd.get('notes') || '').trim(),
+    cat: String(fd.get('cat') || 'Equipment'),
+    authQty, onHand,
+    qtyServiceable, qtyUnserviceable, qtyRepair, qtyCalibrationDue, qtyWrittenOff,
+    unsvc, writtenOff, condition,
+    loc:   String(fd.get('loc')   || '').trim(),
+    notes: String(fd.get('notes') || '').trim(),
   };
 }
 
@@ -724,18 +810,24 @@ async function _saveAdd(data) {
   const id = 'I' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   const item = {
     id,
-    nsn:        data.nsn,
-    name:       data.name,
-    cat:        data.cat,
-    authQty:    data.authQty,
-    onHand:     data.onHand,
-    onLoan:     0,
-    unsvc:      0,
-    condition:  data.condition,
-    loc:        data.loc,
-    notes:      data.notes,
-    hasPhoto:   false,
-    createdAt:  new Date().toISOString(),
+    nsn:               data.nsn,
+    name:              data.name,
+    cat:               data.cat,
+    authQty:           data.authQty,
+    onHand:            data.onHand,
+    onLoan:            0,
+    unsvc:             data.unsvc,
+    writtenOff:        data.writtenOff,
+    condition:         data.condition,
+    qtyServiceable:    data.qtyServiceable,
+    qtyUnserviceable:  data.qtyUnserviceable,
+    qtyRepair:         data.qtyRepair,
+    qtyCalibrationDue: data.qtyCalibrationDue,
+    qtyWrittenOff:     data.qtyWrittenOff,
+    loc:               data.loc,
+    notes:             data.notes,
+    hasPhoto:          false,
+    createdAt:         new Date().toISOString(),
   };
   await Storage.items.put(item);
   await Storage.audit.append({
@@ -753,16 +845,22 @@ async function _saveEdit(itemId, data) {
   }
   const updated = {
     ...existing,
-    nsn:       data.nsn,
-    name:      data.name,
-    cat:       data.cat,
-    authQty:   data.authQty,
-    onHand:    data.onHand,
-    unsvc:     data.unsvc,
-    condition: data.condition,
-    loc:       data.loc,
-    notes:     data.notes,
-    updatedAt: new Date().toISOString(),
+    nsn:               data.nsn,
+    name:              data.name,
+    cat:               data.cat,
+    authQty:           data.authQty,
+    onHand:            data.onHand,
+    unsvc:             data.unsvc,
+    writtenOff:        data.writtenOff,
+    condition:         data.condition,
+    qtyServiceable:    data.qtyServiceable,
+    qtyUnserviceable:  data.qtyUnserviceable,
+    qtyRepair:         data.qtyRepair,
+    qtyCalibrationDue: data.qtyCalibrationDue,
+    qtyWrittenOff:     data.qtyWrittenOff,
+    loc:               data.loc,
+    notes:             data.notes,
+    updatedAt:         new Date().toISOString(),
   };
   await Storage.items.put(updated);
   await Storage.audit.append({
@@ -1030,6 +1128,65 @@ function _sessionName() {
 
 function _flashError(message) {
   showToast(message, 'error');
+}
+
+// -----------------------------------------------------------------------------
+// Condition breakdown helpers
+// -----------------------------------------------------------------------------
+
+/**
+ * Seed the 5 breakdown qty fields for the item form.
+ * - If the item already stores the breakdown (qtyServiceable is set), use it.
+ * - Otherwise (legacy item) derive from the old `condition` + `unsvc` fields.
+ */
+function _seedBreakdown(item) {
+  if (!item) {
+    return { qtyServiceable: 1, qtyUnserviceable: 0, qtyRepair: 0, qtyCalibrationDue: 0, qtyWrittenOff: 0 };
+  }
+  if (item.qtyServiceable != null) {
+    return {
+      qtyServiceable:    Math.max(0, Number(item.qtyServiceable)    || 0),
+      qtyUnserviceable:  Math.max(0, Number(item.qtyUnserviceable)  || 0),
+      qtyRepair:         Math.max(0, Number(item.qtyRepair)         || 0),
+      qtyCalibrationDue: Math.max(0, Number(item.qtyCalibrationDue) || 0),
+      qtyWrittenOff:     Math.max(0, Number(item.qtyWrittenOff)     || 0),
+    };
+  }
+  // Legacy item — distribute unsvc into the appropriate condition bucket.
+  const onHand     = Math.max(0, Number(item.onHand)    || 0);
+  const unsvc      = Math.max(0, Number(item.unsvc)     || 0);
+  const writtenOff = Math.max(0, Number(item.writtenOff) || 0);
+  const cond       = item.condition || 'serviceable';
+  let qtyU = 0, qtyR = 0, qtyC = 0;
+  if      (cond === 'unserviceable')   qtyU = unsvc;
+  else if (cond === 'repair')          qtyR = unsvc;
+  else if (cond === 'calibration-due') qtyC = unsvc;
+  else if (unsvc > 0)                  qtyU = unsvc; // best guess for any other condition
+  const qtyW = writtenOff;
+  const qtyS = Math.max(0, onHand - qtyU - qtyR - qtyC - qtyW);
+  return { qtyServiceable: qtyS, qtyUnserviceable: qtyU, qtyRepair: qtyR, qtyCalibrationDue: qtyC, qtyWrittenOff: qtyW };
+}
+
+/**
+ * Build a short breakdown text for the table row, e.g. "3 Svc · 1 U/S · 1 Repr".
+ * Returns empty string when the item is fully serviceable (no noise in the table).
+ */
+function _breakdownText(item) {
+  if (item.qtyServiceable == null) return ''; // legacy — badge is sufficient
+  const qS = Number(item.qtyServiceable)    || 0;
+  const qU = Number(item.qtyUnserviceable)  || 0;
+  const qR = Number(item.qtyRepair)         || 0;
+  const qC = Number(item.qtyCalibrationDue) || 0;
+  const qW = Number(item.qtyWrittenOff)     || 0;
+  // Only show breakdown when something non-serviceable exists.
+  if (qU === 0 && qR === 0 && qC === 0 && qW === 0) return '';
+  const parts = [];
+  if (qS > 0) parts.push(`${qS} Svc`);
+  if (qU > 0) parts.push(`${qU} U/S`);
+  if (qR > 0) parts.push(`${qR} Repr`);
+  if (qC > 0) parts.push(`${qC} Cal`);
+  if (qW > 0) parts.push(`${qW} W/O`);
+  return parts.join(' · ');
 }
 
 // -----------------------------------------------------------------------------

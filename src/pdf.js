@@ -609,15 +609,40 @@ export async function generateStockReport(items, opts = {}) {
   const subtitle = opts.subtitle || '';
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
+  // Compact condition summary for the report — e.g. "5S / 2U / 1R".
+  // For legacy items without breakdown data, falls back to the old condition flag.
+  const _condPdf = (i) => {
+    if (i.qtyServiceable != null) {
+      const qS = Number(i.qtyServiceable)    || 0;
+      const qU = Number(i.qtyUnserviceable)  || 0;
+      const qR = Number(i.qtyRepair)         || 0;
+      const qC = Number(i.qtyCalibrationDue) || 0;
+      const qW = Number(i.qtyWrittenOff)     || 0;
+      if (qU === 0 && qR === 0 && qC === 0 && qW === 0) return 'Svc';
+      const parts = [];
+      if (qS > 0) parts.push(`${qS}S`);
+      if (qU > 0) parts.push(`${qU}U`);
+      if (qR > 0) parts.push(`${qR}R`);
+      if (qC > 0) parts.push(`${qC}C`);
+      if (qW > 0) parts.push(`${qW}W`);
+      return parts.join('/');
+    }
+    // Legacy: derive from condition flag + unsvc count.
+    const u = Number(i.unsvc) || 0;
+    if (!i.condition || i.condition === 'serviceable') return u > 0 ? `U/S:${u}` : 'Svc';
+    const abbr = { 'unserviceable': 'U/S', 'repair': 'Repr', 'calibration-due': 'Cal', 'written-off': 'W/O' };
+    return abbr[i.condition] || i.condition;
+  };
+
   // Compute "available" inline so the column shows what the QM cares about.
   const COLS = [
-    { x: PAGE.MARGIN + 2,   w: 30, label: 'NSN',       get: (i) => i.nsn || '' },
-    { x: PAGE.MARGIN + 34,  w: 46, label: 'Item',      get: (i) => i.name || '' },
-    { x: PAGE.MARGIN + 82,  w: 24, label: 'Cat.',      get: (i) => i.cat || '' },
-    { x: PAGE.MARGIN + 108, w: 14, label: 'On hand',   get: (i) => String(i.onHand || 0), align: 'right' },
-    { x: PAGE.MARGIN + 124, w: 14, label: 'On loan',   get: (i) => String(i.onLoan || 0), align: 'right' },
-    { x: PAGE.MARGIN + 140, w: 14, label: 'Unsvc',     get: (i) => String(i.unsvc  || 0), align: 'right' },
-    { x: PAGE.MARGIN + 156, w: 14, label: 'Avail.',    get: (i) => String(Math.max(0, (Number(i.onHand)||0) - (Number(i.onLoan)||0))), align: 'right' },
+    { x: PAGE.MARGIN + 2,   w: 26, label: 'NSN',       get: (i) => i.nsn || '' },
+    { x: PAGE.MARGIN + 30,  w: 44, label: 'Item',      get: (i) => i.name || '' },
+    { x: PAGE.MARGIN + 76,  w: 22, label: 'Cat.',      get: (i) => i.cat || '' },
+    { x: PAGE.MARGIN + 100, w: 13, label: 'On hand',   get: (i) => String(i.onHand || 0), align: 'right' },
+    { x: PAGE.MARGIN + 115, w: 13, label: 'On loan',   get: (i) => String(i.onLoan || 0), align: 'right' },
+    { x: PAGE.MARGIN + 130, w: 13, label: 'Avail.',    get: (i) => String(Math.max(0, (Number(i.onHand)||0) - (Number(i.onLoan)||0))), align: 'right' },
+    { x: PAGE.MARGIN + 145, w: 25, label: 'Condition', get: _condPdf },
   ];
 
   const totalOnHand = items.reduce((s, i) => s + (Number(i.onHand) || 0), 0);
@@ -633,11 +658,14 @@ export async function generateStockReport(items, opts = {}) {
     columns:  COLS,
     rows:     items,
     rowDecorate(i) {
-      // Highlight items that are entirely or substantially unserviceable
-      // for visual scan during a stocktake.
+      // Highlight rows with substantial non-serviceable counts.
       const onHand = Number(i.onHand) || 0;
-      const unsvc  = Number(i.unsvc)  || 0;
-      if (onHand > 0 && unsvc / onHand >= 0.5) {
+      // If breakdown is available, use it; otherwise fall back to unsvc.
+      const notReady = i.qtyServiceable != null
+        ? (Number(i.qtyUnserviceable) || 0) + (Number(i.qtyRepair) || 0) +
+          (Number(i.qtyCalibrationDue) || 0) + (Number(i.qtyWrittenOff) || 0)
+        : (Number(i.unsvc) || 0);
+      if (onHand > 0 && notReady / onHand >= 0.5) {
         return { textColor: [180, 30, 30], rowFill: [255, 230, 230], fontStyle: 'bold' };
       }
       return null;

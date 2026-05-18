@@ -909,6 +909,98 @@ input {
 .inv__cond--written-off      { background: rgba(255, 107, 107, 0.15); color: var(--danger); }
 .inv__cond--unknown          { background: rgba(136, 147, 160, 0.15); color: var(--text-muted); }
 
+/* Breakdown summary line shown below the badge when item has granular data */
+.inv__cond-bd {
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+/* ─── Inventory item form — condition breakdown section ─────────────────────── */
+.inv__breakdown {
+  margin: 2px 0 10px;
+  padding: 10px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.inv__breakdown-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+/* Running total display — turns green when total equals On Hand */
+.inv__bd-total {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--bg-input-hi);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+.inv__bd-total--ok {
+  background: rgba(106, 224, 122, 0.12);
+  border-color: rgba(106, 224, 122, 0.4);
+  color: var(--good);
+}
+.inv__bd-total--warn {
+  background: rgba(255, 184, 107, 0.12);
+  border-color: rgba(255, 184, 107, 0.4);
+  color: var(--warn);
+}
+
+.inv__breakdown-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Each condition qty label+input pair */
+.inv__bd-field {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 52px;
+}
+
+.inv__bd-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 1px 6px;
+  border-radius: 8px;
+}
+.inv__bd-label--svc  { background: rgba(106, 224, 122, 0.18); color: var(--good);   }
+.inv__bd-label--uns  { background: rgba(255, 107, 107, 0.18); color: var(--danger); }
+.inv__bd-label--repr { background: rgba(107, 176, 255, 0.18); color: var(--info);   }
+.inv__bd-label--cal  { background: rgba(196, 169, 107, 0.18); color: var(--gold);   }
+.inv__bd-label--wo   { background: rgba(255, 107, 107, 0.18); color: var(--danger); }
+
+.inv__bd-input {
+  width: 52px;
+  text-align: center;
+  padding: 5px 4px;
+  background: var(--bg-input-hi);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+.inv__bd-input:focus {
+  outline: none;
+  border-color: var(--gold);
+}
+
 .inv__row-actions {
   display: flex;
   gap: 6px;

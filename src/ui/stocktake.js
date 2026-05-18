@@ -692,13 +692,19 @@ async function _doFinalise(matches, overs, shorts, itemsById) {
 
     const updated = {
       ...item,
-      onHand:         Math.max(0, total),
+      onHand:            Math.max(0, total),
       // unsvc = all items not ready for issue: U/S + In Repair + Cal Due
-      unsvc:          Math.max(0, qtyU + qtyR + qtyC),
-      writtenOff:     Math.max(0, qtyW),
-      condition:      derivedCondition,
-      lastStocktakeAt: finalisedAt,
-      updatedAt:      finalisedAt,
+      unsvc:             Math.max(0, qtyU + qtyR + qtyC),
+      writtenOff:        Math.max(0, qtyW),
+      condition:         derivedCondition,
+      // Store the full granular breakdown so inventory page can report accurately.
+      qtyServiceable:    Math.max(0, qtyS),
+      qtyUnserviceable:  Math.max(0, qtyU),
+      qtyRepair:         Math.max(0, qtyR),
+      qtyCalibrationDue: Math.max(0, qtyC),
+      qtyWrittenOff:     Math.max(0, qtyW),
+      lastStocktakeAt:   finalisedAt,
+      updatedAt:         finalisedAt,
     };
     await Storage.items.put(updated);
 
