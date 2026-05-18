@@ -1677,6 +1677,11 @@ input {
   border-top: none;
 }
 
+/* JS-only selector hooks — visual styling fully inherited from .form__field.
+   Defined here so the audit does not flag them as orphaned classes. */
+.cad__form-plt-wrap,
+.cad__form-sec-wrap { /* intentionally empty */ }
+
 .cad__rank,
 .cad__surname {
   font-weight: 600;
