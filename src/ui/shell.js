@@ -21,6 +21,7 @@
 // =============================================================================
 
 import { logBanner, checkOrigin, checkIntegrity } from '../fingerprint.js';
+import { showSplash } from './splash.js';
 import * as Storage   from '../storage.js';
 import * as AUTH      from '../auth.js';
 import * as Sync      from '../sync.js';
@@ -62,14 +63,29 @@ export async function boot(rootEl) {
   checkOrigin();
   // Integrity check deferred briefly so the DOM is fully parsed first.
   setTimeout(checkIntegrity, 1500);
+
+  // Show splash immediately — runs for at least 5 seconds in parallel with boot.
+  const splash = showSplash();
+
   try {
     await Storage.init();
     await Storage.requestPersistence();
+
+    // Push logo / unit name into the splash as soon as storage is ready.
+    try {
+      const s = await Storage.settings.getAll();
+      splash.setContent({ logo: s.unitLogo || null, name: s.unitName || '', code: s.unitCode || '' });
+    } catch (_) { /* non-fatal — splash continues without logo */ }
+
     _session = await AUTH.init();
     await AUTH.ensureDefaultAdmin();
     // Initialise sync after auth — sync may write audit entries which
     // depend on auth.getSession() for the user attribution.
     await Sync.init();
+
+    // Wait for the full 5-second minimum before handing off.
+    await splash.wait;
+    splash.dismiss();
 
     if (_session) {
       await _renderShell();
@@ -78,6 +94,7 @@ export async function boot(rootEl) {
     }
   } catch (err) {
     console.error('Boot failed:', err);
+    splash.dismiss();
     _renderFatalError(err);
   }
 }
