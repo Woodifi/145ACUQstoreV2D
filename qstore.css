@@ -1853,6 +1853,13 @@ input {
  * LOANS page — tabs, issue/return forms, all-loans listing
  * ============================================================================= */
 
+/* Root page container — matches .inv padding so content has breathing room. */
+.loan {
+  padding: 20px 24px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
 /* Tab bar across the top of the page. */
 .loan__tabs {
   display: flex;
@@ -3049,6 +3056,30 @@ input {
   color: var(--text-primary);
   font-size: 13px;
   font-family: inherit;
+}
+
+/* Remove number input spinners in the stocktake table — the narrow columns
+ * (50px) can't fit both the value and the spinner arrows, causing the number
+ * to be obscured. Users type values directly; spinners aren't needed here. */
+.stk__count-svc::-webkit-outer-spin-button,
+.stk__count-svc::-webkit-inner-spin-button,
+.stk__count-uns::-webkit-outer-spin-button,
+.stk__count-uns::-webkit-inner-spin-button,
+.stk__count-repr::-webkit-outer-spin-button,
+.stk__count-repr::-webkit-inner-spin-button,
+.stk__count-cal::-webkit-outer-spin-button,
+.stk__count-cal::-webkit-inner-spin-button,
+.stk__count-wof::-webkit-outer-spin-button,
+.stk__count-wof::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.stk__count-svc,
+.stk__count-uns,
+.stk__count-repr,
+.stk__count-cal,
+.stk__count-wof {
+  -moz-appearance: textfield; /* Firefox */
 }
 
 /* Keep legacy .stk__count selector working for any old references */
