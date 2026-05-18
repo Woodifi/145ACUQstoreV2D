@@ -268,6 +268,66 @@ const SECTIONS = [
     `,
   },
   {
+    id: 'orders',
+    title: 'AAC QStore Orders',
+    icon: '📦',
+    body: `
+      <p>The <strong>Orders</strong> page tracks supply orders from the AAC QStore procurement system. QMs and OCs can import order PDFs, view item details, and receive issued items directly into the IMS inventory.</p>
+      <p class="help__note">Orders is a <strong>unit-only tracking module</strong> — it reads AAC QStore PDFs but does not connect to or modify the AAC QStore system.</p>
+
+      <h4>Importing a PDF order <span class="help__role">OC / QM</span></h4>
+      <ol>
+        <li>Download the order PDF from AAC QStore</li>
+        <li>Go to the <strong>Orders</strong> page and click <strong>Import PDF Order</strong></li>
+        <li>Select the PDF file — the system extracts order number, category, date, requestor, unit, and all line items automatically</li>
+        <li>The order is saved and opens in the detail view</li>
+      </ol>
+
+      <h4>Order types</h4>
+      <table class="help__table">
+        <thead><tr><th>Badge</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Request</strong></td><td>Order submitted to AAC QStore but not yet dispatched ("Order submitted")</td></tr>
+          <tr><td><strong>Issue</strong></td><td>Items dispatched / issued by AAC QStore — can be received into IMS</td></tr>
+        </tbody>
+      </table>
+
+      <h4>IMS match status</h4>
+      <p>Each item in the order is matched to your IMS inventory by NSN. The status column shows:</p>
+      <table class="help__table">
+        <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td>In IMS</td><td>NSN exists in your inventory — onHand will be increased on receive</td></tr>
+          <tr><td>New</td><td>NSN not yet in IMS — a new inventory item will be created on receive</td></tr>
+          <tr><td>No NSN</td><td>Item has no NSN and will be skipped on receive</td></tr>
+        </tbody>
+      </table>
+
+      <h4>Approve &amp; Receive into IMS <span class="help__role">OC / QM</span></h4>
+      <p>Available for <strong>Issue</strong> orders that have not yet been received:</p>
+      <ol>
+        <li>Open the order detail and click <strong>Approve &amp; Receive into IMS</strong></li>
+        <li>Review matched and new items — select a category for new items</li>
+        <li>Add optional QM notes (e.g. "Received from Townsville warehouse")</li>
+        <li>Click <strong>Confirm &amp; Update IMS</strong></li>
+      </ol>
+      <p>On confirm: existing items have their <strong>onHand</strong> (and Serviceable breakdown) incremented by the ordered quantity. New items are created with the NSN, description, and quantity from the order. An audit entry is written for the receive action.</p>
+      <p class="help__warn">This action cannot be undone from the Orders page. If you receive an order in error, manually adjust the affected inventory items from the Inventory page.</p>
+
+      <h4>Exporting as CSV</h4>
+      <p>Click <strong>Export CSV</strong> on any order detail to download a spreadsheet with order metadata and all line items, including NSN, description, quantities, and IMS match status.</p>
+
+      <h4>Order statuses</h4>
+      <table class="help__table">
+        <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td>Pending</td><td>Imported but not yet received into IMS</td></tr>
+          <tr><td>Received</td><td>Items have been received and IMS inventory updated</td></tr>
+        </tbody>
+      </table>
+    `,
+  },
+  {
     id: 'audit',
     title: 'Audit log',
     icon: '📋',
@@ -291,6 +351,9 @@ const SECTIONS = [
           <tr><td>login / login_failed</td><td>Login events</td></tr>
           <tr><td>data_export / data_imported</td><td>Backup actions</td></tr>
           <tr><td>stocktake</td><td>Stocktake finalised</td></tr>
+          <tr><td>order-import</td><td>AAC QStore order PDF imported</td></tr>
+          <tr><td>order-received</td><td>Order approved and items received into IMS</td></tr>
+          <tr><td>order-delete</td><td>Order record deleted</td></tr>
         </tbody>
       </table>
     `,

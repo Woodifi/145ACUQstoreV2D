@@ -16,15 +16,16 @@
 5. [Loans](#5-loans)
 6. [Cadets / Nominal Roll](#6-cadets--nominal-roll)
 7. [Stocktake](#7-stocktake)
-8. [Audit Log](#8-audit-log)
-9. [Settings](#9-settings)
-10. [Cloud Sync (OneDrive)](#10-cloud-sync-onedrive)
-11. [Backup and Restore](#11-backup-and-restore)
-12. [PIN Security](#12-pin-security)
-13. [OC PIN Recovery](#13-oc-pin-recovery)
-14. [Issue Kits](#14-issue-kits)
-15. [QR Codes](#15-qr-codes)
-16. [Troubleshooting](#16-troubleshooting)
+8. [AAC QStore Orders](#8-aac-qstore-orders)
+9. [Audit Log](#9-audit-log)
+10. [Settings](#10-settings)
+11. [Cloud Sync (OneDrive)](#11-cloud-sync-onedrive)
+12. [Backup and Restore](#12-backup-and-restore)
+13. [PIN Security](#13-pin-security)
+14. [OC PIN Recovery](#14-oc-pin-recovery)
+15. [Issue Kits](#15-issue-kits)
+16. [QR Codes](#16-qr-codes)
+17. [Troubleshooting](#17-troubleshooting)
 
 ---
 
@@ -379,7 +380,79 @@ The Stocktake page guides you through a physical count of all Q-Store items.
 
 ---
 
-## 8. Audit Log
+## 8. AAC QStore Orders
+
+The **Orders** page is a unit-only tracking module for supply orders placed through the AAC QStore system. It does not connect to or modify AAC QStore — it reads exported PDFs and uses them to track orders and update your local IMS inventory.
+
+**Access:** OC and QM only.
+
+### Overview
+
+| Concept | Description |
+|---------|-------------|
+| Request | Order submitted to AAC QStore but not yet dispatched |
+| Issue | Items dispatched by AAC QStore — can be received into IMS |
+| Pending | Imported order not yet received into IMS |
+| Received | Order processed — IMS inventory updated |
+
+### Importing an Order PDF (OC / QM)
+
+1. Download the PDF from AAC QStore
+2. Navigate to **Orders** and click **Import PDF Order**
+3. Select the PDF — the system extracts:
+   - Order number and category (Uniform / Equipment / General)
+   - Order status (Request or Issue)
+   - Date, requestor name, rank, service number, and unit
+   - All line items: NSN, description, qty required, qty requisitioned, qty received
+4. The order is saved and the detail view opens
+
+If an order with the same number was already imported you will be prompted to confirm before creating a duplicate record.
+
+### Viewing Order Details
+
+The detail view shows:
+- **Metadata:** order number, category, type, AAC status, date, requestor, unit
+- **Items table:** NSN, description, quantities, and IMS match status for each line:
+
+| IMS Status | Meaning |
+|------------|---------|
+| In IMS | NSN exists — onHand will be incremented on receive |
+| New | NSN not in IMS — a new item will be created on receive |
+| No NSN | Item has no NSN and will be skipped on receive |
+
+### Approving and Receiving an Issue Order (OC / QM)
+
+When an **Issue** order arrives from AAC QStore:
+
+1. Open the order and click **Approve & Receive into IMS**
+2. The modal shows matched items and new items separately
+3. Select a category for any new items to be created
+4. Add optional QM notes
+5. Click **Confirm & Update IMS**
+
+What happens on confirm:
+- **Matched items** (In IMS): `onHand` incremented by the ordered quantity. If the item has a condition breakdown, the Serviceable count is also incremented.
+- **New items**: Created with the NSN, description, and quantity from the order. Tagged with source `aac-order`.
+- The order status changes to **Received**
+- An audit entry is written: `order-received`
+
+> **Warning:** Receiving an order into IMS cannot be reversed from the Orders page. If an error occurs, manually correct the affected items in Inventory.
+
+### Exporting as CSV
+
+Click **Export CSV** on any order detail. The download includes:
+- Order metadata header (order number, category, type, date, requestor, unit)
+- Item rows: NSN, Description, Qty Required, Qty Requisitioned, Qty Received, IMS Status
+
+The filename format is `order-<number>-<date>.csv`.
+
+### Deleting an Order Record
+
+Click **Delete** on the order detail to remove the import record. This does **not** reverse any inventory changes already applied.
+
+---
+
+## 9. Audit Log
 
 The Audit page provides a tamper-evident log of all actions taken in the system.
 
@@ -422,6 +495,9 @@ Both exports honour the active search and action filter — use filters to narro
 | data_export | Backup exported |
 | data_imported | Backup imported |
 | stocktake | Stocktake finalised |
+| order-import | AAC QStore order PDF imported |
+| order-received | Order approved and items received into IMS |
+| order-delete | Order record deleted |
 
 ### Audit Chain
 
