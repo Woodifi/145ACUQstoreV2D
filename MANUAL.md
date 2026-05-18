@@ -115,7 +115,42 @@ QStore IMS has five roles. Assign the appropriate role when creating each user a
 | View audit log | ✓ | ✓ | | | |
 | Print / QR codes | ✓ | ✓ | | | |
 | Import CSV | ✓ | ✓ | | | |
+| Manage user accounts | ✓ | | | | |
 | Settings | ✓ | | | | |
+
+### Managing User Accounts
+
+The **Users** page (OC only, visible in the top navigation bar) is the central hub for all user account administration.
+
+#### Adding a User
+
+1. Navigate to **Users**
+2. Click **+ Add User**
+3. Fill in:
+   - **Full name** — as it will appear on the login screen and audit log (e.g. `CAPT J Smith`)
+   - **Username** — short, unique login identifier (e.g. `jsmith`); case-insensitive
+   - **Role** — select the appropriate role from the table above
+   - **Service number** — optional; stored for reference only
+   - **Initial PIN** — 4-digit PIN the user will use on first login; enter it twice to confirm
+4. Click **Add User**
+
+> **Tip:** Tell new users their initial PIN verbally and advise them to change it in Settings on first login.
+
+#### Editing a User
+
+Click **Edit** on any row to update the user's name, username, role, or service number. PIN is not changed through the Edit form — use **Reset PIN** separately if needed.
+
+#### Resetting a PIN
+
+Click **Reset PIN** on any row to set a new 4-digit PIN for that user. The change takes effect immediately on next login.
+
+#### Deleting a User
+
+Click **Delete** on any row and confirm. Restrictions:
+
+- You cannot delete your own account
+- You cannot delete the last remaining OC account (assign another OC first)
+- Deleting a user removes their login access only — all loan history, audit entries, and records they created are preserved
 
 ---
 

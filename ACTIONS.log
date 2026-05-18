@@ -108,6 +108,25 @@ Format: [TIMESTAMP UTC] ACTION — details
     (CPL, SGT, LCPL etc.) forms that v1/legacy records store on disk
 
 -------------------------------------------------------------------------------
+
+[2026-05-18T06:45:00Z] GIT COMMIT + PUSH — audit log export (d4f9910)
+  src/ui/audit.js: Export CSV + Export JSON buttons added to toolbar
+  Exports full filtered set (not just visible page); filename includes unit code + date
+  MANUAL.md §8, help.js audit section updated
+
+-------------------------------------------------------------------------------
+
+[2026-05-18T06:54:00Z] GIT COMMIT + PUSH — user management page (1ace8bb)
+  NEW: src/ui/users.js — OC-only Users page: add/edit/delete users, reset any PIN
+  MODIFIED: src/ui/shell.js — import Users; added 'users' entry to PAGES (coOnly)
+  MODIFIED: src/ui/audit.js — user_add/update/delete added to ACTION_LABELS + ACTION_CATEGORY
+  MODIFIED: qstore.css — .usr__* styles appended (table, badges, toolbar)
+  MODIFIED: MANUAL.md — §3 updated: permission table, Managing User Accounts subsection
+  MODIFIED: src/ui/help.js — new 'users' section; getting-started, roles, audit sections updated
+  Guards: cannot delete self; cannot delete last OC; username uniqueness enforced
+  481/481 tests passing.
+
+-------------------------------------------------------------------------------
 END OF LOG — append new entries above this line
 
 [2026-05-13T06:00:00Z] GIT COMMIT + PUSH — per-user PIN lockout (f53d9cc)

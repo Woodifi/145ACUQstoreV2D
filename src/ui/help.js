@@ -43,9 +43,9 @@ const SECTIONS = [
 
       <h4>Adding users</h4>
       <ol>
-        <li>Go to <strong>Settings → User accounts</strong></li>
-        <li>Click <strong>+ Add user</strong> and fill in name, username, role, service number, and initial PIN</li>
-        <li>Users should change their PIN on first login</li>
+        <li>Go to the <strong>Users</strong> page (OC only, visible in the navigation bar)</li>
+        <li>Click <strong>+ Add User</strong> and fill in name, username, role, service number, and initial PIN</li>
+        <li>Tell new users their initial PIN verbally and advise them to change it in Settings</li>
       </ol>
     `,
   },
@@ -64,7 +64,37 @@ const SECTIONS = [
           <tr><td><strong>Read-Only</strong></td><td>View-only. No actions.</td></tr>
         </tbody>
       </table>
-      <p class="help__note">Only the OC can access the Settings page. Only OC and QM can issue/return loans, edit inventory, or run stocktakes.</p>
+      <p class="help__note">Only the OC can access the <strong>Users</strong> and <strong>Settings</strong> pages. Only OC and QM can issue/return loans, edit inventory, or run stocktakes.</p>
+    `,
+  },
+  {
+    id: 'users',
+    title: 'User accounts',
+    icon: '👥',
+    body: `
+      <p>The <strong>Users</strong> page (OC only) is where you create and manage login accounts for everyone who uses the app.</p>
+
+      <h4>Adding a user <span class="help__role">OC only</span></h4>
+      <ol>
+        <li>Click <strong>+ Add User</strong></li>
+        <li>Enter full name, username, role, and service number (optional)</li>
+        <li>Set an initial PIN (4 digits, entered twice)</li>
+        <li>Click <strong>Add User</strong></li>
+      </ol>
+
+      <h4>Editing a user <span class="help__role">OC only</span></h4>
+      <p>Click <strong>Edit</strong> to update name, username, role, or service number. To change a PIN use <strong>Reset PIN</strong> separately.</p>
+
+      <h4>Resetting a PIN <span class="help__role">OC only</span></h4>
+      <p>Click <strong>Reset PIN</strong> on any row, enter and confirm a new 4-digit PIN. The user must use this new PIN on their next login.</p>
+
+      <h4>Deleting a user <span class="help__role">OC only</span></h4>
+      <p>Click <strong>Delete</strong> and confirm. Restrictions:</p>
+      <ul>
+        <li>Cannot delete your own account</li>
+        <li>Cannot delete the last OC account — assign another OC first</li>
+        <li>Deletion removes login access only; all loan history and audit entries are preserved</li>
+      </ul>
     `,
   },
   {
@@ -219,7 +249,8 @@ const SECTIONS = [
           <tr><td>add / adjust</td><td>Inventory item added or edited</td></tr>
           <tr><td>issue / return</td><td>Loan issued or returned</td></tr>
           <tr><td>cadet_add / cadet_update</td><td>Nominal roll changes</td></tr>
-          <tr><td>pin_change</td><td>User changed their PIN</td></tr>
+          <tr><td>user_add / user_update / user_delete</td><td>User account management</td></tr>
+          <tr><td>pin_change</td><td>PIN set or reset</td></tr>
           <tr><td>login / login_failed</td><td>Login events</td></tr>
           <tr><td>data_export / data_imported</td><td>Backup actions</td></tr>
           <tr><td>stocktake</td><td>Stocktake finalised</td></tr>
