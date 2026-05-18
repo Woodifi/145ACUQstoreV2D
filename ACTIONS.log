@@ -276,3 +276,38 @@ END OF LOG — append new entries above this line
   MANUAL.md — section 8 (AAC QStore Orders), TOC renumbered 8-17,
     audit actions table updated
   Build: 20260518-54565DBD  Bundle: 3459.2 KB  Commits: 52f4750, 156bc9b  →  master
+
+-------------------------------------------------------------------------------
+
+[2026-05-19T00:00:00Z] GIT COMMIT + PUSH — administrator-only PIN management (9f249a8)
+  POLICY: PINs are now exclusively managed by the OC. No user can change their own PIN.
+  MODIFIED: src/ui/users.js
+    - Add User form: PIN inputs changed from type="password" to type="text" (visible)
+    - Reset PIN form: same change; Confirm PIN field retained for accuracy check
+    - _showPinOnce(userName, pin, afterDone) helper added: persistent modal with
+      .recovery-code__display box + "I have noted this PIN down" checkbox + Done
+      button disabled until checked. PIN is never retrievable after this modal closes.
+    - Add User success path: close() → _showPinOnce() → toast + _render() on Done
+    - Reset PIN success path: same pattern
+  MODIFIED: src/ui/help.js
+    - Getting Started: updated adding-users steps; removed "advise them to change in Settings"
+    - User Accounts section: updated Add User steps and Reset PIN description
+    - PINs & Security section: removed incorrect self-service "Change PIN" instructions;
+      rewrote as admin-only policy with show-once explanation
+  MODIFIED: MANUAL.md
+    - §2 initial setup: updated adding users steps
+    - §3 User management: Add User steps, Reset PIN description, security policy note
+    - §9 Settings → User Accounts: PIN field description updated
+    - §12 PIN Security: rewrote "Changing Your PIN" as "PIN Management Policy"
+  Build: 20260518-567A8229  Bundle: 3474.0 KB  →  master
+
+[2026-05-19 UTC] FEATURE � Reference page (uniform sizing guide)
+  - Created src/ui/reference.js: static page with 4 tabs (Shirts & Jackets,
+    Trousers, Boots, Hats & Berets). Each tab has a how-to-measure guide and
+    conversion table (AU/NATO cm <-> US inch/size <-> generalised XS-3XL).
+  - src/ui/shell.js: added Reference import + PAGES entry (perm: view, all roles)
+  - qstore.css: .ref* styles (~130 lines, mobile-responsive; icons-only tabs on mobile)
+  - src/ui/help.js: added "Uniform sizing reference" section to SECTIONS array
+  - MANUAL.md: added Section 18 (Reference - Uniform Sizing) with full tables
+  - MANUAL_ADDENDUM_OWNER.md: v2.3.0 feature list updated
+  Build: 20260519  Commit: e081b5a  -> master

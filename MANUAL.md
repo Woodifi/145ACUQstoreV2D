@@ -26,6 +26,7 @@
 15. [Issue Kits](#15-issue-kits)
 16. [QR Codes](#16-qr-codes)
 17. [Troubleshooting](#17-troubleshooting)
+18. [Reference — Uniform Sizing](#18-reference--uniform-sizing)
 
 ---
 
@@ -605,6 +606,98 @@ Add, edit, and manage user accounts. Each user has:
 - PIN (set and reset exclusively by the OC; users cannot change their own PINs)
 
 See [Section 3 — Managing User Accounts](#3-user-roles-and-permissions) for full details.
+
+---
+
+## 18. Reference — Uniform Sizing
+
+The **Reference** page is accessible from the main navigation bar and is available to all logged-in users. It provides ADF uniform and equipment sizing tables with conversions between AU/NATO (centimetres), US (inches/US sizes), and generalised sizes (XS–3XL), together with measurement guides for each garment type.
+
+### Shirts and Jackets
+
+ADF shirts and field jackets use NATO sizing in the format **CHEST(cm) / HEIGHT-BAND**, for example `102/R`.
+
+**Height bands (torso code):**
+- **S** (Short) — height under 170 cm
+- **R** (Regular) — height 170–183 cm
+- **L** (Long/Tall) — height over 183 cm
+
+**How to measure — chest:** Wrap the tape around the fullest part of the chest, under the armpits and across the shoulder blades. Keep the tape horizontal and snug but not tight. Record in centimetres.
+
+| Chest (cm) | Gen. size | US chest | NATO codes |
+|---|---|---|---|
+| 87  | XS  | 34" | 87/S • 87/R • 87/L |
+| 92  | S   | 36" | 92/S • 92/R • 92/L |
+| 97  | M   | 38" | 97/S • 97/R • 97/L |
+| 102 | L   | 40" | 102/S • 102/R • 102/L |
+| 107 | XL  | 42" | 107/S • 107/R • 107/L |
+| 112 | 2XL | 44" | 112/S • 112/R • 112/L |
+| 117 | 3XL | 46" | 117/S • 117/R • 117/L |
+
+> If between sizes, select the larger size. For layering (e.g. body armour carrier), go one size up.
+
+### Trousers
+
+ADF trousers use NATO sizing in the format **WAIST(cm) / LEG-BAND**, for example `90/R`.
+
+**Leg length bands (inseam code):**
+- **S** (Short) — inside leg ≤ 76 cm
+- **R** (Regular) — inside leg 77–84 cm
+- **L** (Long) — inside leg ≥ 85 cm
+
+**How to measure — waist:** Around the natural waist, approximately 2.5 cm above the navel, tape horizontal and flat against the skin.
+
+**How to measure — inside leg:** From the crotch seam down the inner leg to the ankle bone, standing straight in bare feet on a hard floor.
+
+| Waist (cm) | Gen. size | US waist |
+|---|---|---|
+| 75  | XS  | 29" |
+| 80  | S   | 31" |
+| 85  | M   | 33" |
+| 90  | L   | 35" |
+| 95  | XL  | 37" |
+| 100 | 2XL | 39" |
+| 105 | 3XL | 41" |
+| 110 | 4XL | 43" |
+
+### Boots
+
+AU/UK boot sizes use the same scale.
+
+**How to measure — foot length:** Place foot flat on a sheet of paper. Mark the longest toe and the back of the heel. Measure the distance in centimetres. Measure both feet and use the larger measurement.
+
+> Add half a size when wearing thick military socks. Boots should feel snug with the issued sock, not bare foot.
+
+| AU / UK | US Men's | US Women's | Foot (cm) |
+|---|---|---|---|
+| 5   | 6   | 7.5  | 23.5 |
+| 6   | 7   | 8.5  | 24.5 |
+| 7   | 8   | 9.5  | 25.5 |
+| 8   | 9   | 10.5 | 26.5 |
+| 9   | 10  | 11.5 | 27.5 |
+| 10  | 11  | 12.5 | 28.5 |
+| 11  | 12  | 13.5 | 29.5 |
+| 12  | 13  | 14.5 | 30.5 |
+
+*Half sizes are listed in the app's Reference page. Where a half size is unavailable, round up.*
+
+### Hats and Berets
+
+**How to measure — head circumference:** Wrap the tape around the head approximately 2 cm above the eyebrows and across the widest part at the back of the skull. Keep the tape level all the way around. Record in centimetres. Round up if between sizes.
+
+| Head circ. (cm) | Head circ. (in) | Gen. size | UK / US hat size |
+|---|---|---|---|
+| 54 | 21¼" | XS  | 6¾ |
+| 56 | 22"  | S   | 7  |
+| 57 | 22½" | S   | 7⅛ |
+| 58 | 22⅞" | M   | 7¼ |
+| 59 | 23¼" | M   | 7⅜ |
+| 60 | 23⅝" | L   | 7½ |
+| 61 | 24"  | L   | 7⅝ |
+| 62 | 24⅜" | XL  | 7¾ |
+| 64 | 25¼" | 2XL | 8  |
+
+*Full table including all intermediate sizes is available in the app's Reference page.*
 
 ### OC PIN Recovery
 
