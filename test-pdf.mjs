@@ -244,5 +244,60 @@ const r = await Pdf.generateNominalRoll(cadetsSmall, { unit: evilUnit });
 expect(!r.filename.includes('/') && !r.filename.includes('\\') && !r.filename.includes('..'),
   `unit slug is sanitised (got ${r.filename})`);
 
+// ─────────────────────────────────────────────────────────────────────────────
+// generateStocktakeWorksheet
+// ─────────────────────────────────────────────────────────────────────────────
+
+const worksheetItems = [
+  { id: 'I-001', name: 'Slouch hat',           nsn: '8470-66-001-0001', onHand: 10, cat: 'Clothing'   },
+  { id: 'I-002', name: 'Webbing belt',          nsn: '8465-66-001-0002', onHand:  5, cat: 'Equipment'  },
+  { id: 'I-003', name: 'Rifle sling',           nsn: '1005-66-001-0003', onHand: 20, cat: 'Weapons'    },
+  { id: 'I-004', name: 'A very long item name that exceeds column width to test truncation behaviour',
+                                                nsn: '',                 onHand:  3, cat: 'Equipment'  },
+];
+
+console.log('\n[17] generateStocktakeWorksheet — single page');
+const ws1 = await Pdf.generateStocktakeWorksheet(worksheetItems, { unit: sampleUnit });
+expect(ws1.bytes > 1000, `worksheet generated (${ws1.bytes} bytes)`);
+expect(ws1.filename.startsWith('Stocktake_Worksheet_'), `filename prefix correct (${ws1.filename})`);
+const ws1Text = Buffer.from(await ws1.blob.arrayBuffer()).toString('latin1');
+expect(ws1Text.startsWith('%PDF-'), 'worksheet is valid PDF');
+expect(ws1Text.includes('STOCKTAKE WORKSHEET'), 'worksheet title present');
+expect(ws1Text.includes('Slouch hat'), 'item name present');
+
+console.log('\n[18] generateStocktakeWorksheet — multi-page (>30 items)');
+const manyItems = Array.from({ length: 35 }, (_, i) => ({
+  id:     `I-${String(i).padStart(3, '0')}`,
+  name:   `Item ${i + 1}`,
+  nsn:    `1234-66-00${String(i).padStart(1, '0')}-000${i % 10}`,
+  onHand: i * 2,
+  cat:    'Equipment',
+}));
+const ws2 = await Pdf.generateStocktakeWorksheet(manyItems, { unit: sampleUnit });
+expect(ws2.bytes > 5000, `multi-page worksheet generated (${ws2.bytes} bytes)`);
+const ws2Text = Buffer.from(await ws2.blob.arrayBuffer()).toString('latin1');
+expect((ws2Text.match(/Page \d+ of \d+/g) || []).length >= 2,
+  'multi-page worksheet has page-of-page footer');
+
+console.log('\n[19] generateStocktakeWorksheet — category filter label in subtitle');
+const ws3 = await Pdf.generateStocktakeWorksheet(worksheetItems, {
+  unit:     sampleUnit,
+  category: 'Clothing',
+});
+const ws3Text = Buffer.from(await ws3.blob.arrayBuffer()).toString('latin1');
+expect(ws3Text.includes('Clothing'), 'category filter appears in subtitle');
+
+console.log('\n[20] generateStocktakeWorksheet — empty items throws');
+try {
+  await Pdf.generateStocktakeWorksheet([], { unit: sampleUnit });
+  bad('should have thrown on empty items');
+} catch (e) {
+  ok(`empty items throws: ${e.message}`);
+}
+
+console.log('\n[21] generateStocktakeWorksheet — no-branding fallback');
+const ws4 = await Pdf.generateStocktakeWorksheet(worksheetItems, {});
+expect(ws4.bytes > 1000, `no-unit worksheet generated (${ws4.bytes} bytes)`);
+
 console.log(`\nResults: ${pass} passed, ${fail} failed.`);
 process.exit(fail === 0 ? 0 : 1);

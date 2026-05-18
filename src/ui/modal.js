@@ -97,9 +97,11 @@ export function openModal({
   };
 
   function _onClick(e) {
-    if (persistent) return;
     const action = e.target.closest('[data-action]')?.dataset.action;
-    if (action === 'modal-close-backdrop' || action === 'modal-close') close();
+    // Explicit Cancel/close buttons always work, even on persistent modals.
+    // Only backdrop clicks are suppressed when persistent === true.
+    if (action === 'modal-close') { close(); return; }
+    if (action === 'modal-close-backdrop' && !persistent) close();
   }
   function _onKeydown(e) {
     if (e.key === 'Escape' && !persistent) {

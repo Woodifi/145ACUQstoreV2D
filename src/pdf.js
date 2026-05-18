@@ -791,6 +791,221 @@ export async function generateStocktakeReport(session, opts = {}) {
 }
 
 // =============================================================================
+// STOCKTAKE WORKSHEET — blank counting sheet
+// =============================================================================
+// Printable paper worksheet: QM takes it to the store, counts by hand,
+// then transfers totals into the system. Each item row has five hand-fill
+// boxes (Svc / U/S / Repr / Cal / W/O) plus a Total box.
+//
+// Layout: portrait A4 — same geometry as the other reports.
+//   Col   | w (mm) | Content
+//   -------+--------+-------------------------------
+//   #      |  6     | row number
+//   NSN    | 24     | item.nsn
+//   Item   | 56     | item.name
+//   Sys    | 10     | item.onHand (system qty)
+//   Svc    | 14     | blank handwriting box
+//   U/S    | 14     | blank handwriting box
+//   Repr   | 10     | blank handwriting box
+//   Cal    | 10     | blank handwriting box
+//   W/O    | 10     | blank handwriting box
+//   Total  | 16     | blank handwriting box (emphasised)
+//   TOTAL  =170mm   = PAGE.CW
+//
+// Row height 8mm (vs 6mm for the data report) — room for a pencil figure.
+// Blank boxes have a light grey border; Total box has a tan border.
+// Signature + name line for QM at bottom of the last page.
+// =============================================================================
+
+/**
+ * Generate a blank stocktake counting worksheet and trigger a browser download.
+ *
+ * @param {Array}  items  Full list of inventory items to count (filtered by
+ *                        the caller to match whatever the toolbar filter shows).
+ * @param {Object} opts
+ * @param {Object} [opts.unit]      Unit branding settings.
+ * @param {string} [opts.category]  Category filter label for the subtitle
+ *                                  (empty / undefined = "All items").
+ * @returns {Promise<{filename: string, blob: Blob, bytes: number}>}
+ */
+export async function generateStocktakeWorksheet(items, opts = {}) {
+  const unit = opts.unit || {};
+  const category = opts.category || '';
+
+  if (!items || items.length === 0) {
+    throw new Error('generateStocktakeWorksheet: no items to print.');
+  }
+
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+  // Column definitions — x positions are absolute page coords.
+  const M = PAGE.MARGIN;
+  const COLS = [
+    { x: M,       w:  6,  label: '#',    align: 'right',  box: false  },
+    { x: M +  6,  w: 24,  label: 'NSN',  align: 'left',   box: false  },
+    { x: M + 30,  w: 56,  label: 'Item', align: 'left',   box: false  },
+    { x: M + 86,  w: 10,  label: 'Sys',  align: 'right',  box: false,
+      note: 'System' },
+    { x: M + 96,  w: 14,  label: 'Svc',  align: 'center', box: true,
+      boxColor: COL.borderDim },
+    { x: M + 110, w: 14,  label: 'U/S',  align: 'center', box: true,
+      boxColor: COL.borderDim },
+    { x: M + 124, w: 10,  label: 'Repr', align: 'center', box: true,
+      boxColor: COL.borderDim },
+    { x: M + 134, w: 10,  label: 'Cal',  align: 'center', box: true,
+      boxColor: COL.borderDim },
+    { x: M + 144, w: 10,  label: 'W/O',  align: 'center', box: true,
+      boxColor: COL.borderDim },
+    { x: M + 154, w: 16,  label: 'Total',align: 'center', box: true,
+      boxColor: COL.tan,   totalCol: true },
+  ];
+
+  const ROW_H   = 8;   // mm — room for a pencil figure
+  const HDR_H   = 7;   // column header band height
+  const FOOTER_RESERVE = REPORT_FOOTER_RESERVE;
+  const usableBottom   = PAGE.H - PAGE.MARGIN - FOOTER_RESERVE;
+
+  const subtitle = `${items.length} item${items.length === 1 ? '' : 's'}` +
+    (category ? ` · category: ${category}` : ' · all categories') +
+    ' · COUNTING WORKSHEET — do not file; transfer totals to QStore IMS';
+
+  // ── draw helpers ────────────────────────────────────────────────────────────
+
+  function drawHeader(y) {
+    return _drawReportHeader(doc, y, 'STOCKTAKE WORKSHEET', subtitle, unit);
+  }
+
+  function drawColHeader(y) {
+    doc.setFillColor(...COL.bandFill);
+    doc.rect(M, y, PAGE.CW, HDR_H, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.setTextColor(...COL.armyGreen);
+    for (const c of COLS) {
+      const tx = c.align === 'right'
+        ? c.x + c.w - 1
+        : c.align === 'center'
+          ? c.x + c.w / 2
+          : c.x + 1;
+      const opts2 = c.align === 'right'
+        ? { align: 'right' }
+        : c.align === 'center'
+          ? { align: 'center' }
+          : undefined;
+      doc.text(c.label, tx, y + 4.5, opts2);
+    }
+    return y + HDR_H;
+  }
+
+  function drawRow(y, item, rowIdx) {
+    // Alternating stripe on non-box columns.
+    if (rowIdx % 2 === 1) {
+      doc.setFillColor(...COL.rowFillEven);
+      doc.rect(M, y, COLS[3].x + COLS[3].w - M, ROW_H, 'F');
+    }
+
+    // Text columns.
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...COL.txtDark);
+
+    // # (row number, 1-based)
+    doc.text(String(rowIdx + 1), COLS[0].x + COLS[0].w - 1, y + 5, { align: 'right' });
+
+    // NSN
+    doc.text(_fitText(doc, item.nsn || '—', COLS[1].w - 2), COLS[1].x + 1, y + 5);
+
+    // Item name
+    doc.setFont('helvetica', 'bold');
+    doc.text(_fitText(doc, item.name || '—', COLS[2].w - 2), COLS[2].x + 1, y + 5);
+    doc.setFont('helvetica', 'normal');
+
+    // Sys qty
+    doc.setTextColor(...COL.txtMuted);
+    doc.text(
+      String(item.onHand ?? 0),
+      COLS[3].x + COLS[3].w - 1, y + 5, { align: 'right' }
+    );
+    doc.setTextColor(...COL.txtDark);
+
+    // Blank boxes for count columns.
+    const boxPad = 1;
+    for (const c of COLS) {
+      if (!c.box) continue;
+      const bx = c.x + boxPad;
+      const bw = c.w - boxPad * 2;
+      const bh = ROW_H - 2;
+      doc.setDrawColor(...c.boxColor);
+      doc.setLineWidth(c.totalCol ? 0.5 : 0.3);
+      doc.setFillColor(255, 255, 255);
+      doc.rect(bx, y + 1, bw, bh, 'FD');
+    }
+
+    // Light horizontal rule at row bottom for legibility.
+    doc.setDrawColor(...COL.borderDim);
+    doc.setLineWidth(0.15);
+    doc.line(M, y + ROW_H, M + PAGE.CW, y + ROW_H);
+  }
+
+  function drawSigBlock(y) {
+    // Bottom-of-sheet signature line.
+    const sigW = 70;
+    const lineY = y + 16;
+    doc.setDrawColor(...COL.txtMuted);
+    doc.setLineWidth(0.4);
+    doc.line(M, lineY, M + sigW, lineY);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(...COL.txtMuted);
+    doc.text('QM Signature', M, lineY + 4);
+
+    doc.line(M + sigW + 10, lineY, M + sigW * 2 + 10, lineY);
+    doc.text('Name / Date', M + sigW + 10, lineY + 4);
+  }
+
+  // ── pagination loop ─────────────────────────────────────────────────────────
+
+  let y       = drawHeader(PAGE.MARGIN);
+  y           = drawColHeader(y);
+  let pageNum = 1;
+
+  for (let i = 0; i < items.length; i++) {
+    if (y + ROW_H > usableBottom) {
+      _drawReportFooter(doc, pageNum, null);
+      doc.addPage();
+      pageNum++;
+      y = drawHeader(PAGE.MARGIN);
+      y = drawColHeader(y);
+    }
+    drawRow(y, items[i], i);
+    y += ROW_H;
+  }
+
+  // Signature block — only if there's room; otherwise a fresh page.
+  if (y + 35 > usableBottom) {
+    _drawReportFooter(doc, pageNum, null);
+    doc.addPage();
+    pageNum++;
+    y = drawHeader(PAGE.MARGIN);
+    y += 4;
+  }
+  drawSigBlock(y + 4);
+  _drawReportFooter(doc, pageNum, null);
+
+  // Second pass — write "Page N of M".
+  const totalPages = pageNum;
+  for (let p = 1; p <= totalPages; p++) {
+    doc.setPage(p);
+    doc.setFillColor(255, 255, 255);
+    doc.rect(M, PAGE.H - FOOTER_RESERVE, PAGE.CW, FOOTER_RESERVE - 2, 'F');
+    _drawReportFooter(doc, p, totalPages);
+  }
+
+  const filename = `Stocktake_Worksheet_${_unitSlug(unit)}_${_todayIsoDate()}.pdf`;
+  return _packageResult(doc, filename);
+}
+
+// =============================================================================
 // AB189 — EQUIPMENT REQUEST FORM
 // =============================================================================
 // Pre-issue request form: cadet fills it, QM and OC/CO sign before issue.

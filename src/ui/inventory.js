@@ -48,10 +48,32 @@ import { esc, $, $$, render, fmtDate, ObjectURLPool } from './util.js';
 // settings storage so units can extend the lists. For now they're hard-
 // coded matching v1 plus the calibration-due addition.
 
+// Default category list — used when no custom list has been saved in Settings.
+// Exported so settings.js can seed the editor with these defaults.
 export const CATEGORIES = [
   'Uniform', 'Equipment', 'Safety', 'Training Aids',
   'Field Stores', 'Medical', 'ICT',
 ];
+
+/**
+ * Return the effective category list: custom list from storage if set,
+ * otherwise the DEFAULT_CATEGORIES constant above.
+ * Also merges in any categories already in use by items that aren't in the
+ * stored list — so data already entered is never orphaned.
+ */
+export async function getCategories(itemsForMerge) {
+  let stored = null;
+  try {
+    const raw = await Storage.settings.get('categories');
+    if (Array.isArray(raw) && raw.length > 0) stored = raw;
+  } catch (_) { /* non-fatal */ }
+  const base = stored || CATEGORIES;
+  if (!itemsForMerge) return base;
+  // Merge any in-use categories not in the base list so nothing is hidden.
+  const inUse = [...new Set(itemsForMerge.map(i => i.cat).filter(Boolean))];
+  const extra = inUse.filter(c => !base.includes(c));
+  return extra.length > 0 ? [...base, ...extra.sort()] : base;
+}
 
 // CONDITIONS lives in src/conditions.js so non-UI modules can import it
 // without pulling DOM-dependent code. Re-exported here so existing
@@ -121,7 +143,8 @@ async function _render() {
     }
   }));
 
-  const totalItems = await Storage.items.count();
+  const totalItems  = await Storage.items.count();
+  const categories  = await getCategories(items);
 
   const contentHtml = `
     <div class="inv__meta">
@@ -164,7 +187,7 @@ async function _render() {
                  value="${esc(_searchTerm)}">
           <select class="inv__cat-filter" aria-label="Filter by category">
             <option value="">All categories</option>
-            ${CATEGORIES.map(c =>
+            ${categories.map(c =>
               `<option value="${esc(c)}" ${c === _categoryFilter ? 'selected' : ''}>${esc(c)}</option>`
             ).join('')}
           </select>
@@ -221,7 +244,7 @@ function _tableHtml(items, photoUrls, { canEdit, canDel }) {
       <th class="inv__col-qty">Unsvc</th>
       <th class="inv__col-cond">Condition</th>
       <th class="inv__col-loc">Location</th>
-      ${(canEdit || canDel) ? `<th class="inv__col-actions" aria-label="Actions"></th>` : ''}
+      <th class="inv__col-actions" aria-label="Actions"></th>
     </tr>
   `;
 
@@ -266,15 +289,18 @@ function _itemRowHtml(item, photoUrl, { canEdit, canDel }) {
                data-action="photo" data-item-id="${esc(item.id)}"
                title="Click to upload photo">📷</button>`;
 
-  const actionsCell = (canEdit || canDel) ? `
+  const actionsCell = `
     <td class="inv__col-actions">
       <div class="inv__row-actions">
+        <button type="button" class="btn btn--sm btn--ghost"
+                data-action="history" data-item-id="${esc(item.id)}"
+                title="View loan history for this item">History</button>
         ${canEdit ? `<button type="button" class="btn btn--sm btn--ghost"
                               data-action="edit" data-item-id="${esc(item.id)}">Edit</button>` : ''}
         ${canDel  ? `<button type="button" class="btn btn--sm btn--danger"
                               data-action="delete" data-item-id="${esc(item.id)}">Delete</button>` : ''}
       </div>
-    </td>` : '';
+    </td>`;
 
   return `
     <tr class="inv__row">
@@ -343,6 +369,9 @@ async function _onRootClick(e) {
   switch (action) {
     case 'add':
       if (AUTH.can('addItem')) await _openAddModal();
+      break;
+    case 'history':
+      if (itemId) await _openHistoryModal(itemId);
       break;
     case 'edit':
       if (AUTH.can('editItem') && itemId) await _openEditModal(itemId);
@@ -449,6 +478,90 @@ async function _openAddModal() {
   _openItemFormModal({ mode: 'add', item: null });
 }
 
+// -----------------------------------------------------------------------------
+// Loan history panel
+// -----------------------------------------------------------------------------
+
+async function _openHistoryModal(itemId) {
+  const item  = await Storage.items.get(itemId);
+  if (!item) return;
+
+  // Load all loans for this item from the loans store. The loans store has
+  // an `itemId` index we can query.
+  const allLoans = await Storage.loans.list();
+  const itemLoans = allLoans
+    .filter(l => l.itemId === itemId)
+    .sort((a, b) => b.issueDate.localeCompare(a.issueDate));  // most-recent first
+
+  const totalIssued  = itemLoans.reduce((n, l) => n + (l.qty || 1), 0);
+  const activeCount  = itemLoans.filter(l => l.active).length;
+  const today        = new Date().toISOString().slice(0, 10);
+  const overdueCount = itemLoans.filter(l => l.active && l.dueDate && l.dueDate < today).length;
+
+  const rowsHtml = itemLoans.length === 0
+    ? `<tr><td colspan="6" class="inv__hist-empty">No loan records for this item.</td></tr>`
+    : itemLoans.map(l => {
+        const isActive   = l.active;
+        const isOverdue  = isActive && l.dueDate && l.dueDate < today;
+        const rowClass   = isOverdue ? 'inv__hist-row--overdue' : isActive ? 'inv__hist-row--active' : 'inv__hist-row--returned';
+        const statusHtml = isOverdue
+          ? `<span class="inv__hist-badge inv__hist-badge--overdue">Overdue</span>`
+          : isActive
+            ? `<span class="inv__hist-badge inv__hist-badge--active">Active</span>`
+            : `<span class="inv__hist-badge inv__hist-badge--returned">Returned</span>`;
+        return `
+          <tr class="inv__hist-row ${rowClass}">
+            <td class="inv__hist-ref">${esc(l.ref || '—')}</td>
+            <td>${esc(l.borrowerName || l.borrowerSvc || '—')}</td>
+            <td class="inv__hist-qty">${esc(String(l.qty || 1))}</td>
+            <td>${esc(_fmtDateAU(l.issueDate))}</td>
+            <td>${esc(l.dueDate ? _fmtDateAU(l.dueDate) : '—')}</td>
+            <td>${statusHtml}</td>
+          </tr>
+        `;
+      }).join('');
+
+  openModal({
+    titleHtml: `Loan history — ${esc(item.name || itemId)}`,
+    size:      'lg',
+    bodyHtml: `
+      <div class="inv__hist-summary">
+        <span>${itemLoans.length} loan record${itemLoans.length === 1 ? '' : 's'}</span>
+        <span>&middot; ${totalIssued} unit${totalIssued === 1 ? '' : 's'} issued total</span>
+        ${activeCount > 0
+          ? `<span>&middot; <strong>${activeCount} currently on loan</strong></span>` : ''}
+        ${overdueCount > 0
+          ? `<span class="inv__hist-overdue-warn">&middot; ${overdueCount} overdue</span>` : ''}
+      </div>
+      <div class="inv__hist-table-wrap">
+        <table class="inv__hist-table">
+          <thead>
+            <tr>
+              <th>Ref</th>
+              <th>Borrower</th>
+              <th>Qty</th>
+              <th>Issued</th>
+              <th>Due</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+      </div>
+      <div class="form__actions">
+        <button type="button" class="btn btn--primary" data-action="modal-close">Close</button>
+      </div>
+    `,
+  });
+}
+
+function _fmtDateAU(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
 async function _openEditModal(itemId) {
   AUTH.requirePermission('editItem');
   const item = await Storage.items.get(itemId);
@@ -460,9 +573,11 @@ async function _openEditModal(itemId) {
   _openItemFormModal({ mode: 'edit', item });
 }
 
-function _openItemFormModal({ mode, item }) {
-  const isEdit = mode === 'edit';
-  const title  = isEdit ? `Edit item — ${esc(item.name || item.id)}` : 'Add inventory item';
+async function _openItemFormModal({ mode, item }) {
+  const isEdit     = mode === 'edit';
+  const title      = isEdit ? `Edit item — ${esc(item.name || item.id)}` : 'Add inventory item';
+  // Pre-fetch categories so the form select is populated on open.
+  const categories = await getCategories();
 
   openModal({
     titleHtml: title,
@@ -480,7 +595,7 @@ function _openItemFormModal({ mode, item }) {
           <label class="form__field">
             <span class="form__label">Category</span>
             <select name="cat">
-              ${CATEGORIES.map(c =>
+              ${categories.map(c =>
                 `<option value="${esc(c)}" ${c === (item?.cat || 'Equipment') ? 'selected' : ''}>${esc(c)}</option>`
               ).join('')}
             </select>

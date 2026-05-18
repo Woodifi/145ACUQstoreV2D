@@ -51,7 +51,7 @@
 import * as Storage from '../storage.js';
 import * as AUTH    from '../auth.js';
 import * as Sync    from '../sync.js';
-import { generateStocktakeReport, downloadPdf } from '../pdf.js';
+import { generateStocktakeReport, generateStocktakeWorksheet, downloadPdf } from '../pdf.js';
 import { openModal } from './modal.js';
 import { esc, $, $$, render } from './util.js';
 import { showToast } from './toast.js';
@@ -130,6 +130,11 @@ function _toolbarHtml(session, categories) {
               ${esc(c)}
             </option>`).join('')}
         </select>
+        <button type="button" class="btn btn--ghost"
+                data-action="print-worksheet"
+                title="Print a blank counting sheet for this item list">
+          ⎙ Worksheet
+        </button>
         ${_countsByItem.size > 0 && canEdit ? `
           <button type="button" class="btn btn--ghost"
                   data-action="discard"
@@ -321,6 +326,7 @@ function _wire() {
     await _render();
   });
 
+  $('[data-action="print-worksheet"]', _root)?.addEventListener('click', _onPrintWorksheet);
   $('[data-action="discard"]', _root)?.addEventListener('click', _onDiscard);
   $('[data-action="finalise"]', _root)?.addEventListener('click', _onFinalise);
 
@@ -490,8 +496,32 @@ async function _refreshChrome() {
     _categoryFilter = e.target.value;
     await _render();
   });
+  $('[data-action="print-worksheet"]', _root)?.addEventListener('click', _onPrintWorksheet);
   $('[data-action="discard"]', _root)?.addEventListener('click', _onDiscard);
   $('[data-action="finalise"]', _root)?.addEventListener('click', _onFinalise);
+}
+
+// -----------------------------------------------------------------------------
+// Print worksheet
+// -----------------------------------------------------------------------------
+
+async function _onPrintWorksheet() {
+  const btn = _root.querySelector('[data-action="print-worksheet"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Building PDF…'; }
+  try {
+    const items    = await Storage.items.list({ category: _categoryFilter || undefined });
+    const settings = await Storage.settings.getAll();
+    const unit     = settings || {};
+    const result   = await generateStocktakeWorksheet(items, {
+      unit,
+      category: _categoryFilter,
+    });
+    downloadPdf(result);
+  } catch (err) {
+    showToast('Could not generate worksheet: ' + err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '⎙ Worksheet'; }
+  }
 }
 
 // -----------------------------------------------------------------------------

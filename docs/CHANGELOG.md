@@ -11,6 +11,114 @@ prior is in git history but not summarised here.
 
 ---
 
+## [v2.2.0] — 2026-05-18
+
+### Added — Blank stocktake worksheet PDF
+
+- `generateStocktakeWorksheet(items, opts)` added to `src/pdf.js`. Produces an
+  A4 portrait PDF counting sheet: item number, NSN, item name, system qty, and
+  five blank handwriting boxes (Svc / U/S / Repr / Cal / W/O) plus a bold Total
+  box per row. Signature + name line on the last page for QM sign-off.
+- Row height 8 mm (vs 6 mm in the data report) for pencil-legible figures.
+- "⎙ Worksheet" button added to the Stocktake toolbar; always visible regardless
+  of draft state; respects the current category filter so a partial-store count
+  can be printed.
+- 5 new tests in `test-pdf.mjs` (single-page, multi-page, category subtitle,
+  empty-items throws, no-branding fallback). `test-pdf.mjs`: 42/42.
+
+### Added — Bulk cadet CSV import (cadets page)
+
+- "⇪ Import CSV" button added to the Cadets toolbar (visible to `manageCadets`
+  role and above). Calls the existing `openCadetsCsvImport()` flow from
+  `src/ui/csv-import.js` — full preview modal, column mapping, new/update/skip
+  counts, then commits.
+- `CADET_COLUMN_ALIASES` in `src/csv-import.js` extended: added `company`
+  (`Coy`, `Squadron`), `platoon` (`Plt`, `Troop`), `section` (`Sec`) columns so
+  Brigade nominal-roll exports map into the v2.1 company/platoon/section fields
+  without manual header editing. Legacy `plt` column still maps to `platoon`.
+- `_validateCadetRow` now writes `company`, `platoon`, `section` alongside the
+  legacy `plt` field so both old and new reads work after import.
+
+### Added — Dashboard (home page)
+
+- `src/ui/dashboard.js` (new page module). Landing screen shown immediately
+  after login. Four stat tiles: Total items, Unserviceable, On loan, Overdue
+  (tiles colour-coded amber/gold/red when non-zero).
+- Stocktake status strip: "Draft in progress (N items counted)" or last
+  finalised date + operator, sourced from the audit log. Falls back to "No
+  stocktake recorded" on fresh installs.
+- Quick-action buttons navigate to each page; permission-gated (same rules as
+  the nav bar).
+- Recent activity table: last 5 audit entries with timestamp, action badge,
+  user, and description.
+- Registered as `dashboard` in `PAGES` (shell.js); becomes the new
+  `DEFAULT_PAGE` (was `inventory`). `dash:navigate` custom event lets dashboard
+  buttons drive shell navigation without a direct import.
+
+### Added — Overdue loans nav badge
+
+- `_updateOverdueBadge()` added to `shell.js`. Called before every page mount
+  (non-blocking). Counts active loans whose `dueDate < today` and injects a red
+  pill badge into the Loans nav button. Badge is removed when count is zero.
+
+### Added — Cadet platoon migration wizard
+
+- "↝ Migrate platoon data" button added to the Unit sub-structure section in
+  Settings (visible when structure is configured). Opens a modal listing every
+  unique `plt` / `platoon` value from cadets that have no `company` assignment.
+  QM maps each legacy value to a company → platoon → section via cascading
+  dropdowns, then applies the bulk rewrite in one click.
+- Audit action: `cadet_platoon_migration` with count and mapping size.
+
+### Added — Item loan history panel
+
+- "History" button added to every inventory row (visible to all `view` users).
+  Opens a modal showing every loan record for that item sorted by issue date
+  (most recent first): ref, borrower, qty, issued date, due date, status badge
+  (Active / Overdue / Returned). Overdue rows have a red tint; returned rows
+  are dimmed. Summary line above the table shows totals and overdue count.
+
+### Added — Category management in Settings
+
+- Settings page gains a "Item categories" section (OC only). Shows the current
+  list as chips with a "Manage categories" button.
+- Manager modal: reorder (↑/↓), remove (✕), and add new categories via a text
+  input. Enter key triggers add. Saved to `Storage.settings` under key
+  `'categories'`.
+- `getCategories(itemsForMerge)` exported from `src/ui/inventory.js`. Returns
+  the custom list from storage if set, otherwise the built-in constant. Merges
+  in any categories already on items that aren't in the stored list so data is
+  never orphaned.
+- "Reset to defaults" button restores the hard-coded list.
+- Inventory filter dropdown and add/edit form category select both use
+  `getCategories()` so custom lists take effect immediately without reload.
+
+### Test status at v2.2.0
+
+```
+test-ranks.mjs:           30/30 ✓
+test-unit-branding.mjs:   17/17 ✓
+test-export-import.mjs:   23/23 ✓
+test-recovery.mjs:        86/86 ✓
+test-cadets.mjs:          37/37 ✓
+test-loans.mjs:           33/33 ✓
+test-audit.mjs:           22/22 ✓
+test-ab189.mjs:           24/24 ✓
+test-pdf.mjs:             42/42 ✓
+test-cloud-disable.mjs:    3/ 3 ✓
+test-v1-import.mjs:       36/36 ✓
+test-inventory.mjs:       18/18 ✓
+test-csv-import.mjs:      68/68 ✓
+test-stocktake.mjs:       26/26 ✓
+test-qr.mjs:              26/26 ✓
+─────────────────────────────────
+                         491/491 ✓ across fifteen suites
+```
+
+Bundle: `dist/qstore.html` ~1723.7 KB (unminified), 1630.7 KB JS minified.
+
+---
+
 ## [v2.1.0] — 2026-05-18
 
 ### Added — QR code scanner (Item 4)

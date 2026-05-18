@@ -61,6 +61,7 @@ import {
   compareRanks,
 } from '../ranks.js';
 import { generateNominalRoll, downloadPdf }  from '../pdf.js';
+import { openCadetsCsvImport }              from './csv-import.js';
 import { openModal }                        from './modal.js';
 import { esc, $, $$, render, fmtDateOnly }  from './util.js';
 import { showToast }                        from './toast.js';
@@ -204,7 +205,11 @@ async function _render() {
         <div class="cad__actions">
           <button type="button" class="btn btn--ghost" data-action="print-roll"
                   title="Print the currently-shown nominal roll">⎙ Print roll</button>
-          ${canManage ? `<button type="button" class="btn btn--primary" data-action="add">+ Add cadet</button>` : ''}
+          ${canManage ? `
+            <button type="button" class="btn btn--ghost" data-action="import-csv"
+                    title="Import cadets from a CSV nominal roll">⇪ Import CSV</button>
+            <button type="button" class="btn btn--primary" data-action="add">+ Add cadet</button>
+          ` : ''}
         </div>
       </header>
 
@@ -392,9 +397,10 @@ async function _onRootClick(e) {
   if (!action) return;
   const svcNo = e.target.closest('[data-svc]')?.dataset.svc;
   switch (action) {
-    case 'add':    await _openAddModal();        break;
-    case 'edit':   await _openEditModal(svcNo);  break;
-    case 'delete': await _openDeleteModal(svcNo); break;
+    case 'add':         await _openAddModal();        break;
+    case 'edit':        await _openEditModal(svcNo);  break;
+    case 'delete':      await _openDeleteModal(svcNo); break;
+    case 'import-csv':  openCadetsCsvImport();         break;
     case 'clear-filters':
       _searchTerm = ''; _pltFilter = '';
       _coFilter = ''; _pltFilterStr = ''; _secFilter = '';
