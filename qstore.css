@@ -5103,6 +5103,103 @@ details[open] > .help__section-summary::after {
   border-color: var(--danger);
 }
 
+/* ── Edit / Review view ── */
+
+.ord__edit-notice {
+  background: rgba(196,169,107,0.10);
+  border: 1px solid rgba(196,169,107,0.30);
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 0.875rem;
+  color: var(--gold);
+  margin-bottom: 20px;
+}
+
+.ord__edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.ord__edit-meta {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.ord__edit-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px 16px;
+}
+
+/* Unit field spans full width */
+.ord__edit-unit-field {
+  grid-column: 1 / -1;
+}
+
+.ord__edit-items-section {
+  /* extends .orders__items-section */
+}
+
+.ord__edit-items-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+/* Editable table column widths */
+.ord__edit-table .ord__edit-col-nsn  { width: 145px; }
+.ord__edit-table .ord__edit-col-qty  { width: 80px; }
+.ord__edit-table .ord__edit-col-del  { width: 36px; }
+
+/* Inputs inside table cells */
+.ord__edit-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 7px;
+  font-size: 0.82rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: inherit;
+  min-width: 0;
+}
+.ord__edit-input:focus {
+  outline: none;
+  border-color: var(--gold);
+}
+.ord__edit-input--nsn {
+  font-family: monospace;
+  font-size: 0.78rem;
+}
+.ord__edit-input--desc {
+  min-width: 160px;
+}
+.ord__edit-input--qty {
+  text-align: right;
+  -moz-appearance: textfield;
+}
+.ord__edit-input--qty::-webkit-outer-spin-button,
+.ord__edit-input--qty::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* Delete row button */
+.ord__edit-del {
+  padding: 3px 7px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  border-color: transparent;
+  min-width: 28px;
+}
+.ord__edit-del:hover { color: var(--danger); border-color: rgba(220,50,50,0.4); }
+
+.ord__edit-row td { vertical-align: middle; padding: 4px 6px; }
+
+.ord__edit-err { min-height: 18px; }
+
 /* ── Mobile responsiveness ── */
 @media (max-width: 600px) {
   .orders__header { flex-direction: column; align-items: flex-start; }
@@ -5112,4 +5209,6 @@ details[open] > .help__section-summary::after {
   .orders__table td:nth-child(4),
   .orders__table th:nth-child(5),
   .orders__table td:nth-child(5) { display: none; }
+  .ord__edit-meta-grid { grid-template-columns: 1fr 1fr; }
+  .ord__edit-table .ord__edit-col-qty { width: 60px; }
 }
