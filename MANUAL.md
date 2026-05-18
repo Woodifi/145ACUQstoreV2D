@@ -1,7 +1,7 @@
 # QStore IMS v2 — User Manual
 
 **Author:** Sean Scales  
-**Version:** 2  
+**Version:** 2.1  
 **Licence:** Proprietary — see [LICENSE](LICENSE)  
 **Contact:** admin@seanscales.com.au
 

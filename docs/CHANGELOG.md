@@ -11,7 +11,7 @@ prior is in git history but not summarised here.
 
 ---
 
-## [Unreleased] — v2.1 in progress
+## [v2.1.0] — 2026-05-18
 
 ### Added — QR code scanner (Item 4)
 
@@ -87,9 +87,7 @@ Bundle: `dist/qstore.html` ~1594 KB.
 
 
 
-Items shipped from the v2.1 backlog so far. Will be tagged `v2.1.0` once the
-remaining items (audit log viewer, AB189 PDF + reports, cloud sync polish)
-are complete.
+Items shipped in v2.1:
 
 ### Added — Loans page (Item 5)
 
