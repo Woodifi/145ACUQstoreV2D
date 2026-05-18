@@ -1307,18 +1307,22 @@ async function _processLogo(file) {
   }
 
   try {
-    // Fit inside 400×160 (2× the header logo slot at HiDPI). Keeps the stored
-    // data URL small while staying sharp on retina displays.
-    const MAX_W = 400;
-    const MAX_H = 160;
-    const scale = Math.min(MAX_W / bitmap.width, MAX_H / bitmap.height, 1);
+    // Fit inside 1024×1024 — large enough for the splash screen at any display
+    // size while staying lossless (PNG). The old 160px cap caused pixelation
+    // when the logo was displayed at splash size (60vmin ≈ 460px+).
+    // Images smaller than 1024px are stored at their natural size (no upscale).
+    const MAX = 1024;
+    const scale = Math.min(MAX / bitmap.width, MAX / bitmap.height, 1);
     const w = Math.max(1, Math.round(bitmap.width  * scale));
     const h = Math.max(1, Math.round(bitmap.height * scale));
 
     const canvas = document.createElement('canvas');
     canvas.width  = w;
     canvas.height = h;
-    canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled  = true;
+    ctx.imageSmoothingQuality  = 'high';
+    ctx.drawImage(bitmap, 0, 0, w, h);
     return canvas.toDataURL('image/png');
   } finally {
     if (bitmap.close) bitmap.close();
