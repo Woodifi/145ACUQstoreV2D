@@ -205,18 +205,22 @@ async function _openUserForm(userId) {
                  placeholder="e.g. 8123456">
         </label>
         ${isNew ? `
+          <p class="form__hint">
+            Set the user's initial PIN. The PIN will be displayed once after
+            saving — note it down and give it to the user verbally.
+          </p>
           <label class="form__field">
             <span class="form__label">Initial PIN <span class="form__required">*</span></span>
-            <input type="password" name="pin" inputmode="numeric"
+            <input type="text" name="pin" inputmode="numeric"
                    pattern="\\d{4}" maxlength="4" required
-                   autocomplete="new-password" class="form__input--pin"
+                   autocomplete="off" class="form__input--pin"
                    placeholder="4 digits">
           </label>
           <label class="form__field">
             <span class="form__label">Confirm PIN <span class="form__required">*</span></span>
-            <input type="password" name="pinConfirm" inputmode="numeric"
+            <input type="text" name="pinConfirm" inputmode="numeric"
                    pattern="\\d{4}" maxlength="4" required
-                   autocomplete="new-password" class="form__input--pin"
+                   autocomplete="off" class="form__input--pin"
                    placeholder="4 digits">
           </label>
         ` : ''}
@@ -284,8 +288,13 @@ async function _openUserForm(userId) {
               user:   AUTH.getSession()?.name || 'OC',
               desc:   `User account created: ${username} (${AUTH.ROLES[role]?.label}).`,
             });
+            // Close the add-user form then show the PIN once for the admin to
+            // note down. _render() is deferred until the admin acknowledges.
             close();
-            showToast(`User "${name}" added.`, 'success');
+            _showPinOnce(name, pin, async () => {
+              showToast(`User "${name}" added.`, 'success');
+              await _render();
+            });
           } else {
             const updated = { ...user, name, username, role, svcNo };
             await Storage.users.put(updated);
@@ -296,8 +305,8 @@ async function _openUserForm(userId) {
             });
             close();
             showToast(`User "${name}" updated.`, 'success');
+            await _render();
           }
-          await _render();
         } catch (err) {
           errEl.textContent = err.message || 'Save failed. Please try again.';
           if (submit) { submit.disabled = false; submit.textContent = isNew ? 'Add User' : 'Save Changes'; }
@@ -321,21 +330,22 @@ async function _openResetPinModal(userId) {
     bodyHtml:  `
       <p class="modal__body">
         Set a new 4-digit PIN for <strong>${esc(user.name)}</strong>.
-        They will need to use this PIN on their next login.
+        The PIN will be displayed once after saving — note it down and
+        give it to the user verbally.
       </p>
       <form class="form" data-form="reset-pin-form" autocomplete="off">
         <label class="form__field">
           <span class="form__label">New PIN <span class="form__required">*</span></span>
-          <input type="password" name="pin" inputmode="numeric"
+          <input type="text" name="pin" inputmode="numeric"
                  pattern="\\d{4}" maxlength="4" required
-                 autocomplete="new-password" class="form__input--pin"
+                 autocomplete="off" class="form__input--pin"
                  placeholder="4 digits">
         </label>
         <label class="form__field">
           <span class="form__label">Confirm PIN <span class="form__required">*</span></span>
-          <input type="password" name="pinConfirm" inputmode="numeric"
+          <input type="text" name="pinConfirm" inputmode="numeric"
                  pattern="\\d{4}" maxlength="4" required
-                 autocomplete="new-password" class="form__input--pin"
+                 autocomplete="off" class="form__input--pin"
                  placeholder="4 digits">
         </label>
         <div class="form__error" role="alert"></div>
@@ -365,11 +375,65 @@ async function _openResetPinModal(userId) {
 
         try {
           await AUTH.setPin(userId, pin);
+          // Close the reset form then show the PIN once for the admin to
+          // note down. _render() is deferred until the admin acknowledges.
           close();
-          showToast(`PIN reset for ${user.name}.`, 'success');
+          _showPinOnce(user.name, pin, async () => {
+            showToast(`PIN reset for ${user.name}.`, 'success');
+            await _render();
+          });
         } catch (err) {
           errEl.textContent = err.message || 'Reset failed. Please try again.';
           if (submit) { submit.disabled = false; submit.textContent = 'Reset PIN'; }
+        }
+      });
+    },
+  });
+}
+
+// -----------------------------------------------------------------------------
+// Show-once PIN display
+// -----------------------------------------------------------------------------
+// Called immediately after a PIN is set (Add User or Reset PIN). The modal is
+// persistent so the admin cannot dismiss it without explicitly acknowledging
+// they have written the PIN down. After Done, afterDone() is called to show
+// the success toast and re-render the user table.
+
+function _showPinOnce(userName, pin, afterDone) {
+  openModal({
+    titleHtml:  'Note down this PIN',
+    size:       'sm',
+    persistent: true,
+    bodyHtml:   `
+      <p class="modal__body">
+        The PIN for <strong>${esc(userName)}</strong> is shown below.
+        <strong>This is the only time it will be displayed.</strong>
+        Write it down and give it to the user verbally — it cannot be
+        retrieved again, even by the administrator.
+      </p>
+      <div class="recovery-code__display" role="textbox" aria-readonly="true"
+           aria-label="PIN for ${esc(userName)}">${esc(pin)}</div>
+      <form class="form" data-form="pin-ack">
+        <label class="form__field">
+          <input type="checkbox" name="ack" required>
+          I have noted this PIN down and will give it to the user verbally.
+        </label>
+        <div class="form__actions">
+          <button type="submit" class="btn btn--primary" disabled
+                  data-action="pin-ack-submit">Done</button>
+        </div>
+      </form>
+    `,
+    onMount(panel, close) {
+      const form = $('form[data-form="pin-ack"]', panel);
+      const cb   = $('input[name="ack"]', panel);
+      const btn  = $('button[data-action="pin-ack-submit"]', panel);
+      cb.addEventListener('change', () => { btn.disabled = !cb.checked; });
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        if (cb.checked) {
+          close();
+          afterDone();
         }
       });
     },

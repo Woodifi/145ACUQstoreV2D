@@ -77,14 +77,14 @@ After changing the default PIN, complete unit setup:
 
 ### Adding Users
 
-Before other staff and cadets can log in, add them from **Settings**:
+Before other staff and cadets can log in, add them from the **Users** page:
 
-1. Go to **Settings → User accounts**
-2. Click **+ Add user**
-3. Fill in name, username, role, and service number
-4. Set an initial PIN (users should change this on first login)
+1. Go to **Users** (visible in the navigation bar — OC only)
+2. Click **+ Add User**
+3. Fill in name, username, role, service number, and initial PIN
+4. After saving, the PIN is displayed **once** — note it down and give it to the user verbally
 
-> **Note:** The Settings page is only accessible to the OC (Commanding Officer) role.
+> **Note:** Only the OC can manage user accounts and PINs. Users cannot change their own PINs. If a user forgets their PIN, they must ask the OC to reset it via **Users → Reset PIN**.
 
 ---
 
@@ -132,10 +132,11 @@ The **Users** page (OC only, visible in the top navigation bar) is the central h
    - **Username** — short, unique login identifier (e.g. `jsmith`); case-insensitive
    - **Role** — select the appropriate role from the table above
    - **Service number** — optional; stored for reference only
-   - **Initial PIN** — 4-digit PIN the user will use on first login; enter it twice to confirm
+   - **Initial PIN** — 4-digit PIN for the user's first login; enter it twice to confirm. The PIN is visible while you type.
 4. Click **Add User**
+5. A **show-once screen** displays the new PIN — note it down immediately and give it to the user verbally. Click Done to close.
 
-> **Tip:** Tell new users their initial PIN verbally and advise them to change it in Settings on first login.
+> **Security policy:** Only the OC can set or reset PINs. Users cannot change their own PINs. If a user forgets their PIN, they must ask the OC to reset it. Once set, the PIN cannot be retrieved — even the OC cannot view it again.
 
 #### Editing a User
 
@@ -143,7 +144,7 @@ Click **Edit** on any row to update the user's name, username, role, or service 
 
 #### Resetting a PIN
 
-Click **Reset PIN** on any row to set a new 4-digit PIN for that user. The change takes effect immediately on next login.
+Click **Reset PIN** on any row, enter a new 4-digit PIN and confirm it, then click **Reset PIN**. A **show-once screen** then displays the new PIN — note it down and give it to the user verbally. The change takes effect immediately.
 
 #### Deleting a User
 
@@ -542,7 +543,7 @@ Add, edit, and manage user accounts. Each user has:
 - Name and username
 - Role (OC, QM, Staff, Cadet, Read-Only)
 - Service number
-- PIN (set by OC; user changes on first login)
+- PIN (set and reset exclusively by the OC; users cannot change their own PINs)
 
 ### OC PIN Recovery
 
@@ -629,15 +630,16 @@ Each user authenticates with a 4-digit PIN.
 ### PIN Rules
 
 - Must be exactly 4 digits
-- Cannot be `0000` (the default — must be changed on first login)
-- Stored using Argon2id hashing — the actual PIN is never stored
+- Stored using Argon2id hashing — the actual PIN is never stored after it is set
 
-### Changing Your PIN
+### PIN Management Policy
 
-1. Log in
-2. Click your name/role in the top-right corner
-3. Select **Change PIN**
-4. Enter current PIN, then new PIN twice
+PINs are managed exclusively by the **OC (administrator)**. This is a deliberate security control:
+
+- **No self-service:** Users cannot view or change their own PINs
+- **OC sets initial PINs:** When a new user is created, the OC sets the PIN and gives it to the user verbally
+- **Show-once display:** After any PIN is set or reset, it is displayed once in a confirmation screen for the OC to note down. It cannot be retrieved again — not even by the OC
+- **Forgotten PIN:** If a user forgets their PIN, they must ask the OC to reset it via **Users → Reset PIN**
 
 ### PIN Lockout
 

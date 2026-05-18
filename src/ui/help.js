@@ -45,7 +45,8 @@ const SECTIONS = [
       <ol>
         <li>Go to the <strong>Users</strong> page (OC only, visible in the navigation bar)</li>
         <li>Click <strong>+ Add User</strong> and fill in name, username, role, service number, and initial PIN</li>
-        <li>Tell new users their initial PIN verbally and advise them to change it in Settings</li>
+        <li>After saving, the PIN is displayed <strong>once</strong> — note it down immediately and give it to the user verbally</li>
+        <li>Only the OC can manage PINs. Users cannot change their own PIN — if a user forgets their PIN they must ask the OC to reset it via the <strong>Reset PIN</strong> button on the Users page</li>
       </ol>
     `,
   },
@@ -78,15 +79,17 @@ const SECTIONS = [
       <ol>
         <li>Click <strong>+ Add User</strong></li>
         <li>Enter full name, username, role, and service number (optional)</li>
-        <li>Set an initial PIN (4 digits, entered twice)</li>
+        <li>Enter an initial PIN (4 digits, entered twice — PIN is visible while typing)</li>
         <li>Click <strong>Add User</strong></li>
+        <li>The PIN is displayed <strong>once</strong> in a confirmation screen — note it down and give it to the user verbally before clicking Done</li>
       </ol>
 
       <h4>Editing a user <span class="help__role">OC only</span></h4>
-      <p>Click <strong>Edit</strong> to update name, username, role, or service number. To change a PIN use <strong>Reset PIN</strong> separately.</p>
+      <p>Click <strong>Edit</strong> to update name, username, role, or service number. To reset a PIN use <strong>Reset PIN</strong> separately.</p>
 
       <h4>Resetting a PIN <span class="help__role">OC only</span></h4>
-      <p>Click <strong>Reset PIN</strong> on any row, enter and confirm a new 4-digit PIN. The user must use this new PIN on their next login.</p>
+      <p>Click <strong>Reset PIN</strong> on any row and enter a new 4-digit PIN. After saving, the new PIN is displayed <strong>once</strong> — note it down and give it to the user verbally. The user must use this PIN on their next login.</p>
+      <p class="help__note">Only the OC can set or reset PINs. Users cannot change their own PINs. If a user forgets their PIN, they must ask the OC to reset it.</p>
 
       <h4>Deleting a user <span class="help__role">OC only</span></h4>
       <p>Click <strong>Delete</strong> and confirm. Restrictions:</p>
@@ -363,9 +366,14 @@ const SECTIONS = [
     title: 'PINs and security',
     icon: '🔐',
     body: `
-      <h4>Changing your PIN</h4>
-      <p>Click your name/role in the top-right corner and select <strong>Change PIN</strong>. Enter your current PIN, then the new PIN twice.</p>
-      <p>PINs must be 4 digits and cannot be <code>0000</code>.</p>
+      <h4>PIN management policy</h4>
+      <p>PINs are managed exclusively by the <strong>OC (administrator)</strong>. No user can view or change their own PIN — this is a deliberate security control.</p>
+      <ul>
+        <li>When a new user is created, the OC sets the initial PIN and tells the user verbally</li>
+        <li>If a user forgets their PIN, they must ask the OC to reset it via <strong>Users → Reset PIN</strong></li>
+        <li>After any PIN is set or reset, it is displayed once for the OC to note down — it cannot be retrieved again</li>
+      </ul>
+      <p>PINs must be exactly 4 digits.</p>
 
       <h4>PIN lockout</h4>
       <table class="help__table">
@@ -378,7 +386,7 @@ const SECTIONS = [
       </table>
 
       <h4>OC PIN recovery <span class="help__role">OC only</span></h4>
-      <p>Generate a recovery code in <strong>Settings → OC PIN recovery</strong>. Store it off-device. If you forget your PIN, use it on the login screen via <strong>Forgot PIN?</strong>.</p>
+      <p>The OC account has an additional recovery path: generate a recovery code in <strong>Settings → OC PIN recovery</strong>. Store it off-device (e.g. printed copy in the unit safe). If the OC forgets their PIN, use it on the login screen via <strong>Forgot PIN?</strong>.</p>
       <p class="help__warn">Recovery codes are one-use only. Generate a new one immediately after use. Without a recovery code, a lost OC PIN cannot be recovered.</p>
     `,
   },
