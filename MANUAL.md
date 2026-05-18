@@ -532,7 +532,9 @@ Both exports honour the active search and action filter — use filters to narro
 | recovery_set | OC recovery code generated |
 | recovery_reset | OC PIN reset using recovery code |
 | login | Successful login |
+| logout | User signed out |
 | login_failed | Failed PIN attempt |
+| session_unlock | Locked session resumed after PIN entry |
 | data_export | Backup exported |
 | data_imported | Backup imported |
 | stocktake | Stocktake finalised |
@@ -611,6 +613,22 @@ Generate a 12-character one-shot recovery code. Store this code **off-device** (
 - Click **Generate new code** to create a recovery code
 - The code is shown once — copy it immediately
 - Each code can only be used once; a new one must be generated after use
+
+### Security
+
+Configure the auto-lock idle timeout. This is the only control in this section.
+
+| Setting | Options | Default |
+|---------|---------|---------|
+| Auto-lock after idle | Disabled / 5 / 10 / 15 / 30 min / 1 hour | 15 minutes |
+
+When configured, the app locks automatically after the selected period without mouse, keyboard, or touch input. A PIN entry screen overlays the current page — work is not lost. The user enters their PIN to resume or clicks **Sign out / switch user** to log out fully.
+
+Changes take effect immediately without a reload.
+
+> **Tip:** Enable auto-lock on any device shared between users (duty computer, parade-night tablet) to prevent one user's session being accessed by another. 15 minutes is appropriate for most environments.
+
+See [Section 13 — PIN Security](#13-pin-security) for full auto-lock behaviour.
 
 ### About
 
@@ -700,9 +718,25 @@ PINs are managed exclusively by the **OC (administrator)**. This is a deliberate
 - **Show-once display:** After any PIN is set or reset, it is displayed once in a confirmation screen for the OC to note down. It cannot be retrieved again — not even by the OC
 - **Forgotten PIN:** If a user forgets their PIN, they must ask the OC to reset it via **Users → Reset PIN**
 
+### Auto-Lock (Idle Timeout)
+
+The OC can configure the app to lock automatically after inactivity. This is set in **Settings → Security → Auto-lock after idle**.
+
+**How it works:**
+- Any mouse, keyboard, or touch activity resets the idle timer
+- When the timer expires, a lock overlay appears over the current page — the user does not lose their place
+- Entering the correct PIN dismisses the overlay and resumes the session
+- Clicking **Sign out / switch user** on the lock screen performs a full logout
+
+**Lockout on the lock screen:** Failed PIN attempts follow the same escalating lockout as login — 5 wrong attempts triggers a 30-second delay, 10 triggers 5 minutes, 15+ triggers 30 minutes.
+
+**Audit trail:** Successful unlocks are recorded as `session_unlock`. Failed attempts are recorded as `login_failed`, the same as login failures.
+
+> **Recommendation:** Enable auto-lock on any shared or unattended device. 15 minutes is the default and suits most environments.
+
 ### PIN Lockout
 
-Repeated failed attempts trigger automatic lockouts:
+Repeated failed attempts trigger automatic lockouts (applies to both login and lock screen unlock):
 
 | Failed attempts | Lockout duration |
 |----------------|-----------------|
