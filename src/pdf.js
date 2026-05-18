@@ -486,35 +486,115 @@ const REPORT_FOOTER_RESERVE = 18;   // mm at bottom of every page
  * @returns {{filename, blob, bytes}}
  */
 export async function generateNominalRoll(cadets, opts = {}) {
-  const unit = opts.unit || {};
-  const subtitle = opts.subtitle || '';
+  const unit      = opts.unit      || {};
+  const subtitle  = opts.subtitle  || '';
+  const structure = opts.structure || [];   // unit sub-structure for grouped layout
+  const useStruct = structure.length > 0;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
-  // Layout: 5 columns. Widths sum to PAGE.CW.
-  const COLS = [
-    { x: PAGE.MARGIN + 2,   w: 28,  label: 'Rank',        get: (c) => c.rank || '' },
-    { x: PAGE.MARGIN + 32,  w: 50,  label: 'Surname',     get: (c) => c.surname || '' },
-    { x: PAGE.MARGIN + 84,  w: 50,  label: 'Given names', get: (c) => c.given || '' },
-    { x: PAGE.MARGIN + 136, w: 24,  label: 'Service No.', get: (c) => c.svcNo || '' },
-    { x: PAGE.MARGIN + 162, w: 12,  label: 'Plt',         get: (c) => c.plt || '' },
-  ];
+  // Column layout differs by mode:
+  //   Legacy (no structure): 5 wide columns
+  //   Structure mode: 7 narrower columns + group separator rows
+  const COLS = useStruct
+    ? [
+        { x: PAGE.MARGIN + 2,   w: 22, label: 'Rank',        get: (c) => c.rank || '' },
+        { x: PAGE.MARGIN + 25,  w: 38, label: 'Surname',     get: (c) => c.surname || '' },
+        { x: PAGE.MARGIN + 64,  w: 34, label: 'Given names', get: (c) => c.given || '' },
+        { x: PAGE.MARGIN + 99,  w: 22, label: 'Service No.', get: (c) => c.svcNo || '' },
+        { x: PAGE.MARGIN + 122, w: 18, label: 'Company',     get: (c) => c.company || '' },
+        { x: PAGE.MARGIN + 141, w: 16, label: 'Platoon',     get: (c) => c.platoon || c.plt || '' },
+        { x: PAGE.MARGIN + 158, w: 12, label: 'Section',     get: (c) => c.section || '' },
+      ]
+    : [
+        { x: PAGE.MARGIN + 2,   w: 28, label: 'Rank',        get: (c) => c.rank || '' },
+        { x: PAGE.MARGIN + 32,  w: 50, label: 'Surname',     get: (c) => c.surname || '' },
+        { x: PAGE.MARGIN + 84,  w: 50, label: 'Given names', get: (c) => c.given || '' },
+        { x: PAGE.MARGIN + 136, w: 24, label: 'Service No.', get: (c) => c.svcNo || '' },
+        { x: PAGE.MARGIN + 162, w: 12, label: 'Plt',         get: (c) => c.plt || '' },
+      ];
 
   const meta = `${cadets.length} ${cadets.length === 1 ? 'person' : 'people'}` +
                (subtitle ? ` · ${subtitle}` : '');
-  _renderTabularReport(doc, {
-    title:    'NOMINAL ROLL',
-    subtitle: meta,
-    unit,
-    columns:  COLS,
-    rows:     cadets,
-    rowDecorate(c) {
-      // Inactive rows are shown in muted grey so paper-mark-up can use
-      // them as a "still on books but not active" reference.
-      return c.active === false
+  const title = 'NOMINAL ROLL';
+
+  if (!useStruct) {
+    // Flat render — reuse the shared tabular helper.
+    _renderTabularReport(doc, {
+      title, subtitle: meta, unit,
+      columns: COLS,
+      rows:    cadets,
+      rowDecorate(c) {
+        return c.active === false ? { textColor: COL.txtSub, fontStyle: 'italic' } : null;
+      },
+    });
+  } else {
+    // Grouped render — inject group-band rows between company/plt/sec groups.
+    const ROW_H    = 6;
+    const BAND_H   = 5;
+    const usableBottom = PAGE.H - PAGE.MARGIN - REPORT_FOOTER_RESERVE;
+
+    let y       = _drawReportHeader(doc, PAGE.MARGIN, title, meta, unit);
+    y           = _drawColumnHeader(doc, y, COLS);
+    let pageNum = 1;
+    let prevKey = null;
+
+    const ensureSpace = (needed) => {
+      if (y + needed > usableBottom) {
+        _drawReportFooter(doc, pageNum, null);
+        doc.addPage();
+        pageNum++;
+        y = _drawReportHeader(doc, PAGE.MARGIN, title, meta, unit);
+        y = _drawColumnHeader(doc, y, COLS);
+      }
+    };
+
+    for (let i = 0; i < cadets.length; i++) {
+      const c       = cadets[i];
+      const isStaff = c.personType === 'staff';
+      const company = c.company  || '';
+      const platoon = c.platoon  || c.plt || '';
+      const section = c.section  || '';
+      const key     = isStaff
+        ? '__staff__'
+        : `${company}\x00${platoon}\x00${section}`;
+
+      if (key !== prevKey) {
+        // Ensure room for band + at least one data row.
+        ensureSpace(BAND_H + ROW_H);
+        const label = isStaff
+          ? 'Staff'
+          : [company, platoon, section].filter(Boolean).join(' › ') || 'Unassigned';
+        // Draw group band.
+        doc.setFillColor(...COL.bandFill);
+        doc.rect(PAGE.MARGIN, y, PAGE.CW, BAND_H, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.5);
+        doc.setTextColor(...COL.armyGreen);
+        doc.text(label.toUpperCase(), PAGE.MARGIN + 2, y + 3.5);
+        y += BAND_H;
+        prevKey = key;
+      }
+
+      ensureSpace(ROW_H);
+      const decoration = c.active === false
         ? { textColor: COL.txtSub, fontStyle: 'italic' }
         : null;
-    },
-  });
+      _drawRow(doc, y, COLS, c, i, decoration);
+      y += ROW_H;
+    }
+
+    _drawReportFooter(doc, pageNum, null);
+
+    // Second pass: fill in "Page N of M".
+    const totalPages = pageNum;
+    for (let p = 1; p <= totalPages; p++) {
+      doc.setPage(p);
+      doc.setFillColor(255, 255, 255);
+      doc.rect(PAGE.MARGIN, PAGE.H - REPORT_FOOTER_RESERVE,
+               PAGE.CW, REPORT_FOOTER_RESERVE - 2, 'F');
+      _drawReportFooter(doc, p, totalPages);
+    }
+  }
 
   const filename = `NominalRoll_${_unitSlug(unit)}_${_todayIsoDate()}.pdf`;
   return _packageResult(doc, filename);

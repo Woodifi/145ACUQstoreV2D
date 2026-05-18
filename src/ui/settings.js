@@ -22,17 +22,18 @@
 //   The page shows the exact value to paste into Azure's portal.
 // =============================================================================
 
-import * as Storage from '../storage.js';
-import * as AUTH    from '../auth.js';
-import * as Sync    from '../sync.js';
+import * as Storage   from '../storage.js';
+import * as AUTH      from '../auth.js';
+import * as Sync      from '../sync.js';
 import { getProvider } from '../cloud.js';
 import { openModal }   from './modal.js';
 import { esc, $, $$, render, fmtDate } from './util.js';
 import { STAFF_RANKS_CANONICAL, CADET_RANKS } from '../ranks.js';
-import * as Recovery from '../recovery.js';
-import * as Migration from '../migration.js';
-import * as CsvUi from './csv-import.js';
-import { showToast } from './toast.js';
+import * as Recovery   from '../recovery.js';
+import * as Migration  from '../migration.js';
+import * as CsvUi      from './csv-import.js';
+import { showToast }   from './toast.js';
+import * as Structure  from '../structure.js';
 
 let _root = null;
 let _statusListener = null;
@@ -72,11 +73,13 @@ async function _render() {
   const recoveryStatus = sess?.userId
     ? await Recovery.statusForUser(sess.userId)
     : { exists: false, createdAt: null };
+  const unitStructure  = await Structure.load();
 
   render(_root, `
     <section class="settings">
       <div class="settings__column">
         ${_unitSectionHtml(settings)}
+        ${_structureSectionHtml(unitStructure)}
         ${_recoverySectionHtml(recoveryStatus)}
         ${_cloudSectionHtml(settings, status)}
         ${_dataSectionHtml(settings)}
@@ -269,6 +272,218 @@ function _unitSectionHtml(settings) {
 // would require storing it reversibly, which would mean the recovery
 // code has weaker protection at rest than the PIN it recovers. Not an
 // acceptable trade.
+
+// -----------------------------------------------------------------------------
+// Unit sub-structure section
+// -----------------------------------------------------------------------------
+// The CO defines the unit's hierarchy: Companies → Platoons → Sections.
+// When configured, cadets can be assigned to a company/platoon/section
+// via cascading dropdowns in the Cadets add/edit form. The nominal roll
+// groups and demarcates cadets by this hierarchy.
+// If not configured the Cadets page falls back to the legacy free-text
+// platoon field.
+
+function _structureSectionHtml(structure) {
+  const configured = structure.length > 0;
+  const summary = configured
+    ? structure.map((co) => {
+        const plts = (co.platoons || []).length;
+        return `<li>${esc(co.name)} — ${plts} platoon${plts === 1 ? '' : 's'}</li>`;
+      }).join('')
+    : '';
+
+  return `
+    <section class="settings__section" data-section="structure">
+      <header class="settings__section-header">
+        <h2 class="settings__section-title">Unit sub-structure</h2>
+        <p class="settings__section-hint">
+          Define companies, platoons, and sections. When configured, cadets can
+          be assigned to a company → platoon → section hierarchy and the nominal
+          roll groups them with demarcation headers. Leave unconfigured to use
+          the original free-text platoon field.
+        </p>
+      </header>
+      ${configured
+        ? `<ul class="struct__summary">${summary}</ul>`
+        : `<p class="settings__section-hint">Not configured — using free-text platoon field.</p>`
+      }
+      <div class="settings__actions">
+        <button type="button" class="btn btn--ghost" data-action="configure-structure">
+          ${configured ? 'Edit structure' : 'Configure structure'}
+        </button>
+        ${configured
+          ? `<button type="button" class="btn btn--danger btn--sm" data-action="clear-structure">Clear structure</button>`
+          : ''}
+      </div>
+    </section>
+  `;
+}
+
+function _openStructureModal(existingStructure) {
+  // Deep-clone so edits don't mutate the passed-in array until Save.
+  let draft = JSON.parse(JSON.stringify(existingStructure.length > 0
+    ? existingStructure
+    : []));
+
+  function buildTreeHtml(d) {
+    if (d.length === 0) {
+      return `<p class="struct__empty-hint">No companies added yet. Click "+ Add company" below.</p>`;
+    }
+    return d.map((co, ci) => `
+      <div class="struct__company">
+        <div class="struct__company-header">
+          <input type="text" class="struct__name-input" placeholder="Company name, e.g. A Coy"
+                 value="${esc(co.name)}" data-path="co.${ci}.name" aria-label="Company name">
+          <button type="button" class="btn btn--danger btn--sm struct__remove"
+                  data-path="co.${ci}">✕</button>
+        </div>
+        <div class="struct__platoons">
+          ${(co.platoons || []).map((plt, pi) => `
+            <div class="struct__platoon">
+              <div class="struct__platoon-header">
+                <input type="text" class="struct__name-input" placeholder="Platoon name, e.g. 1 Plt"
+                       value="${esc(plt.name)}" data-path="plt.${ci}.${pi}.name" aria-label="Platoon name">
+                <button type="button" class="btn btn--danger btn--sm struct__remove"
+                        data-path="plt.${ci}.${pi}">✕</button>
+              </div>
+              <div class="struct__sections">
+                ${(plt.sections || []).map((sec, si) => `
+                  <div class="struct__section">
+                    <input type="text" class="struct__name-input struct__name-input--sm"
+                           placeholder="Section, e.g. 1 Sec"
+                           value="${esc(sec)}" data-path="sec.${ci}.${pi}.${si}" aria-label="Section name">
+                    <button type="button" class="btn btn--danger btn--sm struct__remove"
+                            data-path="sec.${ci}.${pi}.${si}">✕</button>
+                  </div>
+                `).join('')}
+                <button type="button" class="btn btn--ghost btn--sm struct__add-btn"
+                        data-add="sec.${ci}.${pi}">+ Add section</button>
+              </div>
+            </div>
+          `).join('')}
+          <button type="button" class="btn btn--ghost btn--sm struct__add-btn"
+                  data-add="plt.${ci}">+ Add platoon</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  openModal({
+    titleHtml: 'Configure unit sub-structure',
+    size:      'md',
+    persistent: true,
+    bodyHtml:  `
+      <p class="modal__body">
+        Add companies, then platoons within each company, then sections within each platoon.
+        Sections are optional — leave them out if your unit doesn't use section-level grouping.
+      </p>
+      <div class="struct__tree" data-target="structure-tree">
+        ${buildTreeHtml(draft)}
+      </div>
+      <div class="struct__tree-actions">
+        <button type="button" class="btn btn--ghost btn--sm struct__add-btn" data-add="co">+ Add company</button>
+      </div>
+      <div class="form__error" role="alert"></div>
+      <div class="form__actions">
+        <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
+        <button type="button" class="btn btn--primary" data-action="save-structure">Save structure</button>
+      </div>
+    `,
+    onMount(panel, close) {
+      const treeEl = panel.querySelector('[data-target="structure-tree"]');
+      const errEl  = panel.querySelector('.form__error');
+
+      function rerender() {
+        treeEl.innerHTML = buildTreeHtml(draft);
+      }
+
+      // Flush text inputs into draft before any add/remove action.
+      function flushInputs() {
+        panel.querySelectorAll('input[data-path]').forEach((input) => {
+          const parts = input.dataset.path.split('.');
+          const [type, ...indices] = parts;
+          const [ci, pi, si] = indices.map(Number);
+          if (type === 'co') draft[ci].name = input.value;
+          else if (type === 'plt') draft[ci].platoons[pi].name = input.value;
+          else if (type === 'sec') draft[ci].platoons[pi].sections[si] = input.value;
+        });
+      }
+
+      panel.addEventListener('click', (e) => {
+        const addBtn = e.target.closest('[data-add]');
+        const removeBtn = e.target.closest('.struct__remove[data-path]');
+        const saveBtn = e.target.closest('[data-action="save-structure"]');
+        if (!addBtn && !removeBtn && !saveBtn) return;
+
+        flushInputs();
+
+        if (addBtn) {
+          const spec = addBtn.dataset.add;
+          const parts = spec.split('.');
+          if (parts[0] === 'co') {
+            draft.push({ name: '', platoons: [] });
+          } else if (parts[0] === 'plt') {
+            const ci = Number(parts[1]);
+            draft[ci].platoons.push({ name: '', sections: [] });
+          } else if (parts[0] === 'sec') {
+            const [, ci, pi] = parts.map(Number);
+            draft[ci].platoons[pi].sections.push('');
+          }
+          rerender();
+          return;
+        }
+
+        if (removeBtn) {
+          const spec  = removeBtn.dataset.path;
+          const parts = spec.split('.');
+          if (parts[0] === 'co') {
+            draft.splice(Number(parts[1]), 1);
+          } else if (parts[0] === 'plt') {
+            const [, ci, pi] = parts.map(Number);
+            draft[ci].platoons.splice(pi, 1);
+          } else if (parts[0] === 'sec') {
+            const [, ci, pi, si] = parts.map(Number);
+            draft[ci].platoons[pi].sections.splice(si, 1);
+          }
+          rerender();
+          return;
+        }
+
+        if (saveBtn) {
+          flushInputs();
+          // Validate: all named companies/platoons must have non-empty names.
+          for (const co of draft) {
+            if (!co.name.trim()) {
+              errEl.textContent = 'All companies must have a name.';
+              return;
+            }
+            for (const plt of co.platoons || []) {
+              if (!plt.name.trim()) {
+                errEl.textContent = `All platoons in "${co.name}" must have a name.`;
+                return;
+              }
+            }
+          }
+          // Clean up: remove empty section strings from all platoons.
+          const cleaned = draft.map((co) => ({
+            name:     co.name.trim(),
+            platoons: (co.platoons || []).map((plt) => ({
+              name:     plt.name.trim(),
+              sections: (plt.sections || []).map((s) => s.trim()).filter(Boolean),
+            })),
+          }));
+          Structure.save(cleaned).then(() => {
+            close();
+            showToast('Unit structure saved.', 'success');
+            _render();
+          }).catch((err) => {
+            errEl.textContent = err.message || 'Save failed.';
+          });
+        }
+      });
+    },
+  });
+}
 
 function _recoverySectionHtml(recoveryStatus) {
   const exists = recoveryStatus.exists;
@@ -876,9 +1091,45 @@ async function _onRootClick(e) {
     case 'import-v1':       await _doImportV1(e.target.closest('button')); break;
     case 'import-items-csv':  CsvUi.openItemsCsvImport();  break;
     case 'import-cadets-csv': CsvUi.openCadetsCsvImport(); break;
-    case 'recovery-generate': await _doGenerateRecovery(e.target.closest('button')); break;
-    case 'logo-remove':       await _doRemoveLogo(); break;
+    case 'recovery-generate':    await _doGenerateRecovery(e.target.closest('button')); break;
+    case 'logo-remove':          await _doRemoveLogo(); break;
+    case 'configure-structure':  await _onConfigureStructure(); break;
+    case 'clear-structure':      await _onClearStructure(e.target.closest('button')); break;
   }
+}
+
+async function _onConfigureStructure() {
+  const existing = await Structure.load();
+  _openStructureModal(existing);
+}
+
+async function _onClearStructure(btn) {
+  if (btn) { btn.disabled = true; }
+  openModal({
+    titleHtml: 'Clear unit structure?',
+    size:      'sm',
+    bodyHtml:  `
+      <p class="modal__body">
+        This removes the company/platoon/section configuration. Cadets already assigned
+        to a company/platoon/section will retain those values on their records, but the
+        cascading dropdowns will no longer be available in the edit form. The nominal roll
+        will revert to the flat list view.
+      </p>
+      <div class="form__actions">
+        <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
+        <button type="button" class="btn btn--danger" data-action="confirm-clear-structure">Clear structure</button>
+      </div>
+    `,
+    onMount(panel, close) {
+      $('[data-action="confirm-clear-structure"]', panel)?.addEventListener('click', async () => {
+        await Structure.save([]);
+        close();
+        showToast('Unit structure cleared.', 'info');
+        await _render();
+      });
+    },
+  });
+  if (btn) btn.disabled = false;
 }
 
 async function _doSignIn() {

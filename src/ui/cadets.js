@@ -20,7 +20,13 @@
 //                field name. Optional — legacy records may not have it.
 //   rank       — free text, validated against ranks.js vocabulary as a hint
 //                only. Datalist offers staff + cadet ranks for autocomplete.
-//   plt        — platoon, free text (typical: "1", "2", "HQ", "AIT").
+//   plt        — platoon, free text (legacy / structure-not-configured).
+//                Retained for backward compat; new records use `platoon`.
+//   company    — company name from unit structure (e.g. 'A Coy'). Set by
+//                the cascading dropdown when structure is configured.
+//   platoon    — platoon name from unit structure (e.g. '1 Plt').
+//                Replaces free-text plt on first edit after structure setup.
+//   section    — section name from unit structure (e.g. '1 Sec').
 //   personType — derived from rank on save: 'cadet' | 'staff'. Used by the
 //                indexed-lookup in storage.js. Not exposed as its own form
 //                field — flipping it requires changing the rank, which is
@@ -43,9 +49,10 @@
 //   delete → 'cadet_delete', desc "Deleted cadet: <rank> <surname> (<svcNo>) — reason: <reason>"
 // =============================================================================
 
-import * as Storage from '../storage.js';
-import * as AUTH    from '../auth.js';
-import * as Sync    from '../sync.js';
+import * as Storage   from '../storage.js';
+import * as AUTH      from '../auth.js';
+import * as Sync      from '../sync.js';
+import * as Structure from '../structure.js';
 import {
   STAFF_RANKS_CANONICAL,
   CADET_RANKS,
@@ -53,19 +60,23 @@ import {
   inferPersonType,
   compareRanks,
 } from '../ranks.js';
-import { generateNominalRoll, downloadPdf }        from '../pdf.js';
-import { openModal }                              from './modal.js';
-import { esc, $, $$, render, fmtDateOnly }        from './util.js';
-import { showToast }                              from './toast.js';
+import { generateNominalRoll, downloadPdf }  from '../pdf.js';
+import { openModal }                        from './modal.js';
+import { esc, $, $$, render, fmtDateOnly }  from './util.js';
+import { showToast }                        from './toast.js';
 
 // -----------------------------------------------------------------------------
 // Module state
 // -----------------------------------------------------------------------------
 
-let _root         = null;
-let _searchTerm   = '';
-let _pltFilter    = '';
-let _showInactive = false;
+let _root          = null;
+let _searchTerm    = '';
+let _pltFilter     = '';    // legacy platoon filter (when no structure configured)
+let _coFilter      = '';    // company filter (structure mode)
+let _pltFilterStr  = '';    // platoon filter (structure mode)
+let _secFilter     = '';    // section filter (structure mode)
+let _showInactive  = false;
+let _structure     = [];    // unit structure cache — loaded once per mount
 
 // -----------------------------------------------------------------------------
 // Mount / unmount
@@ -76,7 +87,13 @@ export async function mount(rootEl) {
   _root         = rootEl;
   _searchTerm   = '';
   _pltFilter    = '';
+  _coFilter     = '';
+  _pltFilterStr = '';
+  _secFilter    = '';
   _showInactive = false;
+  // Load unit structure once per mount — updated by settings, unlikely to
+  // change mid-session, so caching is safe.
+  _structure    = await Structure.load();
   await _render();
   return function unmount() { _root = null; };
 }
@@ -86,38 +103,87 @@ export async function mount(rootEl) {
 // -----------------------------------------------------------------------------
 
 async function _render() {
-  const all = await Storage.cadets.list();
+  const all       = await Storage.cadets.list();
+  const useStruct = _structure.length > 0;
 
-  // Sort: staff before cadets, then rank highest-to-lowest within each group,
-  // then surname A-Z as the final tie-break.
-  all.sort((a, b) => {
-    const typeA = a.personType === 'staff' ? 0 : 1;
-    const typeB = b.personType === 'staff' ? 0 : 1;
-    return (typeA - typeB) || compareRanks(a.rank, b.rank) ||
-      (a.surname || '').localeCompare(b.surname || '');
-  });
+  // Sort using structure-aware comparator if configured, otherwise plain sort.
+  const comparator = useStruct
+    ? Structure.makeComparator(_structure, compareRanks)
+    : (a, b) => {
+        const typeA = a.personType === 'staff' ? 0 : 1;
+        const typeB = b.personType === 'staff' ? 0 : 1;
+        return (typeA - typeB) || compareRanks(a.rank, b.rank) ||
+          (a.surname || '').localeCompare(b.surname || '');
+      };
+  all.sort(comparator);
 
   // Apply filters in JS — the dataset is small (typical AAC unit < 200
   // cadets) so a single-pass filter is fast enough without indexes.
-  const term = _searchTerm.trim().toLowerCase();
+  const term     = _searchTerm.trim().toLowerCase();
   const filtered = all.filter((c) => {
     if (!_showInactive && c.active === false) return false;
-    if (_pltFilter && (c.plt || '') !== _pltFilter) return false;
+    // Structure mode filters
+    if (useStruct) {
+      if (_coFilter     && (c.company  || '') !== _coFilter)     return false;
+      if (_pltFilterStr && (c.platoon  || c.plt || '') !== _pltFilterStr) return false;
+      if (_secFilter    && (c.section  || '') !== _secFilter)    return false;
+    } else {
+      // Legacy mode: single plt filter
+      if (_pltFilter && (c.plt || '') !== _pltFilter) return false;
+    }
     if (term) {
       const hay = [
-        c.surname, c.given, c.svcNo, c.rank, c.plt, c.email, c.notes,
+        c.surname, c.given, c.svcNo, c.rank,
+        c.plt, c.company, c.platoon, c.section,
+        c.email, c.notes,
       ].join(' ').toLowerCase();
       if (!hay.includes(term)) return false;
     }
     return true;
   });
 
-  // Compute the platoon filter dropdown options from the actual data so
-  // the dropdown matches what the unit has, not a hard-coded list.
-  const plts = [...new Set(all.map((c) => c.plt).filter(Boolean))]
-    .sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
-
   const canManage = AUTH.can('manageCadets');
+
+  // Build filter controls based on mode.
+  let filterHtml = '';
+  if (useStruct) {
+    const companies = Structure.getCompanies(_structure);
+    const platoons  = _coFilter ? Structure.getPlatoons(_structure, _coFilter) : [];
+    const sections  = (_coFilter && _pltFilterStr)
+      ? Structure.getSections(_structure, _coFilter, _pltFilterStr)
+      : [];
+    filterHtml = `
+      <select class="cad__co-filter" aria-label="Filter by company">
+        <option value="">All companies</option>
+        ${companies.map((co) => `<option value="${esc(co)}" ${co === _coFilter ? 'selected' : ''}>${esc(co)}</option>`).join('')}
+      </select>
+      ${_coFilter && platoons.length > 0 ? `
+        <select class="cad__plt-filter-str" aria-label="Filter by platoon">
+          <option value="">All platoons</option>
+          ${platoons.map((p) => `<option value="${esc(p)}" ${p === _pltFilterStr ? 'selected' : ''}>${esc(p)}</option>`).join('')}
+        </select>
+      ` : ''}
+      ${_pltFilterStr && sections.length > 0 ? `
+        <select class="cad__sec-filter" aria-label="Filter by section">
+          <option value="">All sections</option>
+          ${sections.map((s) => `<option value="${esc(s)}" ${s === _secFilter ? 'selected' : ''}>${esc(s)}</option>`).join('')}
+        </select>
+      ` : ''}
+    `;
+  } else {
+    const plts = [...new Set(all.map((c) => c.plt).filter(Boolean))]
+      .sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
+    filterHtml = `
+      <select class="cad__plt-filter" aria-label="Filter by platoon">
+        <option value="">All platoons</option>
+        ${plts.map((p) =>
+          `<option value="${esc(p)}" ${p === _pltFilter ? 'selected' : ''}>Plt ${esc(p)}</option>`
+        ).join('')}
+      </select>
+    `;
+  }
+
+  const hasFilter = _searchTerm || _pltFilter || _coFilter || _pltFilterStr || _secFilter || !_showInactive;
 
   render(_root, `
     <section class="cad">
@@ -128,12 +194,7 @@ async function _render() {
                  placeholder="Search name, service number, rank…"
                  aria-label="Search cadets"
                  value="${esc(_searchTerm)}">
-          <select class="cad__plt-filter" aria-label="Filter by platoon">
-            <option value="">All platoons</option>
-            ${plts.map((p) =>
-              `<option value="${esc(p)}" ${p === _pltFilter ? 'selected' : ''}>Plt ${esc(p)}</option>`
-            ).join('')}
-          </select>
+          ${filterHtml}
           <label class="cad__inactive-toggle">
             <input type="checkbox" data-action="toggle-inactive"
                    ${_showInactive ? 'checked' : ''}>
@@ -141,14 +202,15 @@ async function _render() {
           </label>
         </div>
         <div class="cad__actions">
-          <button type="button" class="btn btn--ghost" data-action="print-roll" title="Print the currently-shown nominal roll">⎙ Print roll</button>
+          <button type="button" class="btn btn--ghost" data-action="print-roll"
+                  title="Print the currently-shown nominal roll">⎙ Print roll</button>
           ${canManage ? `<button type="button" class="btn btn--primary" data-action="add">+ Add cadet</button>` : ''}
         </div>
       </header>
 
       <div class="cad__meta">
         ${filtered.length} ${filtered.length === 1 ? 'person' : 'people'} shown
-        ${(_searchTerm || _pltFilter || !_showInactive) && all.length !== filtered.length
+        ${hasFilter && all.length !== filtered.length
           ? `<span class="cad__meta-of"> of ${all.length}</span>`
           : ''}
       </div>
@@ -156,7 +218,7 @@ async function _render() {
       <div class="cad__table-wrap">
         ${filtered.length === 0
           ? _emptyStateHtml(all.length, canManage)
-          : _tableHtml(filtered, { canManage })}
+          : _tableHtml(filtered, { canManage, useStruct })}
       </div>
     </section>
   `);
@@ -181,7 +243,40 @@ function _emptyStateHtml(totalCadets, canManage) {
     </div>`;
 }
 
-function _tableHtml(cadets, { canManage }) {
+function _tableHtml(cadets, { canManage, useStruct }) {
+  // Column count used for group-header colspan calculation.
+  // Fixed cols: rank, surname, given, svc, status = 5.
+  // Struct mode adds company + platoon + section (3); legacy adds plt (1).
+  // Optional actions col adds 1.
+  const colCount = 5 + (useStruct ? 3 : 1) + (canManage ? 1 : 0);
+
+  // Build rows, injecting group-header <tr>s when the group changes.
+  let prevGroupKey = null;
+  const rows = cadets.map((c) => {
+    let groupHeader = '';
+    if (useStruct) {
+      const isStaff = c.personType === 'staff';
+      const company = c.company  || '';
+      const platoon = c.platoon  || c.plt || '';
+      const section = c.section  || '';
+      const key = isStaff ? '__staff__' : `${company}\x00${platoon}\x00${section}`;
+      if (key !== prevGroupKey) {
+        let label;
+        if (isStaff) {
+          label = 'Staff';
+        } else {
+          const parts = [company, platoon, section].filter(Boolean);
+          label = parts.join(' › ') || 'Unassigned';
+        }
+        groupHeader = `<tr class="cad__group-header">
+          <td colspan="${colCount}">${esc(label)}</td>
+        </tr>`;
+        prevGroupKey = key;
+      }
+    }
+    return groupHeader + _cadetRowHtml(c, { canManage, useStruct });
+  }).join('');
+
   return `
     <table class="cad__table">
       <thead>
@@ -190,20 +285,25 @@ function _tableHtml(cadets, { canManage }) {
           <th class="cad__col-surname">Surname</th>
           <th class="cad__col-givens">Given names</th>
           <th class="cad__col-svc">Service No.</th>
-          <th class="cad__col-plt">Plt</th>
+          ${useStruct
+            ? `<th class="cad__col-company">Company</th>
+               <th class="cad__col-plt">Platoon</th>
+               <th class="cad__col-section">Section</th>`
+            : `<th class="cad__col-plt">Plt</th>`}
           <th class="cad__col-status">Status</th>
           ${canManage ? `<th class="cad__col-actions">Actions</th>` : ''}
         </tr>
       </thead>
       <tbody>
-        ${cadets.map((c) => _cadetRowHtml(c, { canManage })).join('')}
+        ${rows}
       </tbody>
     </table>`;
 }
 
-function _cadetRowHtml(c, { canManage }) {
-  const inactive = c.active === false;
-  const typeBadge = c.personType === 'staff' ? 'Staff' : '';
+function _cadetRowHtml(c, { canManage, useStruct }) {
+  const inactive    = c.active === false;
+  const typeBadge   = c.personType === 'staff' ? 'Staff' : '';
+  const platoonDisp = c.platoon || c.plt || '';
   return `
     <tr class="cad__row ${inactive ? 'cad__row--inactive' : ''}"
         data-svc="${esc(c.svcNo)}">
@@ -211,7 +311,11 @@ function _cadetRowHtml(c, { canManage }) {
       <td class="cad__surname">${esc(c.surname || '')}</td>
       <td class="cad__givens">${esc(c.given || '')}</td>
       <td class="cad__svc">${esc(c.svcNo)}</td>
-      <td class="cad__plt">${esc(c.plt || '')}</td>
+      ${useStruct
+        ? `<td class="cad__company">${esc(c.company || '')}</td>
+           <td class="cad__plt">${esc(platoonDisp)}</td>
+           <td class="cad__section">${esc(c.section || '')}</td>`
+        : `<td class="cad__plt">${esc(c.plt || '')}</td>`}
       <td class="cad__status">
         ${inactive
           ? `<span class="cad__badge cad__badge--inactive">Inactive</span>`
@@ -237,9 +341,12 @@ function _cadetRowHtml(c, { canManage }) {
 // -----------------------------------------------------------------------------
 
 function _wireEventListeners() {
-  $('.cad__search', _root)?.addEventListener('input', _onSearchInput);
-  $('.cad__plt-filter', _root)?.addEventListener('change', _onPltChange);
-  _root.addEventListener('click', _onRootClick);
+  $('.cad__search',         _root)?.addEventListener('input',  _onSearchInput);
+  $('.cad__plt-filter',     _root)?.addEventListener('change', _onPltChange);
+  $('.cad__co-filter',      _root)?.addEventListener('change', _onCoFilterChange);
+  $('.cad__plt-filter-str', _root)?.addEventListener('change', _onPltFilterStrChange);
+  $('.cad__sec-filter',     _root)?.addEventListener('change', _onSecFilterChange);
+  _root.addEventListener('click',  _onRootClick);
   _root.addEventListener('change', _onRootChange);
 }
 
@@ -251,6 +358,24 @@ function _onSearchInput(e) {
 
 function _onPltChange(e) {
   _pltFilter = e.target.value;
+  _render();
+}
+
+function _onCoFilterChange(e) {
+  _coFilter     = e.target.value;
+  _pltFilterStr = '';   // reset child filters when parent changes
+  _secFilter    = '';
+  _render();
+}
+
+function _onPltFilterStrChange(e) {
+  _pltFilterStr = e.target.value;
+  _secFilter    = '';
+  _render();
+}
+
+function _onSecFilterChange(e) {
+  _secFilter = e.target.value;
   _render();
 }
 
@@ -267,50 +392,73 @@ async function _onRootClick(e) {
   if (!action) return;
   const svcNo = e.target.closest('[data-svc]')?.dataset.svc;
   switch (action) {
-    case 'add':            await _openAddModal();        break;
-    case 'edit':           await _openEditModal(svcNo);  break;
-    case 'delete':         await _openDeleteModal(svcNo); break;
-    case 'clear-filters':  _searchTerm = ''; _pltFilter = ''; _showInactive = false; await _render(); break;
-    case 'print-roll':     await _doPrintRoll(e.target.closest('button')); break;
+    case 'add':    await _openAddModal();        break;
+    case 'edit':   await _openEditModal(svcNo);  break;
+    case 'delete': await _openDeleteModal(svcNo); break;
+    case 'clear-filters':
+      _searchTerm = ''; _pltFilter = '';
+      _coFilter = ''; _pltFilterStr = ''; _secFilter = '';
+      _showInactive = false;
+      await _render();
+      break;
+    case 'print-roll': await _doPrintRoll(e.target.closest('button')); break;
   }
 }
 
 // Print the currently-filtered cadet list. We re-derive the filter inline
 // so the print reflects exactly what the user sees on screen at click time
-// (search term, plt filter, inactive toggle all honoured). The PDF
-// generator handles the layout; this function is just the bridge.
+// (search term, plt/company/section filter, inactive toggle all honoured).
+// The PDF generator handles the layout; this function is just the bridge.
 async function _doPrintRoll(button) {
   if (button) { button.disabled = true; button.textContent = 'Building PDF…'; }
   try {
-    const all  = await Storage.cadets.list();
-    const term = _searchTerm.trim().toLowerCase();
+    const all       = await Storage.cadets.list();
+    const useStruct = _structure.length > 0;
+    const term      = _searchTerm.trim().toLowerCase();
+
+    const comparator = useStruct
+      ? Structure.makeComparator(_structure, compareRanks)
+      : (a, b) => {
+          const typeA = a.personType === 'staff' ? 0 : 1;
+          const typeB = b.personType === 'staff' ? 0 : 1;
+          return (typeA - typeB) || compareRanks(a.rank, b.rank) ||
+            (a.surname || '').localeCompare(b.surname || '');
+        };
+
     const filtered = all.filter((c) => {
       if (!_showInactive && c.active === false) return false;
-      if (_pltFilter && (c.plt || '') !== _pltFilter) return false;
+      if (useStruct) {
+        if (_coFilter     && (c.company  || '') !== _coFilter)     return false;
+        if (_pltFilterStr && (c.platoon  || c.plt || '') !== _pltFilterStr) return false;
+        if (_secFilter    && (c.section  || '') !== _secFilter)    return false;
+      } else {
+        if (_pltFilter && (c.plt || '') !== _pltFilter) return false;
+      }
       if (term) {
-        const hay = [c.surname, c.given, c.svcNo, c.rank, c.plt, c.email, c.notes]
-          .join(' ').toLowerCase();
+        const hay = [
+          c.surname, c.given, c.svcNo, c.rank,
+          c.plt, c.company, c.platoon, c.section, c.email, c.notes,
+        ].join(' ').toLowerCase();
         if (!hay.includes(term)) return false;
       }
       return true;
-    }).sort((a, b) => {
-      const typeA = a.personType === 'staff' ? 0 : 1;
-      const typeB = b.personType === 'staff' ? 0 : 1;
-      return (typeA - typeB) || compareRanks(a.rank, b.rank) ||
-        (a.surname || '').localeCompare(b.surname || '');
     });
+    filtered.sort(comparator);
 
     // Subtitle describes the current filter state so the printout makes
-    // sense out of context (a roll labelled "Plt 2 only" tells the reader
-    // why the count looks different from the unit total).
+    // sense out of context (a roll labelled "A Coy · 1 Plt only" tells the
+    // reader why the count looks different from the unit total).
     const filterParts = [];
-    if (_pltFilter)            filterParts.push(`Plt ${_pltFilter} only`);
+    if (_coFilter)             filterParts.push(_coFilter);
+    if (_pltFilterStr)         filterParts.push(_pltFilterStr);
+    if (_secFilter)            filterParts.push(_secFilter);
+    if (_pltFilter)            filterParts.push(`Plt ${_pltFilter}`);
     if (!_showInactive)        filterParts.push('Active only');
     if (_searchTerm)           filterParts.push(`Search: "${_searchTerm}"`);
     const subtitle = filterParts.join(' · ');
 
-    const unit = await Storage.settings.getAll();
-    const result = await generateNominalRoll(filtered, { unit, subtitle });
+    const unit   = await Storage.settings.getAll();
+    const result = await generateNominalRoll(filtered, { unit, subtitle, structure: _structure });
     downloadPdf(result);
   } catch (err) {
     showToast('Roll generation failed: ' + (err.message || err), 'error');
@@ -349,6 +497,60 @@ function _openCadetFormModal({ mode, cadet }) {
   const rankOptions = [...STAFF_RANKS_CANONICAL, ...CADET_RANKS]
     .map((r) => `<option value="${esc(r)}">`)
     .join('');
+
+  const useStruct = _structure.length > 0;
+
+  // When structure is configured: cascading company → platoon → section dropdowns.
+  // When not: single free-text plt field (legacy).
+  let structFieldsHtml = '';
+  if (useStruct) {
+    const companies = Structure.getCompanies(_structure);
+    const curCo     = c.company  || '';
+    const curPlt    = c.platoon  || c.plt || '';
+    const curSec    = c.section  || '';
+    const platoons  = curCo  ? Structure.getPlatoons(_structure, curCo)         : [];
+    const sections  = (curCo && curPlt) ? Structure.getSections(_structure, curCo, curPlt) : [];
+    structFieldsHtml = `
+      <div class="form__row">
+        <label class="form__field">
+          <span class="form__label">Company</span>
+          <select name="company" class="cad__form-company">
+            <option value="">— None —</option>
+            ${companies.map((co) =>
+              `<option value="${esc(co)}" ${co === curCo ? 'selected' : ''}>${esc(co)}</option>`
+            ).join('')}
+          </select>
+        </label>
+        <label class="form__field cad__form-plt-wrap" ${!curCo || platoons.length === 0 ? 'style="display:none"' : ''}>
+          <span class="form__label">Platoon</span>
+          <select name="platoon" class="cad__form-platoon">
+            <option value="">— None —</option>
+            ${platoons.map((p) =>
+              `<option value="${esc(p)}" ${p === curPlt ? 'selected' : ''}>${esc(p)}</option>`
+            ).join('')}
+          </select>
+        </label>
+        <label class="form__field cad__form-sec-wrap" ${!curPlt || sections.length === 0 ? 'style="display:none"' : ''}>
+          <span class="form__label">Section</span>
+          <select name="section" class="cad__form-section">
+            <option value="">— None —</option>
+            ${sections.map((s) =>
+              `<option value="${esc(s)}" ${s === curSec ? 'selected' : ''}>${esc(s)}</option>`
+            ).join('')}
+          </select>
+        </label>
+      </div>`;
+  } else {
+    structFieldsHtml = `
+      <div class="form__row">
+        <label class="form__field">
+          <span class="form__label">Platoon</span>
+          <input type="text" name="plt" maxlength="16"
+                 value="${esc(c.plt || '')}"
+                 placeholder="e.g. 1, 2, HQ">
+        </label>
+      </div>`;
+  }
 
   openModal({
     titleHtml: isEdit ? 'Edit cadet' : 'Add cadet',
@@ -395,13 +597,9 @@ function _openCadetFormModal({ mode, cadet }) {
           </label>
         </div>
 
+        ${structFieldsHtml}
+
         <div class="form__row">
-          <label class="form__field">
-            <span class="form__label">Platoon</span>
-            <input type="text" name="plt" maxlength="16"
-                   value="${esc(c.plt || '')}"
-                   placeholder="e.g. 1, 2, HQ">
-          </label>
           <label class="form__field form__field--grow">
             <span class="form__label">Email</span>
             <input type="email" name="email" maxlength="120"
@@ -438,12 +636,40 @@ function _openCadetFormModal({ mode, cadet }) {
       const form  = $('form[data-form="cadet"]', panel);
       const errEl = $('.form__error', panel);
 
+      // Wire cascading dropdowns (structure mode only).
+      if (useStruct) {
+        const coSel  = $('select[name="company"]',  panel);
+        const pltSel = $('select[name="platoon"]',  panel);
+        const secSel = $('select[name="section"]',  panel);
+        const pltWrap = $('.cad__form-plt-wrap', panel);
+        const secWrap = $('.cad__form-sec-wrap', panel);
+
+        coSel.addEventListener('change', () => {
+          const co      = coSel.value;
+          const platoons = co ? Structure.getPlatoons(_structure, co) : [];
+          pltSel.innerHTML = '<option value="">— None —</option>' +
+            platoons.map((p) => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
+          secSel.innerHTML = '<option value="">— None —</option>';
+          pltWrap.style.display = (co && platoons.length > 0) ? '' : 'none';
+          secWrap.style.display = 'none';
+        });
+
+        pltSel.addEventListener('change', () => {
+          const co       = coSel.value;
+          const plt      = pltSel.value;
+          const sections = (co && plt) ? Structure.getSections(_structure, co, plt) : [];
+          secSel.innerHTML = '<option value="">— None —</option>' +
+            sections.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+          secWrap.style.display = (plt && sections.length > 0) ? '' : 'none';
+        });
+      }
+
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
         errEl.textContent = '';
         let data;
         try {
-          data = _readFormData(form);
+          data = _readFormData(form, useStruct);
         } catch (err) {
           errEl.textContent = err.message;
           return;
@@ -465,16 +691,21 @@ function _openCadetFormModal({ mode, cadet }) {
 // Form parsing & validation
 // -----------------------------------------------------------------------------
 
-function _readFormData(form) {
+function _readFormData(form, useStruct = false) {
   const fd = new FormData(form);
   const svcNo      = String(fd.get('svcNo')      || '').trim();
   const rankRaw    = String(fd.get('rank')       || '').trim();
   const surname    = String(fd.get('surname')    || '').trim().toUpperCase();
   const given      = String(fd.get('given')      || '').trim();
-  const plt        = String(fd.get('plt')        || '').trim();
   const email      = String(fd.get('email')      || '').trim();
   const notes      = String(fd.get('notes')      || '').trim();
   const active     = fd.get('active') === 'on';
+
+  // Structure mode: read cascading dropdowns. Legacy mode: read free-text plt.
+  const plt     = useStruct ? '' : String(fd.get('plt')     || '').trim();
+  const company = useStruct ? String(fd.get('company')  || '').trim() : '';
+  const platoon = useStruct ? String(fd.get('platoon')  || '').trim() : '';
+  const section = useStruct ? String(fd.get('section')  || '').trim() : '';
 
   if (!svcNo)   throw new Error('Service number is required.');
   if (!rankRaw) throw new Error('Rank is required.');
@@ -503,7 +734,7 @@ function _readFormData(form) {
   // points to the cadets store.
   const personType = inferPersonType(rank);
 
-  return { svcNo, rank, surname, given, plt, personType, active, email, notes };
+  return { svcNo, rank, surname, given, plt, company, platoon, section, personType, active, email, notes };
 }
 
 // -----------------------------------------------------------------------------

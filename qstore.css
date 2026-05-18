@@ -1653,12 +1653,29 @@ input {
 }
 
 .cad__col-rank    { width: 90px; }
-.cad__col-surname { width: 180px; }
-.cad__col-givens  { width: 180px; }
-.cad__col-svc     { width: 110px; font-family: 'SF Mono', Consolas, monospace; }
-.cad__col-plt     { width: 60px; }
-.cad__col-status  { width: 100px; }
-.cad__col-actions { width: 130px; text-align: right; }
+.cad__col-surname { width: 160px; }
+.cad__col-givens  { width: 150px; }
+.cad__col-svc     { width: 100px; font-family: 'SF Mono', Consolas, monospace; }
+.cad__col-plt     { width: 70px; }
+.cad__col-company { width: 90px; }
+.cad__col-section { width: 70px; }
+.cad__col-status  { width: 90px; }
+.cad__col-actions { width: 120px; text-align: right; }
+
+/* Group-header row injected between company/platoon/section groups. */
+.cad__group-header td {
+  background: var(--bg-input);
+  color: var(--gold);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  padding: 5px 12px;
+  border-top: 1px solid var(--border-hi);
+}
+.cad__group-header:first-child td {
+  border-top: none;
+}
 
 .cad__rank,
 .cad__surname {
@@ -3771,3 +3788,120 @@ details[open] > .help__section-summary::after {
 }
 
 .usr__empty p { margin: 0; }
+
+/* =============================================================================
+ * Settings — Unit sub-structure tree editor (struct__)
+ * ============================================================================= */
+
+/* Summary list shown in settings before opening the modal. */
+.struct__summary {
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.struct__summary li {
+  padding: 3px 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.struct__summary li strong {
+  color: var(--text-primary);
+}
+
+.struct__not-configured {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin: 0 0 12px;
+  font-style: italic;
+}
+
+/* Tree editor inside the modal. */
+.struct__tree {
+  margin: 0 0 16px;
+}
+
+.struct__company {
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.struct__company-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg-input);
+  border-bottom: 1px solid var(--border);
+}
+
+.struct__company-header input {
+  flex: 1;
+  font-weight: 600;
+}
+
+.struct__platoons {
+  padding: 6px 10px 6px 24px;
+}
+
+.struct__platoon {
+  margin-bottom: 8px;
+}
+
+.struct__platoon-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.struct__sections {
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.struct__section-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.struct__section-row input {
+  flex: 1;
+}
+
+.struct__add-co,
+.struct__add-plt,
+.struct__add-sec {
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.struct__remove {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.struct__remove:hover {
+  background: rgba(255,107,107,0.12);
+  color: var(--danger);
+  border-color: rgba(255,107,107,0.2);
+}
