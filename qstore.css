@@ -3548,10 +3548,8 @@ details[open] > .help__section-summary::after {
 }
 
 .splash__logo {
-  max-width: 55vw;
-  max-height: 55vh;
-  width: auto;
-  height: auto;
+  width: 60vmin;
+  height: 60vmin;
   object-fit: contain;
   filter: drop-shadow(0 4px 24px rgba(0,0,0,0.6));
 }
