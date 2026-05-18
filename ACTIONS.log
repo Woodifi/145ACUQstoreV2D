@@ -142,6 +142,27 @@ Format: [TIMESTAMP UTC] ACTION — details
   481/481 tests passing.
 
 -------------------------------------------------------------------------------
+
+[2026-05-18T07:38:00Z] GIT COMMIT + PUSH — Company / Platoon / Section unit sub-structure (bad303d)
+  NEW: src/structure.js — load/save/getCompanies/getPlatoons/getSections/companyIndex/
+    platoonIndex/sectionIndex/makeComparator helpers
+  MODIFIED: src/ui/settings.js — Unit sub-structure section: tree editor modal
+    (add/remove companies, platoons, sections); _structureSectionHtml(); configure/clear buttons
+  MODIFIED: src/ui/cadets.js — cascading Company→Platoon→Section dropdowns in add/edit
+    form; group-header <tr>s in table; filter selects cascade; _coFilter/_pltFilterStr/
+    _secFilter state; structure-aware sort via makeComparator; schema fields
+    company/platoon/section stored on save; _doPrintRoll passes structure to PDF;
+    legacy plt field fully compatible
+  MODIFIED: src/pdf.js — generateNominalRoll accepts structure option; grouped layout
+    with bold band rows per section; flat layout preserved when no structure
+  MODIFIED: qstore.css — .cad__group-header styles (gold, uppercase); .cad__col-company/
+    .cad__col-section column widths; struct__* tree editor styles appended
+  MODIFIED: MANUAL.md — §6 Cadets updated with structure description; §9 Settings
+    gains Unit sub-structure subsection
+  MODIFIED: src/ui/help.js — cadets section updated with structure explanation
+  481/481 tests passing.
+
+-------------------------------------------------------------------------------
 END OF LOG — append new entries above this line
 
 [2026-05-13T06:00:00Z] GIT COMMIT + PUSH — per-user PIN lockout (f53d9cc)

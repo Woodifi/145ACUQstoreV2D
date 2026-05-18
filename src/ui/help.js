@@ -190,8 +190,8 @@ const SECTIONS = [
     icon: '🪖',
     body: `
       <h4>Viewing the roll</h4>
-      <p>All logged-in users can view the nominal roll. Search by name or service number. Filter by platoon. Tick <strong>Show inactive</strong> to see deactivated records.</p>
-      <p><strong>Sort order:</strong> Staff always appear first, then cadets. Within each group the list is ordered by rank (highest to lowest), then surname A–Z within the same rank.</p>
+      <p>All logged-in users can view the nominal roll. Search by name or service number. Filter by Company, Platoon, and Section (or by platoon if unit sub-structure is not configured). Tick <strong>Show inactive</strong> to see deactivated records.</p>
+      <p><strong>Sort order:</strong> Staff always appear first, then cadets grouped by Company → Platoon → Section (config order), then rank high-to-low, surname A–Z within each group.</p>
       <table class="help__table">
         <thead><tr><th>Group</th><th>Rank order (high → low)</th></tr></thead>
         <tbody>
@@ -200,10 +200,15 @@ const SECTIONS = [
         </tbody>
       </table>
 
+      <h4>Unit sub-structure (Company / Platoon / Section)</h4>
+      <p>Configure your unit's hierarchy in <strong>Settings → Unit sub-structure</strong>. Once set, the cadet add/edit form shows cascading Company → Platoon → Section dropdowns. The table gains group-band headers between sections, and filter controls cascade. The nominal roll PDF also renders with group bands.</p>
+      <p>Existing records with only a free-text platoon continue to display correctly in legacy mode until re-saved with the new dropdowns.</p>
+
       <h4>Adding a person <span class="help__role">OC / QM</span></h4>
       <ol>
         <li>Click <strong>+ Add cadet/staff</strong></li>
-        <li>Enter service number, surname, given names, rank, and platoon</li>
+        <li>Enter service number, surname, given names, rank</li>
+        <li>Select Company → Platoon → Section (if structure configured) or enter Platoon (if not)</li>
         <li>Person type (cadet or staff) is set automatically from the rank</li>
         <li>Click <strong>Save</strong></li>
       </ol>

@@ -272,14 +272,25 @@ The Cadets page manages the unit's personnel records for both cadets and staff.
 
 ### Viewing the Roll
 
-All logged-in users can view the nominal roll. Search by name or service number, and filter by platoon. Tick **Show inactive** to include deactivated records.
+All logged-in users can view the nominal roll. Search by name or service number, and filter by company, platoon, and section (or by platoon if unit sub-structure is not configured). Tick **Show inactive** to include deactivated records.
 
-**Sort order:** The roll is always sorted by rank (highest to lowest) then surname (A–Z) within each rank. Staff appear above cadets regardless of rank. This applies to the on-screen table and the printed nominal roll PDF.
+**Sort order:** Staff appear first sorted by rank then surname. Cadets follow, grouped by company → platoon → section in the order configured in Settings, then sorted by rank then surname within each group. This applies to the on-screen table and the printed nominal roll PDF.
 
 | Group | Order |
 |-------|-------|
 | Staff | COL-AAC → LTCOL-AAC → MAJ-AAC → CAPT-AAC → LT-AAC → 2LT-AAC → DAH |
 | Cadets | UO → WO1 → WO2 → SSGT → SGT → CPL → LCPL → CDT |
+
+### Unit Sub-Structure (Company / Platoon / Section)
+
+If your unit is organised into companies, platoons, and sections, configure this in **Settings → Unit sub-structure**. Once configured:
+
+- The cadet add/edit form shows cascading **Company → Platoon → Section** dropdowns instead of a free-text platoon field
+- The cadets table displays Company, Platoon, and Section columns and inserts gold band headers between groups
+- Filter controls cascade: selecting a Company reveals its Platoons; selecting a Platoon reveals its Sections
+- The nominal roll PDF renders with group band headings
+
+Existing records that only have a free-text **Plt** value remain fully functional — they display in legacy mode until re-saved with the new dropdowns. No data migration step is required.
 
 ### Adding a Person (OC / QM)
 
@@ -289,7 +300,7 @@ All logged-in users can view the nominal roll. Search by name or service number,
    - **Surname** — automatically uppercased
    - **Given names** — optional
    - **Rank** — type or select from the datalist (supports both staff and cadet ranks)
-   - **Platoon** — e.g., 1, 2, HQ, AIT
+   - **Company / Platoon / Section** — cascading dropdowns (if unit sub-structure is configured) or free-text Platoon field (if not)
    - **Email** — optional
    - **Notes** — optional free text
 3. The **person type** (cadet or staff) is derived automatically from the rank entered
@@ -409,6 +420,19 @@ Configure the information that appears in the app header, on the login screen, a
 | OC/QM email | Contact email |
 | QM rank | QM's rank for signature blocks |
 | Unit logo | Displayed in the header and on the launch splash screen. Upload the highest-resolution version available — stored as lossless PNG up to 1024 × 1024 px. |
+
+### Unit Sub-Structure
+
+Configure the company / platoon / section hierarchy for your unit. Click **Configure structure** to open the tree editor:
+
+1. Click **+ Add company** and type the company name (e.g., *A Coy*)
+2. Under each company, click **+ Add platoon** (e.g., *1 Plt*)
+3. Under each platoon, click **+ Add section** (e.g., *1 Sec*)
+4. Click **Save structure** when done
+
+Use the **×** buttons to remove companies, platoons, or sections. Click **Clear structure** to remove all configuration and revert to legacy free-text platoon entry.
+
+> **Note:** Changing or removing entries in the structure does not alter existing cadet records — the stored company/platoon/section names on each record remain unchanged. Update individual cadet records if you rename a company or platoon.
 
 ### User Accounts
 
