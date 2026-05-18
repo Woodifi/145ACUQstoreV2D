@@ -25,6 +25,7 @@
 import * as Storage from '../storage.js';
 import * as AUTH    from '../auth.js';
 import { esc, $, $$, render, fmtDate } from './util.js';
+import { showToast } from './toast.js';
 
 // -----------------------------------------------------------------------------
 // Constants
@@ -82,11 +83,12 @@ const ACTION_CATEGORY = Object.freeze({
 // Module state
 // -----------------------------------------------------------------------------
 
-let _root        = null;
-let _filter      = 'all';        // action key or 'all'
-let _search      = '';
-let _renderLimit = PAGE_SIZE;    // pagination cursor — grows on "Load more"
-let _verifyState = null;         // { ok, count, brokenAt?, reason? } | null
+let _root          = null;
+let _filter        = 'all';        // action key or 'all'
+let _search        = '';
+let _renderLimit   = PAGE_SIZE;    // pagination cursor — grows on "Load more"
+let _verifyState   = null;         // { ok, count, brokenAt?, reason? } | null
+let _filteredRows  = [];           // current filtered set — used by export
 
 // -----------------------------------------------------------------------------
 // Mount
@@ -134,6 +136,7 @@ async function _render() {
       (r.user   || '').toLowerCase().includes(q) ||
       (r.action || '').toLowerCase().includes(q));
   }
+  _filteredRows     = filtered;          // stash for export
   const filteredLen = filtered.length;
   const visible     = filtered.slice(0, _renderLimit);
 
@@ -154,6 +157,14 @@ async function _render() {
           </select>
         </div>
         <div class="aud__actions">
+          <button type="button" class="btn btn--ghost" data-action="export-csv"
+                  title="Download currently-filtered entries as CSV">
+            ⬇ Export CSV
+          </button>
+          <button type="button" class="btn btn--ghost" data-action="export-json"
+                  title="Download currently-filtered entries as JSON">
+            ⬇ Export JSON
+          </button>
           <button type="button" class="btn btn--ghost" data-action="verify-chain">
             Verify chain integrity
           </button>
@@ -273,9 +284,64 @@ async function _onRootClick(e) {
   const action = e.target.closest('[data-action]')?.dataset.action;
   if (!action) return;
   switch (action) {
+    case 'export-csv':   await _doExportCsv(); break;
+    case 'export-json':  await _doExportJson(); break;
     case 'verify-chain': await _doVerify(e.target.closest('button')); break;
     case 'load-more':    _renderLimit += PAGE_SIZE; await _render(); break;
   }
+}
+
+async function _doExportCsv() {
+  if (_filteredRows.length === 0) { showToast('No entries to export.', 'info'); return; }
+  const header = ['seq', 'timestamp', 'action', 'action_label', 'user', 'description'];
+  const rows = _filteredRows.map((r) => [
+    r.seq,
+    r.ts || '',
+    r.action || '',
+    ACTION_LABELS[r.action] || r.action || '',
+    r.user || '',
+    r.desc || '',
+  ].map(_csvCell).join(','));
+  const csv = [header.join(','), ...rows].join('\r\n');
+  const settings = await Storage.settings.getAll();
+  const code = (settings.unitCode || 'qstore').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+  const date = new Date().toISOString().slice(0, 10);
+  _download(csv, `qstore-audit-${code}-${date}.csv`, 'text/csv');
+  showToast(`Exported ${_filteredRows.length} audit entries as CSV.`, 'success');
+}
+
+async function _doExportJson() {
+  if (_filteredRows.length === 0) { showToast('No entries to export.', 'info'); return; }
+  const data = _filteredRows.map((r) => ({
+    seq:          r.seq,
+    timestamp:    r.ts || '',
+    action:       r.action || '',
+    action_label: ACTION_LABELS[r.action] || r.action || '',
+    user:         r.user || '',
+    description:  r.desc || '',
+  }));
+  const settings = await Storage.settings.getAll();
+  const code = (settings.unitCode || 'qstore').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+  const date = new Date().toISOString().slice(0, 10);
+  _download(JSON.stringify(data, null, 2), `qstore-audit-${code}-${date}.json`, 'application/json');
+  showToast(`Exported ${_filteredRows.length} audit entries as JSON.`, 'success');
+}
+
+function _csvCell(val) {
+  const s = String(val ?? '');
+  return /[,"\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function _download(content, filename, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
 async function _doVerify(button) {

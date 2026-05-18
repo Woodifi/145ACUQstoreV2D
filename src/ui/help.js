@@ -209,6 +209,9 @@ const SECTIONS = [
       <p>Each entry shows: sequence number, timestamp, action type, user, and description.</p>
       <p>The log is cryptographically chained — click <strong>Verify chain</strong> to confirm no entries have been tampered with.</p>
 
+      <h4>Exporting the log <span class="help__role">OC / QM</span></h4>
+      <p>Use <strong>⬇ Export CSV</strong> or <strong>⬇ Export JSON</strong> to download the currently-filtered entries. Apply a search or action filter first to narrow the export. The filename includes your unit code and today's date.</p>
+
       <h4>Common action types</h4>
       <table class="help__table">
         <thead><tr><th>Action</th><th>Meaning</th></tr></thead>

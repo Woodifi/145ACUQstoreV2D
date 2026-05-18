@@ -311,6 +311,15 @@ Each entry shows:
 - User who performed the action
 - Description
 
+### Exporting the Audit Log (OC / QM)
+
+The currently-filtered entries can be exported for external records or archiving:
+
+- **⬇ Export CSV** — downloads a `.csv` file compatible with Excel and other spreadsheets
+- **⬇ Export JSON** — downloads a `.json` file for programmatic processing
+
+Both exports honour the active search and action filter — use filters to narrow to a date range or action type before exporting. The filename includes the unit code and today's date (e.g., `qstore-audit-145acu-2026-05-18.csv`).
+
 ### Action Types
 
 | Action | Meaning |
