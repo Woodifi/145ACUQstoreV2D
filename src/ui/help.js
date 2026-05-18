@@ -218,15 +218,25 @@ const SECTIONS = [
     icon: '🔢',
     body: `
       <h4>Running a stocktake <span class="help__role">OC / QM</span></h4>
+      <p>Each item has <strong>three count columns</strong> for condition breakdown:</p>
+      <table class="help__table">
+        <thead><tr><th>Column</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Svc</strong></td><td>Serviceable — good working order</td></tr>
+          <tr><td><strong>U/S</strong></td><td>Unserviceable — damaged or non-functional, awaiting repair</td></tr>
+          <tr><td><strong>W/O</strong></td><td>Written off — beyond repair, pending Board of Survey (AB174)</td></tr>
+        </tbody>
+      </table>
       <ol>
-        <li>Go to <strong>Stocktake</strong> and click <strong>Start new stocktake</strong></li>
-        <li>Work through items — enter the physical count for each one</li>
-        <li>Optionally override the condition or add notes per item</li>
+        <li>Go to <strong>Stocktake</strong> and enter counts for each item's condition columns</li>
+        <li>The <strong>Total</strong> cell sums Svc + U/S + W/O automatically; <strong>Variance</strong> compares it to the system quantity</li>
+        <li>Optionally override the condition override or add notes per item</li>
         <li>Use the category filter to work section by section</li>
         <li>Drafts save automatically — you can leave and return</li>
-        <li>When done, click <strong>Finalise stocktake</strong> and confirm</li>
+        <li>When done, click <strong>Finalise stocktake</strong> and review the breakdown before confirming</li>
       </ol>
-      <p>On-hand quantities are updated to match physical counts. Discrepancies are recorded in the audit log. A PDF report is available after finalising.</p>
+      <p>On finalise: <strong>On hand</strong> ← total; <strong>Unserviceable</strong> ← U/S count; <strong>Written off</strong> ← W/O count. Write-off items generate a separate <code>stocktake_writeoff</code> audit entry.</p>
+      <p class="help__note">Written-off items must be formally struck off charge via Board of Survey (AB174). The system records them but does not process the write-off automatically.</p>
       <p class="help__warn">Finalising is irreversible. Check all counts before confirming.</p>
     `,
   },

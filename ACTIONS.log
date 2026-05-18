@@ -127,6 +127,21 @@ Format: [TIMESTAMP UTC] ACTION — details
   481/481 tests passing.
 
 -------------------------------------------------------------------------------
+
+[2026-05-18T07:08:00Z] GIT COMMIT + PUSH — stocktake condition breakdown (5e94fb4)
+  MODIFIED: src/ui/stocktake.js — single 'Counted' input replaced with Svc/U/S/W/O columns
+    - _readBreakdown() helper reads all 3 inputs per row
+    - Total and Variance cells update live on input
+    - _doFinalise: updates item.onHand (total), item.unsvc (U/S), item.writtenOff (new)
+    - Write-off items get stocktake_writeoff audit entry (separate from stocktake_adjust)
+    - Legacy draft rows (count only) treated as svc=counted, uns/wof=0
+  MODIFIED: src/pdf.js — stocktake report: added Svc/U/S/W/O/Total columns; write-off count in subtitle
+  MODIFIED: src/ui/audit.js — stocktake_writeoff label/badge added
+  MODIFIED: qstore.css — stk__col-total, stk__count-svc/uns/wof styles
+  MANUAL.md §7, help.js stocktake section updated
+  481/481 tests passing.
+
+-------------------------------------------------------------------------------
 END OF LOG — append new entries above this line
 
 [2026-05-13T06:00:00Z] GIT COMMIT + PUSH — per-user PIN lockout (f53d9cc)
