@@ -250,3 +250,13 @@ END OF LOG — append new entries above this line
   Build: 20260518-B4BDAEEC  Bundle: 1736.0 KB  Tests: 42/42 (PDF)
   Commit: 581fa71  →  master
   GitHub Pages updated: https://woodifi.github.io (docs/index.html)
+
+[2026-05-18T13:52:45Z] GIT COMMIT + PUSH — inventory condition breakdown
+  feat: full condition breakdown on inventory items
+  src/ui/inventory.js — 5-field breakdown form (Svc/U/S/Repr/Cal/W/O), _seedBreakdown
+    for legacy items, live total validation, breakdown text in table rows
+  src/ui/stocktake.js — finalize now writes breakdown fields to items
+  src/pdf.js          — stock report Condition column replaces Unsvc
+  qstore.css          — breakdown section, bd-label colour chips, bd-total states
+  Build: 20260518-CD24C150  Bundle: 1743.6 KB  Tests: 42/42
+  Commit: 6bee5dc  →  master
