@@ -143,6 +143,17 @@ Format: [TIMESTAMP UTC] ACTION — details
 
 -------------------------------------------------------------------------------
 
+[2026-05-18T08:27:00Z] GIT COMMIT + PUSH — remove redundant stocktake condition column (ca85969)
+  MODIFIED: src/ui/stocktake.js — removed Condition <th>/<td>; removed _onConditionChange;
+    removed condition field from _onCountChange/_onNotesChange storage writes; condition
+    now derived from breakdown on finalise (W/O>Repr>Cal>U/S>Svc priority); removed
+    unused CONDITIONS import; added stk__table-wrap scroll container
+  MODIFIED: qstore.css — .stk__table-wrap (overflow-x: auto); stk__table min-width 900px;
+    stk__col-num 52→60px; stk__col-count 48→50px; stk__col-notes 150→160px;
+    removed .stk__col-cond, .stk__cond, .stk__cond--orphan
+  MANUAL.md §7: condition line updated; derivation rule documented
+  481/481 tests passing.
+
 [2026-05-18T07:57:00Z] GIT COMMIT + PUSH — stocktake 5-condition breakdown (6733389)
   MODIFIED: src/ui/stocktake.js — added Repr (In Repair) and Cal (Calibration Due) qty
     count inputs; _readBreakdown() now reads all 5 fields; _onCountInput sums all 5;

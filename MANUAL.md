@@ -332,7 +332,7 @@ The Stocktake page guides you through a physical count of all Q-Store items.
 | Written Off | W/O | Items beyond economic repair; pending formal Board of Survey |
 
 3. The **Total** column shows the sum of all five columns automatically. **Variance** compares Total to the system's on-hand quantity
-4. Optionally override the item's **condition** classification (the dropdown reflects the same five states) and add **notes**
+4. Optionally add **notes** per item (condition is derived automatically from the counts — see Finalising below)
 5. The live summary shows: counted, matching, discrepancies, and missing items
 6. Use the category filter to work through one section at a time
 7. Drafts save automatically — you can leave and return without losing progress
@@ -347,6 +347,7 @@ The Stocktake page guides you through a physical count of all Q-Store items.
    - **On hand** ← total (Svc + U/S + Repr + Cal + W/O)
    - **Unserviceable** ← U/S + Repr + Cal (all items not ready for issue)
    - **Written off** ← W/O count (tracked for follow-up Board of Survey)
+   - **Condition** ← derived automatically from the highest-severity count present (W/O > Repr > Cal > U/S > Svc)
 4. Each discrepancy is recorded in the audit log with a full condition breakdown
 5. Write-off items get a separate `stocktake_writeoff` audit entry flagging them for formal action
 6. A stocktake report PDF (with all five condition columns) is available
