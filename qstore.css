@@ -2904,7 +2904,7 @@ input {
 
 .stk__col-cat   { width: 90px; }
 .stk__col-num   { width: 52px; }
-.stk__col-count { width: 58px; }   /* Svc / U/S / W/O — 3 narrow cols */
+.stk__col-count { width: 48px; }   /* Svc / U/S / Repr / Cal / W/O — 5 narrow cols */
 .stk__col-total { width: 52px; font-weight: 600; }
 .stk__col-var   { width: 62px; font-weight: 600; }
 .stk__col-cond  { width: 120px; }
@@ -2918,6 +2918,8 @@ input {
 
 .stk__count-svc,
 .stk__count-uns,
+.stk__count-repr,
+.stk__count-cal,
 .stk__count-wof,
 .stk__cond,
 .stk__notes {
@@ -2946,8 +2948,16 @@ input {
 
 .stk__count-svc,
 .stk__count-uns,
+.stk__count-repr,
+.stk__count-cal,
 .stk__count-wof {
   text-align: right;
+}
+
+/* In-repair and calibration-due inputs get a subtle amber tint when filled */
+.stk__count-repr:not([value=""]):not([value="0"]):not([placeholder]),
+.stk__count-cal:not([value=""]):not([value="0"]):not([placeholder]) {
+  color: var(--warn);
 }
 
 /* Written-off input gets a subtle red tint when filled */
@@ -2968,6 +2978,8 @@ input {
 .stk__count:focus,
 .stk__count-svc:focus,
 .stk__count-uns:focus,
+.stk__count-repr:focus,
+.stk__count-cal:focus,
 .stk__count-wof:focus,
 .stk__cond:focus,
 .stk__notes:focus {

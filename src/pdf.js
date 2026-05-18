@@ -709,15 +709,16 @@ export async function generateStocktakeReport(session, opts = {}) {
   const { rows, counts, finalisedAt, finalisedBy } = session;
 
   const COLS = [
-    { x: PAGE.MARGIN + 2,   w: 26, label: 'NSN',      get: (r) => r.item.nsn || '' },
-    { x: PAGE.MARGIN + 30,  w: 50, label: 'Item',     get: (r) => r.item.name || '' },
-    { x: PAGE.MARGIN + 82,  w: 13, label: 'System',   get: (r) => String(r.item.onHand  || 0), align: 'right' },
-    { x: PAGE.MARGIN + 97,  w: 11, label: 'Svc',      get: (r) => String(r.stk.qtyServiceable   != null ? r.stk.qtyServiceable   : r.stk.counted), align: 'right' },
-    { x: PAGE.MARGIN + 110, w: 11, label: 'U/S',      get: (r) => String(r.stk.qtyUnserviceable != null ? r.stk.qtyUnserviceable  : 0),             align: 'right' },
-    { x: PAGE.MARGIN + 123, w: 11, label: 'W/O',      get: (r) => String(r.stk.qtyWrittenOff    != null ? r.stk.qtyWrittenOff     : 0),             align: 'right' },
-    { x: PAGE.MARGIN + 136, w: 12, label: 'Total',    get: (r) => String(r.stk.counted),                                                            align: 'right' },
-    { x: PAGE.MARGIN + 150, w: 12, label: 'Var.',     get: (r) => (r.variance >= 0 ? '+' : '') + r.variance,                                        align: 'right' },
-    { x: PAGE.MARGIN + 164, w: 26, label: 'Notes',    get: (r) => r.stk.notes || '' },
+    { x: PAGE.MARGIN + 2,   w: 24, label: 'NSN',    get: (r) => r.item.nsn || '' },
+    { x: PAGE.MARGIN + 28,  w: 44, label: 'Item',   get: (r) => r.item.name || '' },
+    { x: PAGE.MARGIN + 74,  w: 12, label: 'System', get: (r) => String(r.item.onHand || 0),                                                                         align: 'right' },
+    { x: PAGE.MARGIN + 88,  w: 10, label: 'Svc',    get: (r) => String(r.stk.qtyServiceable    != null ? r.stk.qtyServiceable    : r.stk.counted),                  align: 'right' },
+    { x: PAGE.MARGIN + 100, w: 10, label: 'U/S',    get: (r) => String(r.stk.qtyUnserviceable  != null ? r.stk.qtyUnserviceable  : 0),                              align: 'right' },
+    { x: PAGE.MARGIN + 112, w: 10, label: 'Repr',   get: (r) => String(r.stk.qtyRepair         != null ? r.stk.qtyRepair         : 0),                              align: 'right' },
+    { x: PAGE.MARGIN + 124, w: 10, label: 'Cal',    get: (r) => String(r.stk.qtyCalibrationDue != null ? r.stk.qtyCalibrationDue : 0),                              align: 'right' },
+    { x: PAGE.MARGIN + 136, w: 10, label: 'W/O',    get: (r) => String(r.stk.qtyWrittenOff     != null ? r.stk.qtyWrittenOff     : 0),                              align: 'right' },
+    { x: PAGE.MARGIN + 148, w: 10, label: 'Total',  get: (r) => String(r.stk.counted),                                                                              align: 'right' },
+    { x: PAGE.MARGIN + 160, w: 10, label: 'Var.',   get: (r) => (r.variance >= 0 ? '+' : '') + r.variance,                                                          align: 'right' },
   ];
 
   const subtitle = `${counts.total} counted · ${counts.match} match, ${counts.over} over, ${counts.short} short` +

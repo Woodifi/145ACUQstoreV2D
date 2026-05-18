@@ -20,17 +20,20 @@
 //      - Offer to generate the stocktake report PDF.
 //
 // CONDITION BREAKDOWN SCHEMA (Storage.stocktake row)
-//   The storage row carries:
-//     counted          — total physical count (svc + uns + wof), for compat
-//     qtyServiceable   — serviceable count
-//     qtyUnserviceable — unserviceable count
-//     qtyWrittenOff    — written-off count (pending board of survey)
-//   Legacy draft rows (without breakdown) default to svc = counted, uns/wof = 0.
+//   Mirrors the five canonical conditions in conditions.js:
+//     counted              — total physical count (sum of all five), for compat
+//     qtyServiceable       — serviceable
+//     qtyUnserviceable     — unserviceable (damaged / non-functional)
+//     qtyRepair            — in repair (temporarily unserviceable)
+//     qtyCalibrationDue    — calibration due (cannot be issued until calibrated)
+//     qtyWrittenOff        — written-off (beyond repair, pending board of survey)
+//   Legacy draft rows (without breakdown) default to svc = counted, rest = 0.
 //
 // ITEM FIELD UPDATES ON FINALISE
-//   onHand     ← qtyServiceable + qtyUnserviceable + qtyWrittenOff (total)
-//   unsvc      ← qtyUnserviceable   (existing field)
-//   writtenOff ← qtyWrittenOff      (new field, pending formal striking)
+//   onHand     ← sum of all five qty fields (total physical count)
+//   unsvc      ← qtyUnserviceable + qtyRepair + qtyCalibrationDue
+//                (all items not currently ready for issue)
+//   writtenOff ← qtyWrittenOff      (pending formal board of survey striking)
 //
 // WHAT THIS DOESN'T DO (deliberate)
 //   - No multi-stage QM / CO sign-off workflow. The audit log is the
@@ -190,6 +193,8 @@ function _tableHtml(items) {
           <th class="stk__col-num">On loan</th>
           <th class="stk__col-count" title="Serviceable — items in good working order">Svc</th>
           <th class="stk__col-count" title="Unserviceable — damaged or non-functional, awaiting repair">U/S</th>
+          <th class="stk__col-count" title="In repair — temporarily unserviceable, currently being repaired">Repr</th>
+          <th class="stk__col-count" title="Calibration due — must be calibrated before issue">Cal</th>
           <th class="stk__col-count" title="Written off — beyond economic repair, pending board of survey">W/O</th>
           <th class="stk__col-total">Total</th>
           <th class="stk__col-var">Variance</th>
@@ -212,17 +217,20 @@ function _itemRowHtml(item, canEdit) {
   const onLoan  = Number(item.onLoan) || 0;
   const authQty = Number(item.authQty) || 0;
 
-  // Condition breakdown — default legacy rows to: svc = counted, uns/wof = 0.
+  // Condition breakdown — default legacy rows to: svc = counted, rest = 0.
   const qtyS = stk
-    ? (stk.qtyServiceable   != null ? stk.qtyServiceable   : stk.counted ?? '')
+    ? (stk.qtyServiceable    != null ? stk.qtyServiceable    : stk.counted ?? '')
     : '';
-  const qtyU = stk ? (stk.qtyUnserviceable ?? 0) : '';
-  const qtyW = stk ? (stk.qtyWrittenOff    ?? 0) : '';
+  const qtyU = stk ? (stk.qtyUnserviceable  ?? 0) : '';
+  const qtyR = stk ? (stk.qtyRepair         ?? 0) : '';
+  const qtyC = stk ? (stk.qtyCalibrationDue ?? 0) : '';
+  const qtyW = stk ? (stk.qtyWrittenOff     ?? 0) : '';
 
   // Total — only compute when at least one field has a value.
   const hasCount = stk != null;
   const total    = hasCount
-    ? (Number(qtyS) || 0) + (Number(qtyU) || 0) + (Number(qtyW) || 0)
+    ? (Number(qtyS) || 0) + (Number(qtyU) || 0) + (Number(qtyR) || 0) +
+      (Number(qtyC) || 0) + (Number(qtyW) || 0)
     : null;
 
   const variance = total == null ? null : total - sys;
@@ -258,6 +266,24 @@ function _itemRowHtml(item, canEdit) {
                data-field="qty-uns"
                ${canEdit ? '' : 'disabled'}
                aria-label="Unserviceable count">
+      </td>
+      <td class="stk__col-count">
+        <input type="number" min="0" inputmode="numeric"
+               class="stk__count-repr"
+               value="${hasCount ? esc(String(qtyR)) : ''}"
+               placeholder="—"
+               data-field="qty-repr"
+               ${canEdit ? '' : 'disabled'}
+               aria-label="In-repair count">
+      </td>
+      <td class="stk__col-count">
+        <input type="number" min="0" inputmode="numeric"
+               class="stk__count-cal"
+               value="${hasCount ? esc(String(qtyC)) : ''}"
+               placeholder="—"
+               data-field="qty-cal"
+               ${canEdit ? '' : 'disabled'}
+               aria-label="Calibration-due count">
       </td>
       <td class="stk__col-count">
         <input type="number" min="0" inputmode="numeric"
@@ -315,7 +341,7 @@ function _wire() {
   // For the three count inputs (Svc / U/S / W/O) we ALSO listen to input
   // so the Total and Variance cells update visually as the user types —
   // but we only persist on blur.
-  const countFields = ['qty-svc', 'qty-uns', 'qty-wof'];
+  const countFields = ['qty-svc', 'qty-uns', 'qty-repr', 'qty-cal', 'qty-wof'];
   for (const field of countFields) {
     $$(`input[data-field="${field}"]`, _root).forEach((input) => {
       input.addEventListener('input',  _onCountInput);
@@ -336,20 +362,21 @@ function _wire() {
 // Per-row event handlers
 // -----------------------------------------------------------------------------
 
-// Helper: read all three count inputs from a row and return their numeric values.
+// Helper: read all five condition count inputs from a row and return their
+// numeric values. Mirrors the five entries in CONDITIONS (conditions.js).
 function _readBreakdown(row) {
-  const svcInput = row.querySelector('input[data-field="qty-svc"]');
-  const unsInput = row.querySelector('input[data-field="qty-uns"]');
-  const wofInput = row.querySelector('input[data-field="qty-wof"]');
-  const svc = svcInput?.value.trim() ?? '';
-  const uns = unsInput?.value.trim() ?? '';
-  const wof = wofInput?.value.trim() ?? '';
+  const svc  = row.querySelector('input[data-field="qty-svc"]')?.value.trim()  ?? '';
+  const uns  = row.querySelector('input[data-field="qty-uns"]')?.value.trim()  ?? '';
+  const repr = row.querySelector('input[data-field="qty-repr"]')?.value.trim() ?? '';
+  const cal  = row.querySelector('input[data-field="qty-cal"]')?.value.trim()  ?? '';
+  const wof  = row.querySelector('input[data-field="qty-wof"]')?.value.trim()  ?? '';
   return {
-    svcRaw: svc, unsRaw: uns, wofRaw: wof,
-    allEmpty: svc === '' && uns === '' && wof === '',
-    qtyServiceable:   svc === '' ? 0 : Math.max(0, Number(svc) || 0),
-    qtyUnserviceable: uns === '' ? 0 : Math.max(0, Number(uns) || 0),
-    qtyWrittenOff:    wof === '' ? 0 : Math.max(0, Number(wof) || 0),
+    allEmpty: svc === '' && uns === '' && repr === '' && cal === '' && wof === '',
+    qtyServiceable:    svc  === '' ? 0 : Math.max(0, Number(svc)  || 0),
+    qtyUnserviceable:  uns  === '' ? 0 : Math.max(0, Number(uns)  || 0),
+    qtyRepair:         repr === '' ? 0 : Math.max(0, Number(repr) || 0),
+    qtyCalibrationDue: cal  === '' ? 0 : Math.max(0, Number(cal)  || 0),
+    qtyWrittenOff:     wof  === '' ? 0 : Math.max(0, Number(wof)  || 0),
   };
 }
 
@@ -368,7 +395,8 @@ function _onCountInput(e) {
     return;
   }
 
-  const total = bd.qtyServiceable + bd.qtyUnserviceable + bd.qtyWrittenOff;
+  const total = bd.qtyServiceable + bd.qtyUnserviceable + bd.qtyRepair +
+                bd.qtyCalibrationDue + bd.qtyWrittenOff;
   const v     = total - sys;
   if (totalCell) totalCell.textContent = String(total);
   if (varCell)   {
@@ -397,25 +425,30 @@ async function _onCountChange(e) {
   // Clear any invalid markers.
   row.querySelectorAll('.stk__count--invalid').forEach((el) => el.classList.remove('stk__count--invalid'));
 
-  const total    = bd.qtyServiceable + bd.qtyUnserviceable + bd.qtyWrittenOff;
+  const total    = bd.qtyServiceable + bd.qtyUnserviceable + bd.qtyRepair +
+                   bd.qtyCalibrationDue + bd.qtyWrittenOff;
   const existing = _countsByItem.get(itemId) || {};
 
   await Storage.stocktake.set(itemId, total, {
-    countedBy:        AUTH.getSession()?.name || 'unknown',
-    condition:        existing.condition || null,
-    notes:            existing.notes || '',
-    qtyServiceable:   bd.qtyServiceable,
-    qtyUnserviceable: bd.qtyUnserviceable,
-    qtyWrittenOff:    bd.qtyWrittenOff,
+    countedBy:         AUTH.getSession()?.name || 'unknown',
+    condition:         existing.condition || null,
+    notes:             existing.notes || '',
+    qtyServiceable:    bd.qtyServiceable,
+    qtyUnserviceable:  bd.qtyUnserviceable,
+    qtyRepair:         bd.qtyRepair,
+    qtyCalibrationDue: bd.qtyCalibrationDue,
+    qtyWrittenOff:     bd.qtyWrittenOff,
   });
 
   _countsByItem.set(itemId, {
     ...existing,
     itemId,
-    counted:          total,
-    qtyServiceable:   bd.qtyServiceable,
-    qtyUnserviceable: bd.qtyUnserviceable,
-    qtyWrittenOff:    bd.qtyWrittenOff,
+    counted:           total,
+    qtyServiceable:    bd.qtyServiceable,
+    qtyUnserviceable:  bd.qtyUnserviceable,
+    qtyRepair:         bd.qtyRepair,
+    qtyCalibrationDue: bd.qtyCalibrationDue,
+    qtyWrittenOff:     bd.qtyWrittenOff,
     countedAt: new Date().toISOString(),
   });
   await _refreshChrome();
@@ -438,12 +471,14 @@ async function _onConditionChange(e) {
   }
   sel.classList.remove('stk__cond--orphan');
   await Storage.stocktake.set(itemId, existing.counted, {
-    countedBy:        AUTH.getSession()?.name || 'unknown',
-    condition:        sel.value,
-    notes:            existing.notes || '',
-    qtyServiceable:   existing.qtyServiceable   ?? existing.counted ?? 0,
-    qtyUnserviceable: existing.qtyUnserviceable  ?? 0,
-    qtyWrittenOff:    existing.qtyWrittenOff     ?? 0,
+    countedBy:         AUTH.getSession()?.name || 'unknown',
+    condition:         sel.value,
+    notes:             existing.notes || '',
+    qtyServiceable:    existing.qtyServiceable    ?? existing.counted ?? 0,
+    qtyUnserviceable:  existing.qtyUnserviceable   ?? 0,
+    qtyRepair:         existing.qtyRepair          ?? 0,
+    qtyCalibrationDue: existing.qtyCalibrationDue  ?? 0,
+    qtyWrittenOff:     existing.qtyWrittenOff      ?? 0,
   });
   existing.condition = sel.value;
   Sync.notifyChanged();
@@ -457,12 +492,14 @@ async function _onNotesChange(e) {
   const existing = _countsByItem.get(itemId);
   if (!existing) return;  // Notes without a count are lost — no orphan UI needed.
   await Storage.stocktake.set(itemId, existing.counted, {
-    countedBy:        AUTH.getSession()?.name || 'unknown',
-    condition:        existing.condition || null,
-    notes:            input.value,
-    qtyServiceable:   existing.qtyServiceable   ?? existing.counted ?? 0,
-    qtyUnserviceable: existing.qtyUnserviceable  ?? 0,
-    qtyWrittenOff:    existing.qtyWrittenOff     ?? 0,
+    countedBy:         AUTH.getSession()?.name || 'unknown',
+    condition:         existing.condition || null,
+    notes:             input.value,
+    qtyServiceable:    existing.qtyServiceable    ?? existing.counted ?? 0,
+    qtyUnserviceable:  existing.qtyUnserviceable   ?? 0,
+    qtyRepair:         existing.qtyRepair          ?? 0,
+    qtyCalibrationDue: existing.qtyCalibrationDue  ?? 0,
+    qtyWrittenOff:     existing.qtyWrittenOff      ?? 0,
   });
   existing.notes = input.value;
   Sync.notifyChanged();
@@ -589,14 +626,16 @@ async function _onFinalise() {
           <summary>${overs.length + shorts.length} discrepanc${overs.length + shorts.length === 1 ? 'y' : 'ies'} — review</summary>
           <table class="stk__finalise-table">
             <thead>
-              <tr><th>Item</th><th>System</th><th>Svc</th><th>U/S</th><th>W/O</th><th>Total</th><th>Variance</th></tr>
+              <tr><th>Item</th><th>System</th><th>Svc</th><th>U/S</th><th>Repr</th><th>Cal</th><th>W/O</th><th>Total</th><th>Variance</th></tr>
             </thead>
             <tbody>
               ${[...overs, ...shorts].map(({ item, stk, v }) => {
-                const qtyS = stk.qtyServiceable   != null ? Number(stk.qtyServiceable)   : Number(stk.counted) || 0;
-                const qtyU = stk.qtyUnserviceable != null ? Number(stk.qtyUnserviceable)  : 0;
-                const qtyW = stk.qtyWrittenOff    != null ? Number(stk.qtyWrittenOff)     : 0;
-                const total = qtyS + qtyU + qtyW;
+                const qtyS = stk.qtyServiceable    != null ? Number(stk.qtyServiceable)    : Number(stk.counted) || 0;
+                const qtyU = stk.qtyUnserviceable  != null ? Number(stk.qtyUnserviceable)  : 0;
+                const qtyR = stk.qtyRepair         != null ? Number(stk.qtyRepair)         : 0;
+                const qtyC = stk.qtyCalibrationDue != null ? Number(stk.qtyCalibrationDue) : 0;
+                const qtyW = stk.qtyWrittenOff     != null ? Number(stk.qtyWrittenOff)     : 0;
+                const total = qtyS + qtyU + qtyR + qtyC + qtyW;
                 const variance = total - (Number(item.onHand) || 0);
                 return `
                   <tr>
@@ -604,6 +643,8 @@ async function _onFinalise() {
                     <td>${item.onHand || 0}</td>
                     <td>${qtyS}</td>
                     <td>${qtyU || '—'}</td>
+                    <td>${qtyR || '—'}</td>
+                    <td>${qtyC || '—'}</td>
                     <td>${qtyW > 0 ? `<strong>${qtyW}</strong>` : '—'}</td>
                     <td>${total}</td>
                     <td class="${variance > 0 ? 'stk__var--over' : 'stk__var--short'}">${variance > 0 ? '+' : ''}${variance}</td>
@@ -652,15 +693,18 @@ async function _doFinalise(matches, overs, shorts, itemsById) {
   // 1. Apply each counted item: update onHand, unsvc, writtenOff + condition.
   for (const { item, stk, v } of [...matches, ...overs, ...shorts]) {
     // Breakdown fields — support legacy draft rows that only have `counted`.
-    const qtyS = stk.qtyServiceable   != null ? Number(stk.qtyServiceable)   : Number(stk.counted) || 0;
-    const qtyU = stk.qtyUnserviceable != null ? Number(stk.qtyUnserviceable)  : 0;
-    const qtyW = stk.qtyWrittenOff    != null ? Number(stk.qtyWrittenOff)     : 0;
-    const total = qtyS + qtyU + qtyW;
+    const qtyS = stk.qtyServiceable    != null ? Number(stk.qtyServiceable)    : Number(stk.counted) || 0;
+    const qtyU = stk.qtyUnserviceable  != null ? Number(stk.qtyUnserviceable)  : 0;
+    const qtyR = stk.qtyRepair         != null ? Number(stk.qtyRepair)         : 0;
+    const qtyC = stk.qtyCalibrationDue != null ? Number(stk.qtyCalibrationDue) : 0;
+    const qtyW = stk.qtyWrittenOff     != null ? Number(stk.qtyWrittenOff)     : 0;
+    const total = qtyS + qtyU + qtyR + qtyC + qtyW;
 
     const updated = {
       ...item,
       onHand:         Math.max(0, total),
-      unsvc:          Math.max(0, qtyU),
+      // unsvc = all items not ready for issue: U/S + In Repair + Cal Due
+      unsvc:          Math.max(0, qtyU + qtyR + qtyC),
       writtenOff:     Math.max(0, qtyW),
       condition:      stk.condition || item.condition,
       lastStocktakeAt: finalisedAt,
@@ -671,10 +715,13 @@ async function _doFinalise(matches, overs, shorts, itemsById) {
     // Audit per-discrepancy. Matches rolled up in summary.
     const variance = total - (Number(item.onHand) || 0);
     if (variance !== 0) {
-      let condBreakdown = '';
-      if (qtyU > 0 || qtyW > 0) {
-        condBreakdown = ` [Svc:${qtyS} U/S:${qtyU} W/O:${qtyW}]`;
-      }
+      const parts = [];
+      if (qtyS > 0) parts.push(`Svc:${qtyS}`);
+      if (qtyU > 0) parts.push(`U/S:${qtyU}`);
+      if (qtyR > 0) parts.push(`Repr:${qtyR}`);
+      if (qtyC > 0) parts.push(`Cal:${qtyC}`);
+      if (qtyW > 0) parts.push(`W/O:${qtyW}`);
+      const condBreakdown = parts.length > 1 ? ` [${parts.join(' ')}]` : '';
       await Storage.audit.append({
         action: 'stocktake_adjust',
         user:   userName,
@@ -698,7 +745,11 @@ async function _doFinalise(matches, overs, shorts, itemsById) {
       });
     }
 
-    reportRows.push({ item: updated, stk: { ...stk, qtyServiceable: qtyS, qtyUnserviceable: qtyU, qtyWrittenOff: qtyW, counted: total }, variance });
+    reportRows.push({
+      item: updated,
+      stk:  { ...stk, qtyServiceable: qtyS, qtyUnserviceable: qtyU, qtyRepair: qtyR, qtyCalibrationDue: qtyC, qtyWrittenOff: qtyW, counted: total },
+      variance,
+    });
   }
 
   // 2. One summary audit entry.
