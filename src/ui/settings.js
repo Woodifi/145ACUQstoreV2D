@@ -385,18 +385,27 @@ async function _onManageCategories() {
   // Draft is a mutable copy.
   let draft = [...current];
 
+  // Build the <ul> contents only — the scroll container is persistent in the DOM.
   function buildListHtml(d) {
     if (d.length === 0) {
-      return `<p class="settings__section-hint">No categories — add one below.</p>`;
+      return `<p class="settings__section-hint" style="padding:8px 12px;margin:0">
+        No categories — add one below.
+      </p>`;
     }
     return `<ul class="cat__editor-list">` +
       d.map((c, i) => `
-        <li class="cat__editor-item" data-idx="${i}">
+        <li class="cat__editor-item" data-idx="${i}" draggable="true">
+          <span class="cat__editor-drag-handle" title="Drag to reorder" aria-hidden="true">⠿</span>
           <span class="cat__editor-name">${esc(c)}</span>
           <div class="cat__editor-btns">
-            <button type="button" class="btn btn--ghost btn--sm" data-cat-action="up"   data-idx="${i}" ${i === 0 ? 'disabled' : ''}>↑</button>
-            <button type="button" class="btn btn--ghost btn--sm" data-cat-action="down" data-idx="${i}" ${i === d.length - 1 ? 'disabled' : ''}>↓</button>
-            <button type="button" class="btn btn--danger btn--sm" data-cat-action="remove" data-idx="${i}">✕</button>
+            <button type="button" class="btn btn--ghost btn--sm" data-cat-action="up"
+                    data-idx="${i}" ${i === 0 ? 'disabled' : ''}
+                    title="Move up (Shift+click: move to top)">↑</button>
+            <button type="button" class="btn btn--ghost btn--sm" data-cat-action="down"
+                    data-idx="${i}" ${i === d.length - 1 ? 'disabled' : ''}
+                    title="Move down (Shift+click: move to bottom)">↓</button>
+            <button type="button" class="btn btn--danger btn--sm"
+                    data-cat-action="remove" data-idx="${i}" title="Remove">✕</button>
           </div>
         </li>
       `).join('') + `</ul>`;
@@ -407,35 +416,48 @@ async function _onManageCategories() {
     size:      'sm',
     bodyHtml:  `
       <div class="cat__editor-wrap">
-        <div data-target="cat-list">${buildListHtml(draft)}</div>
+        <div class="cat__editor-scroll" data-target="cat-list">${buildListHtml(draft)}</div>
         <div class="cat__editor-add">
           <input type="text" class="cat__editor-input" placeholder="New category name…"
                  maxlength="60" aria-label="New category">
           <button type="button" class="btn btn--ghost" data-cat-action="add">+ Add</button>
         </div>
       </div>
-      <div class="form__actions" style="margin-top:16px">
+      <div class="cat__editor-footer">
         <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
         <button type="button" class="btn btn--primary" data-cat-action="save">Save</button>
       </div>
     `,
     onMount(panel, close) {
-      const listEl  = panel.querySelector('[data-target="cat-list"]');
+      const listEl   = panel.querySelector('[data-target="cat-list"]');
       const addInput = panel.querySelector('.cat__editor-input');
 
       function refresh() {
         listEl.innerHTML = buildListHtml(draft);
       }
 
+      // ── Click handler: up/down (with Shift-click to jump), remove, add, save ──
       panel.addEventListener('click', async (e) => {
         const catAction = e.target.dataset.catAction;
         const idx = e.target.dataset.idx != null ? parseInt(e.target.dataset.idx, 10) : -1;
 
         if (catAction === 'up' && idx > 0) {
-          [draft[idx - 1], draft[idx]] = [draft[idx], draft[idx - 1]];
+          if (e.shiftKey) {
+            // Shift+↑ → jump to top
+            const [moved] = draft.splice(idx, 1);
+            draft.unshift(moved);
+          } else {
+            [draft[idx - 1], draft[idx]] = [draft[idx], draft[idx - 1]];
+          }
           refresh();
         } else if (catAction === 'down' && idx < draft.length - 1) {
-          [draft[idx], draft[idx + 1]] = [draft[idx + 1], draft[idx]];
+          if (e.shiftKey) {
+            // Shift+↓ → jump to bottom
+            const [moved] = draft.splice(idx, 1);
+            draft.push(moved);
+          } else {
+            [draft[idx], draft[idx + 1]] = [draft[idx + 1], draft[idx]];
+          }
           refresh();
         } else if (catAction === 'remove' && idx >= 0) {
           draft.splice(idx, 1);
@@ -450,6 +472,8 @@ async function _onManageCategories() {
           draft.push(name);
           addInput.value = '';
           refresh();
+          // Scroll new item into view
+          listEl.scrollTop = listEl.scrollHeight;
           addInput.focus();
         } else if (catAction === 'save') {
           if (draft.length === 0) {
@@ -470,6 +494,58 @@ async function _onManageCategories() {
           e.preventDefault();
           panel.querySelector('[data-cat-action="add"]')?.click();
         }
+      });
+
+      // ── Drag-and-drop reordering ──────────────────────────────────────────────
+      let _dragIdx = -1;
+
+      listEl.addEventListener('dragstart', (e) => {
+        const li = e.target.closest('.cat__editor-item');
+        if (!li) return;
+        _dragIdx = parseInt(li.dataset.idx, 10);
+        e.dataTransfer.effectAllowed = 'move';
+        // Defer class add so the drag ghost renders cleanly before the row fades.
+        setTimeout(() => li.classList.add('cat__editor-item--dragging'), 0);
+      });
+
+      listEl.addEventListener('dragend', () => {
+        $$('.cat__editor-item--dragging', listEl)
+          .forEach((el) => el.classList.remove('cat__editor-item--dragging'));
+        $$('.cat__editor-item--drag-over', listEl)
+          .forEach((el) => el.classList.remove('cat__editor-item--drag-over'));
+        _dragIdx = -1;
+      });
+
+      listEl.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const li = e.target.closest('.cat__editor-item');
+        if (!li) return;
+        const overIdx = parseInt(li.dataset.idx, 10);
+        if (overIdx === _dragIdx) return;
+        $$('.cat__editor-item--drag-over', listEl)
+          .forEach((el) => el.classList.remove('cat__editor-item--drag-over'));
+        li.classList.add('cat__editor-item--drag-over');
+      });
+
+      listEl.addEventListener('dragleave', (e) => {
+        // Only clear highlight when the pointer truly leaves the list container.
+        if (!listEl.contains(e.relatedTarget)) {
+          $$('.cat__editor-item--drag-over', listEl)
+            .forEach((el) => el.classList.remove('cat__editor-item--drag-over'));
+        }
+      });
+
+      listEl.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const li = e.target.closest('.cat__editor-item');
+        if (!li || _dragIdx < 0) return;
+        const dropIdx = parseInt(li.dataset.idx, 10);
+        if (dropIdx === _dragIdx) { _dragIdx = -1; return; }
+        const [moved] = draft.splice(_dragIdx, 1);
+        draft.splice(dropIdx, 0, moved);
+        _dragIdx = -1;
+        refresh();
       });
     },
   });

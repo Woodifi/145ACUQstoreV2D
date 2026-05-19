@@ -580,6 +580,23 @@ input {
   padding: 24px 28px;
   width: 100%;
   max-width: 420px;
+  /* Prevent panel from escaping the viewport on tall content */
+  max-height: calc(100dvh - 48px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Title and content areas participate in the flex column */
+.modal__title {
+  flex-shrink: 0;
+}
+
+/* Scrollable body — only activates when content would overflow the panel */
+.modal__content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .modal__title {
@@ -4848,14 +4865,26 @@ details[open] > .help__section-summary::after {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* Participate in modal flex layout so the scroll area can grow/shrink */
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Scrollable list container — caps the list height; add/save stay visible */
+.cat__editor-scroll {
+  flex: 1;
+  min-height: 60px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 
 .cat__editor-list {
   list-style: none;
   margin: 0;
   padding: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  /* Border is now on .cat__editor-scroll — remove it here */
   overflow: hidden;
 }
 
@@ -4866,10 +4895,43 @@ details[open] > .help__section-summary::after {
   padding: 6px 10px;
   border-bottom: 1px solid var(--border);
   font-size: 13px;
+  /* Visual drag-ready cursor only when the item is draggable */
+  transition: background 0.1s;
 }
 
 .cat__editor-item:last-child {
   border-bottom: none;
+}
+
+/* Drag handle — the grip icon on the left of each row */
+.cat__editor-drag-handle {
+  color: var(--text-muted);
+  cursor: grab;
+  padding: 0 8px 0 2px;
+  font-size: 14px;
+  line-height: 1;
+  user-select: none;
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+
+.cat__editor-drag-handle:active {
+  cursor: grabbing;
+}
+
+.cat__editor-item:hover .cat__editor-drag-handle {
+  opacity: 1;
+}
+
+/* The row being dragged fades out so the user sees the ghost */
+.cat__editor-item--dragging {
+  opacity: 0.35;
+}
+
+/* Drop-target highlight: gold top-border signals "drop here" */
+.cat__editor-item--drag-over {
+  background: rgba(212, 175, 55, 0.08);
+  border-top: 2px solid var(--gold);
 }
 
 .cat__editor-name {
@@ -4882,9 +4944,21 @@ details[open] > .help__section-summary::after {
   gap: 4px;
 }
 
+/* Footer row — add input + Add button */
 .cat__editor-add {
   display: flex;
   gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Footer actions row — Cancel / Save */
+.cat__editor-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 .cat__editor-input {
