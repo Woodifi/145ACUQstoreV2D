@@ -846,10 +846,10 @@ async function _renderReturnTab(body) {
       <h3 class="loan__heading">1. Borrower</h3>
       ${_borrowerPickerHtml('return', _returnState.svcNo, allEligible, borrower || (isUnitLoanView ? { svcNo: 'UNIT-LOAN', rank: '', surname: 'Unit / Activity Loans' } : null))}
 
-      ${borrower ? `
+      ${(borrower || isUnitLoanView) ? `
         <h3 class="loan__heading">2. Items to return</h3>
         ${borrowerLoans.length === 0
-          ? `<p class="loan__empty">No active loans for this borrower.</p>`
+          ? `<p class="loan__empty">No active loans for ${isUnitLoanView ? 'unit / activity loans' : 'this borrower'}.</p>`
           : `
             <div class="loan__return-list">
               ${borrowerLoans.map((l) => _returnLoanRowHtml(l)).join('')}
