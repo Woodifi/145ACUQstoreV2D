@@ -1234,11 +1234,19 @@ async function _renderAllTab(body) {
     }
   });
   // Enrich with live cadet records where possible (rank may have changed).
+  const cadetSvcSet = new Set(cadets.map((c) => c.svcNo));
   cadets.forEach((c) => {
     if (borrowerMap.has(c.svcNo)) {
       borrowerMap.set(c.svcNo, `${c.rank || ''} ${c.surname || ''} ${c.firstName ? c.firstName.charAt(0) + '.' : ''}`.trim());
     }
   });
+
+  // Detect phantom borrowers — in loan records but absent from the cadet list
+  // and not a UNIT-LOAN entry. These are typically v1 sample-data remnants.
+  const phantomBorrowers = [...borrowerMap.entries()]
+    .filter(([svc]) => svc !== 'UNIT-LOAN' && !cadetSvcSet.has(svc))
+    .map(([svc, name]) => ({ svc, name }));
+
   const borrowerOptions = [...borrowerMap.entries()]
     .sort((a, b) => a[1].localeCompare(b[1]))
     .map(([svc, name]) => ({ svc, name }));
@@ -1319,6 +1327,20 @@ async function _renderAllTab(body) {
             ` : ''}
           </div>
 
+          ${phantomBorrowers.length > 0 ? `
+            <div class="loan__phantom-warn" role="alert">
+              <span>⚠ ${phantomBorrowers.length} borrower${phantomBorrowers.length === 1 ? '' : 's'} in loan records
+              not found in the cadet list:
+              <strong>${phantomBorrowers.map((b) => esc(b.name)).join(', ')}</strong>.
+              These may be leftover sample or imported data.</span>
+              <button type="button" class="btn btn--sm btn--danger loan__phantom-remove"
+                      data-action="remove-phantom-borrowers"
+                      title="Delete all loan records for these phantom borrowers">
+                Remove
+              </button>
+            </div>
+          ` : ''}
+
           <input type="search" class="loan__all-search"
                  placeholder="Search ref, item, borrower, NSN…"
                  aria-label="Search loans"
@@ -1362,7 +1384,7 @@ async function _renderAllTab(body) {
     </div>
   `;
 
-  _wireAllTab(body, borrowerOptions);
+  _wireAllTab(body, borrowerOptions, phantomBorrowers);
 }
 
 function _allTableHtml(loans, today, canReturn) {
@@ -1453,7 +1475,7 @@ function _allRowHtml(loan, today, canReturn) {
   `;
 }
 
-function _wireAllTab(body, borrowerOptions = []) {
+function _wireAllTab(body, borrowerOptions = [], phantomBorrowers = []) {
   // Borrower picker — match typed text against the datalist options by name.
   const borrowerInput = $('.loan__borrower-search', body);
   if (borrowerInput) {
@@ -1498,6 +1520,50 @@ function _wireAllTab(body, borrowerOptions = []) {
       _wireAllTab(body);
     });
   });
+  // Phantom borrower cleanup — delete all loan records for borrowers not in cadets.
+  $('[data-action="remove-phantom-borrowers"]', body)?.addEventListener('click', async () => {
+    if (!phantomBorrowers.length) return;
+    const names = phantomBorrowers.map((b) => b.name).join(', ');
+    const deleteLabel = phantomBorrowers.length === 1 ? 'Delete 1 borrower' : `Delete ${phantomBorrowers.length} borrowers`;
+    openModal({
+      titleHtml: 'Remove phantom loan records?',
+      size: 'sm',
+      bodyHtml: `
+        <p>The following borrowers appear in loan records but are not in the cadet list:</p>
+        <ul style="margin:8px 0 12px 20px">
+          ${phantomBorrowers.map((b) => `<li><strong>${esc(b.name)}</strong> (${esc(b.svc)})</li>`).join('')}
+        </ul>
+        <p>All loan records for these borrowers will be permanently deleted. This cannot be undone.</p>
+        <div class="form__actions" style="margin-top:16px">
+          <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
+          <button type="button" class="btn btn--danger" data-action="confirm-remove-phantoms">${esc(deleteLabel)}</button>
+        </div>
+      `,
+      async onMount(panel, close) {
+        panel.querySelector('[data-action="confirm-remove-phantoms"]')?.addEventListener('click', async () => {
+          const sessionUser = AUTH.getSession()?.name || 'unknown';
+          const allLoans = await Storage.loans.list();
+          const phantomSvcs = new Set(phantomBorrowers.map((b) => b.svc));
+          const toDelete = allLoans.filter((l) => phantomSvcs.has(l.borrowerSvc));
+          for (const loan of toDelete) {
+            await Storage.loans.remove(loan.ref);
+          }
+          await Storage.audit.append({
+            action: 'loans_cleanup',
+            user:   sessionUser,
+            desc:   `Deleted ${toDelete.length} phantom loan record(s) for: ${names}`,
+          });
+          close();
+          if (_allBorrower && phantomSvcs.has(_allBorrower)) _allBorrower = '';
+          await _renderAllTab(body);
+          _wireAllTab(body);
+          showToast(`Removed ${toDelete.length} loan record(s) for ${phantomBorrowers.length} phantom borrower(s).`, 'success');
+          Sync.notifyChanged();
+        });
+      },
+    });
+  });
+
   // Row expand/collapse for mobile — tapping a loan row reveals its detail row.
   body.querySelectorAll('[data-detail-target]').forEach((row) => {
     row.addEventListener('click', (e) => {

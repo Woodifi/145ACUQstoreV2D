@@ -434,6 +434,13 @@ export const loans = {
     tx.objectStore(STORES.LOANS).put(loan);
     await _txDone(tx);
   },
+
+  async remove(ref) {
+    if (!ref) throw new Error('Loan.ref required');
+    const tx = _db.transaction(STORES.LOANS, 'readwrite');
+    tx.objectStore(STORES.LOANS).delete(ref);
+    await _txDone(tx);
+  },
 };
 
 // -----------------------------------------------------------------------------

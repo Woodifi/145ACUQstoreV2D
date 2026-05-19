@@ -2323,6 +2323,31 @@ input {
   color: var(--accent);
 }
 
+/* Phantom-borrower warning strip */
+.loan__phantom-warn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: color-mix(in srgb, var(--danger, #dc2626) 8%, var(--bg-panel));
+  border: 1px solid color-mix(in srgb, var(--danger, #dc2626) 40%, transparent);
+  border-left: 4px solid var(--danger, #dc2626);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.loan__phantom-warn > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.loan__phantom-warn strong {
+  color: var(--text-primary);
+}
+
 .loan__all-search {
   flex: 1;
   min-width: 220px;
