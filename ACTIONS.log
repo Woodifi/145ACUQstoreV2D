@@ -438,6 +438,26 @@ END OF LOG — append new entries above this line
   Files: src/ui/loans.js, src/ui/cadets.js, src/ui/settings.js, qstore.css, dist/, docs/
   Build: 20260519-334F1A44  |  491 tests, 0 failed
 
+[2026-05-20T00:00:00Z] GIT COMMIT + PUSH — 21baa00 -> origin/master
+  feat(v2.3): cadet self-service equipment request workflow + blank AB189 PDF
+  Files: src/ui/requests.js (new), src/ui/shell.js, src/pdf.js, src/ui/settings.js,
+         qstore.css, package.json, dist/, docs/
+  Changes:
+    • package.json — version 2.2.0 → 2.3.0
+    • settings.js — About section v2.1 → v2.3
+    • src/ui/requests.js — new page: cadet submit/track + QM approve/deny/issue
+      Dual tab view; REQ-NNNN ref generation; Approve & Issue creates loan records
+      (NSN match → inventory, else non-stock); pending nav badge; withdraw action
+    • src/ui/shell.js — requests page added (perm: requestIssue); pending badge
+      in _updateOverdueBadge() for QM/CO
+    • src/pdf.js — generateBlankAB189(opts): print-ready blank form with underline
+      fields; _blankLabelRow/_blankLine helpers; blank form download in requests page
+    • AB189 PDF import: pdfjs text extraction + best-effort parser (_parseAB189Text)
+      for NSN, description, purpose, requiredBy from digitally-filled forms
+    • qstore.css — ~200 lines: .req__* styles (page, tabs, cards, badges, submit form,
+      filter bar, empty state)
+  Build: 20260519-63BED912  |  491 tests, 0 failed
+
 [2026-05-19T21:10:00Z] GIT COMMIT + PUSH — 2c87967 -> origin/master
   feat(settings): improve category management UX
   Changes:
