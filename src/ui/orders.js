@@ -147,11 +147,50 @@ async function _onImportFile(e) {
 
   try {
     const buf    = await file.arrayBuffer();
-    const parsed = await parseOrderPdf(buf);
+    let parsed;
+    try {
+      parsed = await parseOrderPdf(buf);
+    } catch (parseErr) {
+      // Wrap low-level pdfjs errors in a user-friendly message.
+      const msg = parseErr?.message || '';
+      if (/password/i.test(msg)) {
+        throw new Error('This PDF is password-protected. Remove the password and try again.');
+      } else if (/invalid|corrupt|stream/i.test(msg)) {
+        throw new Error('The PDF appears to be damaged or is not a valid AAC QStore order document.');
+      } else {
+        throw new Error('Could not read the PDF. Make sure you\'re importing an AAC QStore order saved directly from the QStore website.');
+      }
+    }
 
     if (!parsed.orderId && parsed.items.length === 0) {
-      throw new Error('Could not extract order data. Is this an AAC QStore order PDF?');
+      throw new Error(
+        'No order data found in this PDF. ' +
+        'Check that it\'s an AAC QStore supply order (not a receipt or other document).'
+      );
     }
+
+    // ── IMS enrichment ───────────────────────────────────────────────────────
+    // For each parsed item whose NSN matches an IMS record, replace the PDF
+    // description with the canonical IMS item name. This ensures consistent
+    // naming and prevents clothing size descriptors from polluting descriptions.
+    const imsItems  = await Storage.items.list();
+    const imsNsnMap = new Map(imsItems.filter(i => i.nsn).map(i => [i.nsn.trim(), i]));
+    let imsMatchCount = 0;
+
+    parsed.items = parsed.items.map(item => {
+      if (!item.nsn) return item;
+      const imsItem = imsNsnMap.get(item.nsn.trim());
+      if (!imsItem) return item;
+      imsMatchCount++;
+      const descChanged = item.description !== imsItem.name;
+      return {
+        ...item,
+        description:     imsItem.name,
+        _imsMatch:       true,
+        _imsDescChanged: descChanged,
+        _pdfDesc:        descChanged ? item.description : '',
+      };
+    });
 
     // Build the draft order (no ID yet — not saved until user confirms in edit view)
     const draft = {
@@ -179,7 +218,7 @@ async function _onImportFile(e) {
     const dup = existing.find(o => o.orderId === draft.orderId && draft.orderId);
 
     // Go to editable review — user verifies/corrects before save
-    await _renderEdit(draft, { isNew: true, isDuplicate: !!dup });
+    await _renderEdit(draft, { isNew: true, isDuplicate: !!dup, imsMatchCount });
 
   } catch (err) {
     console.error('[Orders] Import failed:', err);
@@ -199,7 +238,7 @@ async function _onImportFile(e) {
 //   isNew = true  → after PDF import, before first save
 //   isNew = false → editing an already-saved order
 
-async function _renderEdit(order, { isNew = false, isDuplicate = false } = {}) {
+async function _renderEdit(order, { isNew = false, isDuplicate = false, imsMatchCount = null } = {}) {
   if (!_root) return;
 
   const items = order.items || [];
@@ -225,8 +264,24 @@ async function _renderEdit(order, { isNew = false, isDuplicate = false } = {}) {
       ${isNew ? `
         <div class="ord__edit-notice">
           <strong>Review before saving.</strong>
-          PDF parsing may misread columns — check descriptions, quantities and NSNs below.
-          Correct any errors then click <strong>Save Order</strong>.
+          Check all descriptions, quantities and NSNs below, then click
+          <strong>Save Order</strong>. You can correct any row inline.
+          ${imsMatchCount !== null && items.length > 0 ? `
+            <div class="ord__edit-ims-summary">
+              ${imsMatchCount > 0
+                ? `<span class="ord__ims-pill ord__ims-pill--found">
+                     ✓ ${imsMatchCount} of ${items.length} items matched your IMS —
+                     descriptions updated to match your inventory names.
+                     Items highlighted <span class="ord__ims-pill--changed-eg">like this</span>
+                     had their PDF description replaced.
+                   </span>`
+                : `<span class="ord__ims-pill ord__ims-pill--none">
+                     No items matched your current IMS inventory by NSN — all items will
+                     need to be created as new entries when received.
+                   </span>`
+              }
+            </div>
+          ` : ''}
         </div>
       ` : ''}
 
@@ -316,10 +371,18 @@ async function _renderEdit(order, { isNew = false, isDuplicate = false } = {}) {
               <thead>
                 <tr>
                   <th class="ord__edit-col-nsn">NSN</th>
-                  <th>Description</th>
-                  <th class="orders__col-num ord__edit-col-qty">Qty Required</th>
-                  <th class="orders__col-num ord__edit-col-qty">Qty Req'd</th>
-                  <th class="orders__col-num ord__edit-col-qty">Qty Recv'd</th>
+                  <th>Description
+                    <span class="ord__edit-col-hint">
+                      (✎ click to edit; IMS names shown where matched)
+                    </span>
+                  </th>
+                  <th class="orders__col-num ord__edit-col-qty"
+                      title="Qty Required — from the QTYREQ column of the order PDF">Qty Req</th>
+                  <th class="orders__col-num ord__edit-col-qty"
+                      title="Qty Requisitioned — quantity formally submitted">Qty Req'd</th>
+                  <th class="orders__col-num ord__edit-col-qty"
+                      title="Qty Received — quantity actually received">Qty Recv'd</th>
+                  <th class="ord__edit-col-ims" title="IMS match status">IMS</th>
                   <th class="ord__edit-col-del"></th>
                 </tr>
               </thead>
@@ -409,30 +472,52 @@ function _editRowHtml(item, idx) {
   const qtyReqd = item.qtyRequisitioned != null ? item.qtyRequisitioned : '';
   const qtyRecv = item.qtyReceived      != null ? item.qtyReceived      : '';
 
+  // IMS status badge for the edit table
+  let imsBadge;
+  if (!item.nsn) {
+    imsBadge = `<span class="ord__ims-status ord__ims--no-nsn" title="No NSN — cannot match IMS">No NSN</span>`;
+  } else if (item._imsMatch) {
+    imsBadge = `<span class="ord__ims-status ord__ims--found" title="NSN matched in your IMS inventory">✓ IMS</span>`;
+  } else {
+    imsBadge = `<span class="ord__ims-status ord__ims--new" title="NSN not found in IMS — will be a new item if received">New</span>`;
+  }
+
+  // If the description was auto-replaced with an IMS name, show the original
+  // PDF description as a small hint below the input so the QM can compare.
+  const pdfDescHint = item._imsDescChanged && item._pdfDesc
+    ? `<div class="ord__edit-pdf-desc" title="Original text from PDF">
+         PDF: ${esc(item._pdfDesc)}
+       </div>`
+    : '';
+
+  const rowClass = item._imsDescChanged ? 'ord__edit-row ord__edit-row--desc-replaced' : 'ord__edit-row';
+
   return `
-    <tr class="ord__edit-row">
+    <tr class="${rowClass}">
       <td>
         <input type="text" name="nsn_${idx}" class="form__input ord__edit-input ord__edit-input--nsn"
                value="${esc(item.nsn || '')}" placeholder="0000-00-000-0000"
                spellcheck="false" autocomplete="off">
       </td>
-      <td>
+      <td class="ord__edit-desc-cell">
         <input type="text" name="desc_${idx}" class="form__input ord__edit-input ord__edit-input--desc"
                value="${esc(item.description || '')}" placeholder="Item description"
                spellcheck="false" autocomplete="off">
+        ${pdfDescHint}
       </td>
       <td>
         <input type="number" name="qtyReq_${idx}" class="form__input ord__edit-input ord__edit-input--qty"
-               value="${esc(String(qtyReq))}" placeholder="—" min="0">
+               value="${esc(String(qtyReq))}" placeholder="—" min="0" step="1">
       </td>
       <td>
         <input type="number" name="qtyReqd_${idx}" class="form__input ord__edit-input ord__edit-input--qty"
-               value="${esc(String(qtyReqd))}" placeholder="--" min="0">
+               value="${esc(String(qtyReqd))}" placeholder="--" min="0" step="1">
       </td>
       <td>
         <input type="number" name="qtyRecv_${idx}" class="form__input ord__edit-input ord__edit-input--qty"
-               value="${esc(String(qtyRecv))}" placeholder="--" min="0">
+               value="${esc(String(qtyRecv))}" placeholder="--" min="0" step="1">
       </td>
+      <td class="ord__edit-col-ims">${imsBadge}</td>
       <td>
         <button type="button" class="btn btn--ghost btn--sm ord__edit-del"
                 data-action="delete-row" title="Remove row" aria-label="Remove row">✕</button>
@@ -454,6 +539,8 @@ function _readEditForm(form, originalOrder, tbody) {
     const qReq  = row.querySelector(`[name^="qtyReq_"]`)?.value;
     const qReqd = row.querySelector(`[name^="qtyReqd_"]`)?.value;
     const qRecv = row.querySelector(`[name^="qtyRecv_"]`)?.value;
+    // Strip transient import-time fields (_imsMatch, _imsDescChanged, _pdfDesc)
+    // — these are display hints only and must not be persisted.
     return {
       nsn:              nsn || null,
       description:      desc,
@@ -606,12 +693,19 @@ async function _renderDetail(order) {
 }
 
 function _itemRowHtml(item, nsnMap) {
-  const imsMatch  = item.nsn ? nsnMap.get(item.nsn) : null;
+  const imsMatch = item.nsn ? nsnMap.get(item.nsn) : null;
+
+  // Show description mismatch as a tooltip hint on the IMS badge.
+  const descMismatch = imsMatch && imsMatch.name && imsMatch.name !== item.description;
   const imsStatus = !item.nsn
-    ? `<span class="ord__ims-status ord__ims--no-nsn">No NSN</span>`
+    ? `<span class="ord__ims-status ord__ims--no-nsn"
+             title="No NSN — this item cannot be matched to IMS automatically">No NSN</span>`
     : imsMatch
-      ? `<span class="ord__ims-status ord__ims--found" title="${esc(imsMatch.name || '')}">In IMS</span>`
-      : `<span class="ord__ims-status ord__ims--new">New</span>`;
+      ? `<span class="ord__ims-status ord__ims--found"
+               title="IMS name: ${esc(imsMatch.name || '')}${descMismatch ? ' (differs from order description)' : ''}">
+               In IMS${descMismatch ? ' ⚠' : ''}</span>`
+      : `<span class="ord__ims-status ord__ims--new"
+               title="NSN not in IMS — will be created as a new item if received">New</span>`;
 
   const qtyR  = item.qtyRequired      != null ? item.qtyRequired      : '—';
   const qtyQ  = item.qtyRequisitioned != null ? item.qtyRequisitioned : '--';
@@ -657,10 +751,13 @@ function _openApproveModal(order, nsnMap) {
         <p>This will update your IMS inventory based on the items in Order
            <strong>#${esc(order.orderId)}</strong>.</p>
 
-        <p class="ord__approve-note">
-          Edit <strong>Qty to receive</strong> for each item — defaults to the recorded received quantity
-          (or required qty if none was entered). Set to 0 to skip an item.
-        </p>
+        <div class="ord__approve-note">
+          <strong>Check quantities before confirming.</strong>
+          Each row shows the quantity from the order — adjust if the actual delivery
+          was different. <strong>Set to 0 to skip an item</strong> (it won't be added
+          to your IMS). Once you click Confirm this cannot be undone automatically —
+          inventory counts will be updated immediately.
+        </div>
 
         ${matchedItems.length ? `
           <h4 class="ord__approve-heading ord__approve-heading--found">

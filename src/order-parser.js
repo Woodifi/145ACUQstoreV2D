@@ -127,51 +127,81 @@ function _groupIntoRows(items, yTolerance = 5) {
 // Column assignment using detected header positions
 // -----------------------------------------------------------------------------
 
-// Known column header patterns (right-edge of each header)
+// Column header patterns — ordered from most-specific to least-specific so
+// the correct key wins when a single header item is tested against all patterns.
+// "Qty Received"      → qtyReceived   (contains "rec")
+// "Qty Req'd" / "Qty Requisitioned" → qtyRequisitioned  (has 'd/'d/uisitioned suffix)
+// "Qty Required" / "QtyReq"          → qtyRequired       (ends at "req" or "required")
 const HEADER_PATTERNS = [
   { key: 'nsn',               re: /^NSN$/i },
   { key: 'description',       re: /^Description$/i },
-  { key: 'qtyRequired',       re: /qty\s*req(uired)?/i },
-  { key: 'qtyRequisitioned',  re: /qty\s*req(uisitioned)?/i },
-  { key: 'qtyReceived',       re: /qty\s*rec(eived)?/i },
+  { key: 'qtyReceived',       re: /qty.*rec/i },
+  { key: 'qtyRequisitioned',  re: /qty.*req(?:uisitioned|'?d|d)\b/i },
+  { key: 'qtyRequired',       re: /qty.*req(?:uired)?\.?\s*$/i },
 ];
 
 function _detectColumnBoundaries(headerRow) {
   const cols = {};
-  for (const { key, re } of HEADER_PATTERNS) {
+  // Process in reverse pattern order so the most-specific match for each item wins.
+  for (const { key, re } of [...HEADER_PATTERNS].reverse()) {
     for (const item of headerRow.items) {
       if (re.test(item.str)) {
-        cols[key] = { x: item.x, width: item.str.length * 7 };
+        cols[key] = { x: item.x };
       }
     }
   }
   return cols;
 }
 
+// Unused but kept for potential future use
 function _assignToColumn(item, cols) {
   const colKeys = Object.keys(cols);
   if (colKeys.length === 0) return null;
-
-  let best = null;
-  let bestDist = Infinity;
+  let best = null, bestDist = Infinity;
   for (const key of colKeys) {
-    const col = cols[key];
-    const mid = col.x + (col.width || 0) / 2;
-    const dist = Math.abs(item.x - col.x);
-    if (dist < bestDist) {
-      bestDist = dist;
-      best = key;
-    }
+    const dist = Math.abs(item.x - cols[key].x);
+    if (dist < bestDist) { bestDist = dist; best = key; }
   }
   return best;
 }
 
 // -----------------------------------------------------------------------------
-// NSN validation
+// NSN helpers
 // -----------------------------------------------------------------------------
 
 const NSN_RE = /^\d{4}-\d{2}-\d{3}-\d{4}$/;
 function _isNsn(str) { return NSN_RE.test(str.trim()); }
+
+/**
+ * Attempt to normalise common OCR / copy-paste artefacts in NSN strings:
+ *   en/em-dashes → hyphen, internal spaces removed, doubled dashes collapsed.
+ *   Capital-O → zero when that produces a valid NSN.
+ * Returns the cleaned string; falls back to the raw input if still invalid.
+ */
+function _normalizeNsn(raw) {
+  if (!raw) return raw;
+  let s = raw.trim()
+    .replace(/[–—]/g, '-')   // en/em-dash → ASCII hyphen
+    .replace(/\s+/g, '')      // remove spaces within the NSN
+    .replace(/-{2,}/g, '-');  // collapse doubled dashes
+  if (!NSN_RE.test(s)) {
+    const swapped = s.replace(/O/g, '0').replace(/l/g, '1');
+    if (NSN_RE.test(swapped)) return swapped;
+  }
+  return s;
+}
+
+/**
+ * Return true if str is a valid quantity cell: pure integer digits, or a
+ * dash placeholder (--  -  –  —).  Returns true for empty/null (= no value).
+ * Returns FALSE for mixed strings like "10R", "SIZE 10", "S/M" so those
+ * stay in the description column instead of being misread as quantities.
+ */
+function _isPlainQty(str) {
+  if (!str) return true;
+  const s = str.trim();
+  return /^\d+$/.test(s) || /^[-–—]+$/.test(s);
+}
 
 // -----------------------------------------------------------------------------
 // Main parser
@@ -319,8 +349,16 @@ export async function parseOrderPdf(arrayBuffer) {
         // Parse the whole row by NSN x-position buckets
         currentItem = _parseItemRow(rowItems, headerItems);
       } else if (currentItem && !_isNsn(firstStr)) {
-        // Continuation row: append to description if it looks like text
-        if (rowItems.length <= 2 && !/^\d+$/.test(firstStr)) {
+        // Continuation row: append to description only if the row content
+        // looks like a text fragment (not a qty or a totals line).
+        // Rows that are purely numeric, purely dashes, or very short (1–2
+        // characters) are skipped — they are likely qty cells that bled onto
+        // an extra row or totals/spacer lines.
+        const looksLikeText = rowItems.length >= 1
+          && !/^\d{1,4}$/.test(firstStr)   // not a bare number ≤ 9999
+          && !/^[-–—]+$/.test(firstStr)    // not a dash placeholder
+          && firstStr.length > 2;          // at least 3 chars of content
+        if (looksLikeText) {
           currentItem.description += ' ' + row.text.trim();
         }
       }
@@ -328,15 +366,21 @@ export async function parseOrderPdf(arrayBuffer) {
     if (currentItem) result.items.push(currentItem);
   }
 
-  // Fallback: if coordinate parsing found nothing, try regex scan for NSNs
+  // Fallback: if coordinate parsing found nothing, try regex scan for NSNs.
+  // Qty is capped at 4 digits (max 9999) so we don't accidentally capture a
+  // size code like "10" when the real qty is elsewhere. The description is
+  // captured lazily up to the point where a standalone 1–4-digit number
+  // appears — any trailing size descriptors (e.g. "SIZE 10R") must not
+  // bleed into the qty capture.
   if (result.items.length === 0) {
-    const nsnLineRe = /(\d{4}-\d{2}-\d{3}-\d{4})\s+(.+?)\s+(\d+)\s*(?:--|-|–)?\s*(?:--|-|–)?/g;
+    const nsnLineRe = /(\d{4}-\d{2}-\d{3}-\d{4})\s+(.*?)\s+\b(\d{1,4})\b\s*(?:[-–—]+\s*){0,2}/g;
     let m;
     while ((m = nsnLineRe.exec(rawText)) !== null) {
+      const qtyCandidate = parseInt(m[3], 10);
       result.items.push({
-        nsn:              m[1].trim(),
+        nsn:              _normalizeNsn(m[1].trim()),
         description:      m[2].trim(),
-        qtyRequired:      parseInt(m[3], 10) || 0,
+        qtyRequired:      isNaN(qtyCandidate) ? 0 : qtyCandidate,
         qtyRequisitioned: null,
         qtyReceived:      null,
       });
@@ -351,8 +395,8 @@ export async function parseOrderPdf(arrayBuffer) {
 // -----------------------------------------------------------------------------
 
 function _parseItemRow(rowItems, headerItems) {
-  // Use header x-positions to determine column boundaries
-  // headerItems sorted by x: [NSN, Description, Qty required, Qty req., Qty rec.]
+  // Build sorted list of column x-positions from the header row.
+  // Only include items whose text looks like a column header keyword.
   const hx = headerItems
     .filter(it => /NSN|Description|Qty/i.test(it.str))
     .map(it => it.x)
@@ -367,13 +411,32 @@ function _parseItemRow(rowItems, headerItems) {
   };
 
   for (const ri of rowItems) {
+    const s   = ri.str.trim();
     const col = _colIdx(ri.x, hx);
     switch (col) {
-      case 0: item.nsn = ri.str.trim(); break;
-      case 1: item.description += (item.description ? ' ' : '') + ri.str.trim(); break;
-      case 2: item.qtyRequired  = _parseQty(ri.str); break;
-      case 3: item.qtyRequisitioned = _parseQty(ri.str); break;
-      case 4: item.qtyReceived      = _parseQty(ri.str); break;
+      case 0:
+        // NSN column — normalise OCR artefacts (O→0, en-dash, spaces).
+        item.nsn = _normalizeNsn(s);
+        break;
+      case 1:
+        item.description += (item.description ? ' ' : '') + s;
+        break;
+      case 2:
+        // Qty Required must be a plain integer or a dash placeholder.
+        // Size descriptors such as "10R", "SIZE 10", "S/M" contain letters
+        // and must NOT be treated as a quantity — move them to description.
+        if (_isPlainQty(s)) {
+          item.qtyRequired = _parseQty(s);
+        } else {
+          item.description += (item.description ? ' ' : '') + s;
+        }
+        break;
+      case 3:
+        if (_isPlainQty(s)) item.qtyRequisitioned = _parseQty(s);
+        break;
+      case 4:
+        if (_isPlainQty(s)) item.qtyReceived = _parseQty(s);
+        break;
     }
   }
 
@@ -391,9 +454,15 @@ function _colIdx(x, colXs) {
 }
 
 function _parseQty(str) {
-  if (!str || str === '--' || str === '-' || str === '–') return null;
-  const n = parseInt(str.replace(/[^\d]/g, ''), 10);
-  return isNaN(n) ? null : n;
+  if (!str) return null;
+  const s = str.trim();
+  // Dash placeholders mean "not applicable", not zero.
+  if (/^[-–—]+$/.test(s)) return null;
+  // Reject anything that isn't a pure integer (e.g. "10R", "SIZE 10").
+  // Callers that need permissive parsing should pre-validate with _isPlainQty.
+  if (!/^\d+$/.test(s)) return null;
+  const n = parseInt(s, 10);
+  return isNaN(n) || n < 0 ? null : n;
 }
 
 // -----------------------------------------------------------------------------

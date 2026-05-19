@@ -431,29 +431,40 @@ The **Orders** page is a unit-only tracking module for supply orders placed thro
 
 ### Importing an Order PDF (OC / QM)
 
-1. Download the PDF from AAC QStore
+1. Download the PDF directly from the AAC QStore website — save it as a PDF file
 2. Navigate to **Orders** and click **Import PDF Order**
-3. Select the PDF — the system extracts:
+3. Select the PDF — the system automatically extracts:
    - Order number and category (Uniform / Equipment / General)
    - Order status (Request or Issue)
    - Date, requestor name, rank, service number, and unit
    - All line items: NSN, description, qty required, qty requisitioned, qty received
-4. An **editable review screen** opens before the order is saved — check all extracted fields and correct any parsing errors (e.g., truncated descriptions or misread quantities) by editing inline
-5. Click **Save** to store the order and open the detail view
+4. **IMS matching happens automatically:** each item's NSN is checked against your inventory. Where a match is found, the description is replaced with your IMS item name so naming stays consistent. A summary banner shows how many items were matched.
+5. An **editable review screen** opens before the order is saved — every field is editable inline. For each row the **IMS** column shows:
 
-> **Note:** PDF parsing is automatic but not perfect. Always review the extracted items before saving. Sizes or product codes near the quantity column may be misread — correct them in the review screen.
+| IMS badge | Meaning |
+|-----------|---------|
+| ✓ IMS | NSN found in your inventory — description updated to match IMS name |
+| New | NSN not in IMS — will be created as a new item if received |
+| No NSN | No NSN on this line — cannot be matched or received automatically |
 
-If an order with the same number was already imported you will be prompted to confirm before creating a duplicate record.
+   Rows where the description was auto-replaced show the original PDF text below the input in small grey text so you can compare. Correct any errors by clicking and typing directly in any cell.
+
+6. Click **Save Order** to store the order and open the detail view
+
+> **PDF parsing tip:** The system reads the QTYREQ column specifically for quantity — clothing size codes (e.g. "SIZE 10R", "32L") are automatically excluded from the quantity field and kept in the description where they belong. If a quantity still looks wrong, simply type the correct value in the Qty Req cell before saving.
+
+If an order with the same number was already imported, a warning badge appears on the review screen — you can still save if it is a legitimate re-import.
 
 ### Viewing and Editing Order Details
 
 The detail view shows:
 - **Metadata:** order number, category, type, AAC status, date, requestor, unit
-- **Items table:** NSN, description, quantities, and IMS match status for each line:
+- **Items table:** NSN, description, quantities, and IMS match status:
 
 | IMS Status | Meaning |
 |------------|---------|
-| In IMS | NSN exists — onHand will be incremented on receive |
+| In IMS | NSN matched — onHand will increase on receive |
+| In IMS ⚠ | NSN matched but description differs between the order and IMS |
 | New | NSN not in IMS — a new item will be created on receive |
 | No NSN | Item has no NSN and will be skipped on receive |
 
@@ -464,18 +475,18 @@ Click **Edit** on any saved order to return to the editable review screen and co
 When an **Issue** order arrives from AAC QStore:
 
 1. Open the order and click **Approve & Receive into IMS**
-2. The modal shows matched items and new items separately
-3. Select a category for any new items to be created
-4. Add optional QM notes
-5. Click **Confirm & Update IMS**
+2. A confirmation screen shows all matched items and new items with their quantities
+3. **Adjust quantities if needed** — the qty inputs default to the received quantity from the order. Change any value if the actual delivery differed. **Set a qty to 0 to skip that item** (useful if a line was back-ordered or short-shipped)
+4. Select a category for any brand-new items that will be created
+5. Add optional QM notes, then click **Confirm & Update IMS**
 
 What happens on confirm:
-- **Matched items** (In IMS): `onHand` incremented by the ordered quantity. If the item has a condition breakdown, the Serviceable count is also incremented.
-- **New items**: Created with the NSN, description, and quantity from the order. Tagged with source `aac-order`.
+- **Matched items** (In IMS): `onHand` incremented by the entered quantity. Serviceable count also updated if the item uses condition breakdown.
+- **New items**: Created with the NSN, description, and entered quantity. Tagged as source `aac-order`.
 - The order status changes to **Received**
 - An audit entry is written: `order-received`
 
-> **Warning:** Receiving an order into IMS cannot be reversed from the Orders page. If an error occurs, manually correct the affected items in Inventory.
+> **Warning:** Receiving an order into IMS cannot be reversed from the Orders page. If an error is made, correct the affected items manually in Inventory and note the reason in the Audit log.
 
 ### Exporting as CSV
 
@@ -974,7 +985,15 @@ A broken audit chain indicates that data has been modified outside the applicati
 
 ### Orders — extracted items look wrong after PDF import
 
-The PDF parser reads text positions to assign items to columns. Complex PDFs (e.g., multi-line descriptions, unusual fonts) may misread quantities or truncate descriptions. Use the **editable review screen** that appears before saving to correct any errors. If a size or code has been placed in the quantity field, zero it out and enter the correct quantity manually.
+The PDF parser reads the QTYREQ column specifically for quantity values and rejects clothing size codes (e.g. "10R", "SIZE 10") from the quantity field automatically. If a quantity still looks wrong:
+
+1. In the editable review screen, click directly on the Qty Req cell for that row and type the correct number
+2. If the description is incorrect, click the Description cell and type the right text
+3. If the NSN is missing dashes or contains a zero/O confusion, correct it — the IMS match will update the IMS status badge as you type
+
+If the import produced **no items at all**, make sure the PDF was downloaded directly from the AAC QStore website (not printed to PDF from a browser, which strips the table structure). Try the download again and re-import.
+
+For password-protected PDFs, remove the password in a PDF reader before importing.
 
 ---
 

@@ -478,8 +478,14 @@ async function _mountPage(pageKey) {
     console.error(`Mount failed for page "${pageKey}":`, err);
     target.innerHTML = `
       <div class="fatal">
-        <h1>Page failed to load</h1>
-        <pre class="fatal__detail">${esc(err.message || String(err))}</pre>
+        <h1>This page failed to load</h1>
+        <p>Try refreshing the page (press <kbd>F5</kbd>). If the problem keeps
+           happening, export a backup from Settings → Data and contact your system
+           administrator.</p>
+        <details class="fatal__details-toggle">
+          <summary>Technical detail</summary>
+          <pre class="fatal__detail">${esc(err.message || String(err))}</pre>
+        </details>
       </div>
     `;
   }
