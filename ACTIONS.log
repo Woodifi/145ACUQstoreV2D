@@ -311,3 +311,13 @@ END OF LOG — append new entries above this line
   - MANUAL.md: added Section 18 (Reference - Uniform Sizing) with full tables
   - MANUAL_ADDENDUM_OWNER.md: v2.3.0 feature list updated
   Build: 20260519  Commit: e081b5a  -> master
+
+[2026-05-19T03:36:50Z] GIT COMMIT + PUSH — feat: non-stock return prompt (commit 68612c1)
+  Changes:
+  - src/ui/loans.js: _submitReturn collects unmatched non-stock loans into needsPrompt[];
+    _promptAddNonStockToInventory() opens persistent modal with editable table (name/NSN/qty/category);
+    confirmed rows written to Storage.items with source:'non-stock-return' + item_add audit entry;
+    "Skip" button re-renders without creating anything
+  - qstore.css: added .nsv__* block (nsv__table-wrap, nsv__table, nsv__col-chk/qty,
+    nsv__chk-cell, nsv__input/--nsn/--qty, nsv__err) — ~70 lines
+  Build: 20260519-E34D2986  Commit: 68612c1  -> master
