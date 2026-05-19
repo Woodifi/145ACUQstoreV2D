@@ -977,10 +977,14 @@ async function _submitReturn(body) {
   const sessionUser = AUTH.getSession()?.name || 'unknown';
   const returnDate  = _todayLocalIsoDate();
 
-  let returned    = 0;
-  let addedToIms  = 0;
-  const errors    = [];
-  const now       = new Date().toISOString();
+  let returned       = 0;
+  let addedToIms     = 0;
+  const errors       = [];
+  const needsPrompt  = [];   // non-stock items with no IMS match → prompt to add
+  const now          = new Date().toISOString();
+
+  // Fetch item list once so each nonStock loan doesn't repeat the query.
+  const imsItemsList = await Storage.items.list();
 
   for (const ref of _returnState.refsChecked) {
     try {
@@ -989,10 +993,10 @@ async function _submitReturn(body) {
       if (!loan.active) { errors.push(`${ref}: already returned`); continue; }
 
       if (loan.nonStock) {
-        // Non-stock return — attempt to find / create inventory item by NSN.
+        // Non-stock return — try to match by NSN.
+        let matched = false;
         if (loan.nsn) {
-          const allItems = await Storage.items.list();
-          const match = allItems.find((i) => i.nsn === loan.nsn);
+          const match = imsItemsList.find((i) => i.nsn === loan.nsn);
           if (match) {
             match.onHand = (Number(match.onHand) || 0) + loan.qty;
             if (match.qtyServiceable != null) {
@@ -1000,12 +1004,19 @@ async function _submitReturn(body) {
             }
             match.updatedAt = now;
             await Storage.items.put(match);
+            // Update our local list so duplicate NSNs in the same batch are
+            // also caught correctly without re-querying.
+            const idx = imsItemsList.findIndex((i) => i.id === match.id);
+            if (idx >= 0) imsItemsList[idx] = match;
             addedToIms++;
+            matched = true;
           }
-          // If NSN not found: no inventory change (item never existed in IMS).
-          // QM can add it manually to inventory later.
         }
-        // No onLoan decrement needed — it was never incremented.
+        if (!matched) {
+          // No NSN supplied, or NSN not found in IMS — queue for the add prompt.
+          needsPrompt.push({ name: loan.itemName, nsn: loan.nsn || '', qty: loan.qty });
+        }
+        // No onLoan decrement — was never incremented on issue.
       } else {
         // Standard stock return — decrement onLoan, optionally bump unsvc.
         const item = await Storage.items.get(loan.itemId);
@@ -1049,9 +1060,157 @@ async function _submitReturn(body) {
   if (errors.length > 0) {
     errEl.textContent = `Returned ${returned}. Errors: ${errors.join('; ')}`;
   }
-  // Reset state and re-render — list will refresh with the items removed.
+
   _returnState = _freshReturnState();
-  await _render();
+
+  // If any non-stock items had no IMS match, prompt the QM to add them.
+  if (needsPrompt.length > 0) {
+    await _promptAddNonStockToInventory(needsPrompt);
+  } else {
+    await _render();
+  }
+}
+
+// -----------------------------------------------------------------------------
+// _promptAddNonStockToInventory
+// -----------------------------------------------------------------------------
+// Called after a return that includes non-stock items with no IMS match.
+// Shows a modal with one editable row per item. The QM can correct the name,
+// supply an NSN, adjust qty, choose a category, and tick which items to add.
+// On confirm those items are created as new inventory entries.
+
+async function _promptAddNonStockToInventory(candidates) {
+  const CATS = ['Equipment', 'Uniform', 'Safety', 'Training Aids', 'Field Stores', 'Medical', 'ICT', 'Other'];
+  // Load the current category list from settings for the select.
+  let cats = CATS;
+  try {
+    const stored = await Storage.settings.get('categories');
+    if (Array.isArray(stored) && stored.length) cats = stored;
+  } catch (_) { /* use defaults */ }
+
+  const rowsHtml = candidates.map((c, i) => `
+    <tr class="nsv__row" data-row="${i}">
+      <td>
+        <label class="nsv__chk-cell">
+          <input type="checkbox" name="add_${i}" checked>
+        </label>
+      </td>
+      <td>
+        <input type="text" name="name_${i}" class="form__input nsv__input"
+               value="${esc(c.name)}" placeholder="Item name" required>
+      </td>
+      <td>
+        <input type="text" name="nsn_${i}" class="form__input nsv__input nsv__input--nsn"
+               value="${esc(c.nsn)}" placeholder="optional"
+               spellcheck="false" autocomplete="off">
+      </td>
+      <td>
+        <input type="number" name="qty_${i}" class="form__input nsv__input nsv__input--qty"
+               value="${c.qty}" min="1" step="1">
+      </td>
+      <td>
+        <select name="cat_${i}" class="form__select nsv__input">
+          ${cats.map((cat) =>
+            `<option value="${esc(cat)}"${cat === 'Equipment' ? ' selected' : ''}>${esc(cat)}</option>`
+          ).join('')}
+        </select>
+      </td>
+    </tr>
+  `).join('');
+
+  openModal({
+    titleHtml: `Add returned items to inventory?`,
+    size:      'lg',
+    persistent: true,
+    bodyHtml: `
+      <p class="modal__body">
+        The items below were returned as non-stock and have no matching entry in your IMS.
+        Tick the ones you want to add to inventory — you can correct names, NSNs and quantities before saving.
+      </p>
+      <div class="nsv__table-wrap">
+        <table class="nsv__table">
+          <thead>
+            <tr>
+              <th class="nsv__col-chk"></th>
+              <th>Item name</th>
+              <th>NSN</th>
+              <th class="nsv__col-qty">Qty</th>
+              <th>Category</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+      </div>
+      <div class="form__error nsv__err" role="alert"></div>
+      <div class="form__actions">
+        <button type="button" class="btn btn--ghost" data-action="nsv-skip">Skip — don't add</button>
+        <button type="button" class="btn btn--primary" data-action="nsv-confirm">Add to IMS</button>
+      </div>
+    `,
+    async onMount(panel, close) {
+      const errEl = $('.nsv__err', panel);
+      const sessionUser = AUTH.getSession()?.name || 'QM';
+      const now = new Date().toISOString();
+
+      $('[data-action="nsv-skip"]', panel)?.addEventListener('click', () => {
+        close();
+        _render();
+      });
+
+      $('[data-action="nsv-confirm"]', panel)?.addEventListener('click', async () => {
+        errEl.textContent = '';
+        const toCreate = [];
+        candidates.forEach((_, i) => {
+          const chk  = $(`input[name="add_${i}"]`, panel);
+          if (!chk?.checked) return;
+          const name = $(`input[name="name_${i}"]`, panel)?.value.trim();
+          const nsn  = $(`input[name="nsn_${i}"]`, panel)?.value.trim();
+          const qty  = Math.max(1, parseInt($(`input[name="qty_${i}"]`, panel)?.value || '1', 10));
+          const cat  = $(`select[name="cat_${i}"]`, panel)?.value || 'Equipment';
+          if (!name) { errEl.textContent = `Row ${i + 1}: item name is required.`; return; }
+          toCreate.push({ name, nsn, qty, cat });
+        });
+        if (errEl.textContent) return;
+        if (toCreate.length === 0) { close(); await _render(); return; }
+
+        try {
+          for (const t of toCreate) {
+            const id = `item-${crypto.randomUUID?.() || Math.random().toString(36).slice(2)}`;
+            await Storage.items.put({
+              id,
+              name:             t.name,
+              nsn:              t.nsn || '',
+              cat:              t.cat,
+              onHand:           t.qty,
+              onLoan:           0,
+              unsvc:            0,
+              writtenOff:       0,
+              condition:        'serviceable',
+              qtyServiceable:   t.qty,
+              qtyUnserviceable: 0,
+              qtyRepair:        0,
+              qtyCalibrationDue:0,
+              qtyWrittenOff:    0,
+              source:           'non-stock-return',
+              createdAt:        now,
+              updatedAt:        now,
+            });
+            await Storage.audit.append({
+              action: 'item_add',
+              user:   sessionUser,
+              desc:   `"${t.name}" × ${t.qty} added to inventory from non-stock return`,
+            });
+          }
+          Sync.notifyChanged();
+          showToast(`${toCreate.length} item(s) added to inventory.`, 'success');
+          close();
+          await _render();
+        } catch (err) {
+          errEl.textContent = 'Failed to create item(s): ' + (err.message || err);
+        }
+      });
+    },
+  });
 }
 
 // =============================================================================

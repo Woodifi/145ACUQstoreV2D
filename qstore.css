@@ -5723,3 +5723,100 @@ details[open] > .help__section-summary::after {
     padding: 10px 12px;
   }
 }
+
+/* ==========================================================================
+   Non-stock return → add-to-inventory prompt  (.nsv = non-stock verify)
+   ========================================================================== */
+
+.nsv__table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 12px 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.nsv__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  min-width: 520px;
+}
+
+.nsv__table th {
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 2px solid var(--border);
+  white-space: nowrap;
+}
+
+.nsv__table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.nsv__table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.nsv__table tbody tr:hover td {
+  background: var(--bg-hover, var(--bg-input));
+}
+
+/* Checkbox column — tight width, centred */
+.nsv__col-chk {
+  width: 36px;
+  text-align: center;
+}
+
+.nsv__chk-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.nsv__chk-cell input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+/* Qty column — narrower than name/NSN */
+.nsv__col-qty {
+  width: 72px;
+}
+
+/* Shared input style (inherits form__input but can be narrower) */
+.nsv__input {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 0.85rem;
+  padding: 5px 8px;
+}
+
+.nsv__input--nsn {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+}
+
+.nsv__input--qty {
+  text-align: right;
+}
+
+/* Error banner inside the modal */
+.nsv__err {
+  min-height: 20px;
+  font-size: 0.85rem;
+  color: var(--danger, #dc2626);
+  margin-top: 6px;
+}
