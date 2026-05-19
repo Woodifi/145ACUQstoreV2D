@@ -60,14 +60,27 @@ const SECTIONS = [
       <table class="help__table">
         <thead><tr><th>Role</th><th>What they can do</th></tr></thead>
         <tbody>
-          <tr><td><strong>OC</strong></td><td>Full access including Settings. Assign to the Commanding Officer only.</td></tr>
-          <tr><td><strong>QM</strong></td><td>Full operational access — inventory, loans, cadets, stocktake, audit. Cannot access Settings.</td></tr>
-          <tr><td><strong>Staff</strong></td><td>View all pages. Cannot add/edit inventory or manage cadets.</td></tr>
-          <tr><td><strong>Cadet</strong></td><td>View inventory and their own loans only.</td></tr>
+          <tr><td><strong>OC</strong></td><td>Full access including Settings, Users, approvals, and PIN management. Assign to the Commanding Officer only.</td></tr>
+          <tr><td><strong>QM</strong></td><td>Full operational access — inventory, loans, cadets, stocktake, orders, audit, equipment request approval. Cannot access Settings.</td></tr>
+          <tr><td><strong>Staff</strong></td><td>View all pages and submit equipment requests. Cannot add/edit inventory or manage cadets.</td></tr>
+          <tr><td><strong>Cadet</strong></td><td>View inventory, view their own loans, and submit equipment requests.</td></tr>
           <tr><td><strong>Read-Only</strong></td><td>View-only. No actions.</td></tr>
         </tbody>
       </table>
-      <p class="help__note">Only the OC can access the <strong>Users</strong> and <strong>Settings</strong> pages. Only OC and QM can issue/return loans, edit inventory, or run stocktakes.</p>
+      <table class="help__table" style="margin-top:0.5rem">
+        <thead><tr><th>Action</th><th>OC</th><th>QM</th><th>Staff</th><th>Cadet</th><th>RO</th></tr></thead>
+        <tbody>
+          <tr><td>View inventory / cadets / loans</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+          <tr><td>Submit equipment requests</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>—</td></tr>
+          <tr><td>Issue / return loans</td><td>✓</td><td>✓</td><td>—</td><td>—</td><td>—</td></tr>
+          <tr><td>Approve / deny requests</td><td>✓</td><td>✓</td><td>—</td><td>—</td><td>—</td></tr>
+          <tr><td>Edit inventory / cadets</td><td>✓</td><td>✓</td><td>—</td><td>—</td><td>—</td></tr>
+          <tr><td>Stocktake / Orders</td><td>✓</td><td>✓</td><td>—</td><td>—</td><td>—</td></tr>
+          <tr><td>Audit log</td><td>✓</td><td>✓</td><td>—</td><td>—</td><td>—</td></tr>
+          <tr><td>Settings / Users</td><td>✓</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        </tbody>
+      </table>
+      <p class="help__note">Only the OC can access the <strong>Users</strong> and <strong>Settings</strong> pages. Only OC and QM can issue/return loans, approve requests, edit inventory, or run stocktakes.</p>
     `,
   },
   {
@@ -167,8 +180,18 @@ const SECTIONS = [
       </ol>
       <p>A loan reference (LN-XXXX) is assigned automatically.</p>
 
+      <h4>Initial Issue</h4>
+      <p>The <strong>Initial Issue</strong> purpose creates a long-term personal issue record. The due date is automatically set to six years from today and is locked — it cannot be changed. Initial Issue loans are never flagged as overdue regardless of age.</p>
+      <p class="help__note">Initial Issue is a protected purpose and cannot be deleted from Settings categories. It is not available in the self-service Requests form — the QM must create it directly.</p>
+
+      <h4>Long-term loans</h4>
+      <p>Tick <strong>Long-term loan</strong> on the issue form (step 3 of the kit picker) to mark a loan as indefinite. Long-term loans do not require a due date and are never flagged as overdue.</p>
+
       <h4>Using an issue kit</h4>
-      <p>Click <strong>⊞ Load kit</strong> on the Issue tab to pre-fill items from a saved kit. Adjust quantities before issuing.</p>
+      <p>Click <strong>⊞ Load kit</strong> on the Issue tab to pre-fill items from a saved kit. Adjust quantities before issuing. Out-of-stock items are shown with a red "nil stock" badge — they can still be added as non-stock lines if needed.</p>
+
+      <h4>Non-stock and unit/activity loans</h4>
+      <p>On the issue form you can add lines for items not yet in inventory (non-stock) or issue to a unit/activity rather than an individual (unit loan). When a non-stock item is returned, you are prompted to add it to inventory.</p>
 
       <h4>Returning equipment <span class="help__role">OC / QM</span></h4>
       <ol>
@@ -182,7 +205,55 @@ const SECTIONS = [
       <p>Initial Issue · Annual Camp · Training Activity · Parade Night · Field Exercise · Ceremonial · Course Attendance · Other</p>
 
       <h4>All Loans tab</h4>
-      <p>Filter by Active, Returned, Overdue, or All. Search by borrower name or loan reference.</p>
+      <p>Filter by Active, Returned, Overdue, or All. Search by borrower name or loan reference. Use the <strong>Borrower</strong> picker to show only loans for a specific person — pill counts update to reflect that borrower's loans.</p>
+      <p>Loans belonging to a discharged cadet are flagged with a red <strong>Discharged</strong> badge. These are automatically recalled (due date set to discharge date) when a cadet is deactivated.</p>
+    `,
+  },
+  {
+    id: 'requests',
+    title: 'Equipment requests',
+    icon: '📋',
+    body: `
+      <p>The <strong>Requests</strong> page lets cadets and staff submit equipment requests that QMs and OCs can then approve, issue, or deny — all within the IMS.</p>
+
+      <h4>Submitting a request (all roles except Read-Only)</h4>
+      <ol>
+        <li>Go to <strong>Requests → Submit Request</strong></li>
+        <li>Enter the purpose, required-by date, and optional notes</li>
+        <li>Add item lines — description, NSN (optional), and quantity</li>
+        <li>Click <strong>Submit Request</strong></li>
+      </ol>
+      <p>The request is assigned a reference number (REQ-NNNN) and appears in the QM's pending queue immediately.</p>
+      <p>You can also <strong>import a pre-filled AB189 PDF</strong>: click <strong>Import AB189 PDF</strong> to extract the purpose, required-by date, and item lines from a scanned or digital AB189 form. Review and edit before submitting.</p>
+
+      <h4>Request statuses</h4>
+      <table class="help__table">
+        <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><span style="color:#b45309">Pending</span></td><td>Awaiting QM/OC review</td></tr>
+          <tr><td><span style="color:#1d4ed8">Approved</span></td><td>Approved but items not yet physically issued</td></tr>
+          <tr><td><span style="color:#166534">Issued</span></td><td>Items issued and loan record(s) created</td></tr>
+          <tr><td><span style="color:#991b1b">Denied</span></td><td>Request rejected (denial reason shown)</td></tr>
+          <tr><td>Withdrawn</td><td>Withdrawn by the requestor before a decision</td></tr>
+        </tbody>
+      </table>
+
+      <h4>Withdrawing a request</h4>
+      <p>Open your request from <strong>My Requests</strong> and click <strong>Withdraw</strong>. Only pending requests can be withdrawn.</p>
+
+      <h4>QM / OC — reviewing requests <span class="help__role">OC / QM</span></h4>
+      <p>The <strong>Pending</strong> tab shows all requests awaiting a decision. A nav badge shows the count of pending requests. From the detail view:</p>
+      <ul>
+        <li><strong>Approve &amp; Issue</strong> — creates loan records immediately. Each line is matched to inventory by NSN, then by name; unmatched lines become non-stock loan lines. Loan references are stored on the request.</li>
+        <li><strong>Approve</strong> — marks the request approved without creating loans (use when items will be issued later at the counter).</li>
+        <li><strong>Deny</strong> — enter a denial reason; the requestor sees this on their My Requests tab.</li>
+      </ul>
+
+      <h4>Blank AB189 PDF</h4>
+      <p>Click <strong>⎙ Blank AB189</strong> to download a print-ready blank AB189 Equipment Request form. The form includes your unit details and approval blocks — cadets fill it in by hand and hand it to the QM, who can then scan/import it.</p>
+
+      <h4>All Requests tab <span class="help__role">OC / QM</span></h4>
+      <p>Shows all requests regardless of status. Use the status filter to narrow the list.</p>
     `,
   },
   {
@@ -238,8 +309,10 @@ const SECTIONS = [
         <li>Click <strong>Save</strong></li>
       </ol>
 
-      <h4>Deactivating a person</h4>
-      <p>Click <strong>Edit</strong> and untick <strong>Active</strong>. The record and loan history are retained.</p>
+      <h4>Deactivating a person (discharge)</h4>
+      <p>Click <strong>Edit</strong> and untick <strong>Active</strong>, then click <strong>Save</strong>.</p>
+      <p><strong>Automatic loan recall:</strong> If the cadet has any active loans at the time of deactivation, a discharge modal lists all outstanding items. All active loans are automatically recalled — their due date is set to today and they are flagged as <strong>Discharged</strong> in the All Loans list with a red badge and border. The QM should retrieve these items.</p>
+      <p class="help__note">Deactivated records and all loan history are retained indefinitely. Tick <strong>Show inactive</strong> on the Cadets page to view them.</p>
     `,
   },
   {
@@ -349,17 +422,23 @@ const SECTIONS = [
         <thead><tr><th>Action</th><th>Meaning</th></tr></thead>
         <tbody>
           <tr><td>add / adjust</td><td>Inventory item added or edited</td></tr>
+          <tr><td>item_delete</td><td>Inventory item deleted</td></tr>
           <tr><td>issue / return</td><td>Loan issued or returned</td></tr>
           <tr><td>cadet_add / cadet_update</td><td>Nominal roll changes</td></tr>
+          <tr><td>cadet_discharge</td><td>Cadet deactivated — outstanding loans automatically recalled</td></tr>
           <tr><td>user_add / user_update / user_delete</td><td>User account management</td></tr>
           <tr><td>pin_change</td><td>PIN set or reset</td></tr>
           <tr><td>login / login_failed</td><td>Login events</td></tr>
-          <tr><td>data_export / data_imported</td><td>Backup actions</td></tr>
-          <tr><td>stocktake</td><td>Stocktake finalised</td></tr>
           <tr><td>session_unlock</td><td>Locked session resumed after PIN entry</td></tr>
+          <tr><td>data_export / data_imported</td><td>Backup actions</td></tr>
+          <tr><td>stocktake / stocktake_writeoff</td><td>Stocktake finalised / write-off recorded during stocktake</td></tr>
           <tr><td>order-import</td><td>AAC QStore order PDF imported</td></tr>
           <tr><td>order-received</td><td>Order approved and items received into IMS</td></tr>
           <tr><td>order-delete</td><td>Order record deleted</td></tr>
+          <tr><td>request_submitted</td><td>Equipment request submitted by a user</td></tr>
+          <tr><td>request_approved</td><td>Equipment request approved (and optionally issued) by QM/OC</td></tr>
+          <tr><td>request_denied</td><td>Equipment request denied by QM/OC</td></tr>
+          <tr><td>request_withdrawn</td><td>Equipment request withdrawn by the requestor</td></tr>
         </tbody>
       </table>
     `,

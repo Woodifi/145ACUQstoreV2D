@@ -14,19 +14,20 @@
 3. [User Roles and Permissions](#3-user-roles-and-permissions)
 4. [Inventory](#4-inventory)
 5. [Loans](#5-loans)
-6. [Cadets / Nominal Roll](#6-cadets--nominal-roll)
-7. [Stocktake](#7-stocktake)
-8. [AAC QStore Orders](#8-aac-qstore-orders)
-9. [Audit Log](#9-audit-log)
-10. [Settings](#10-settings)
-11. [Cloud Sync (OneDrive)](#11-cloud-sync-onedrive)
-12. [Backup and Restore](#12-backup-and-restore)
-13. [PIN Security](#13-pin-security)
-14. [OC PIN Recovery](#14-oc-pin-recovery)
-15. [Issue Kits](#15-issue-kits)
-16. [QR Codes](#16-qr-codes)
-17. [Troubleshooting](#17-troubleshooting)
-18. [Reference — Uniform Sizing](#18-reference--uniform-sizing)
+6. [Equipment Requests (Self-Service)](#6-equipment-requests-self-service)
+7. [Cadets / Nominal Roll](#7-cadets--nominal-roll)
+8. [Stocktake](#8-stocktake)
+9. [AAC QStore Orders](#9-aac-qstore-orders)
+10. [Audit Log](#10-audit-log)
+11. [Settings](#11-settings)
+12. [Cloud Sync (OneDrive)](#12-cloud-sync-onedrive)
+13. [Backup and Restore](#13-backup-and-restore)
+14. [PIN Security](#14-pin-security)
+15. [OC PIN Recovery](#15-oc-pin-recovery)
+16. [Issue Kits](#16-issue-kits)
+17. [QR Codes](#17-qr-codes)
+18. [Troubleshooting](#18-troubleshooting)
+19. [Reference — Uniform Sizing](#19-reference--uniform-sizing)
 
 ---
 
@@ -37,6 +38,7 @@ QStore IMS (Inventory Management System) is a self-contained browser-based appli
 **Key capabilities:**
 - Inventory tracking with five-state condition breakdown, photo support, and QR codes
 - Loan issue and return workflow with printable vouchers and overdue tracking
+- **Cadet self-service equipment request workflow** (AB189-style) with QM approval
 - Nominal roll (cadets and staff) with company / platoon / section grouping
 - Stocktake with full condition breakdown and blank worksheet PDF
 - AAC QStore order PDF import with IMS receive workflow
@@ -120,9 +122,9 @@ QStore IMS has five roles. Assign the appropriate role when creating each user a
 |------|------|-------------|
 | Commanding Officer | OC | Full access including Settings. Only one OC account should exist. |
 | Quartermaster (Staff) | QM | Full operational access — inventory, loans, cadets, stocktake, orders, audit. Cannot access Settings. |
-| Staff | Staff | Can view all pages. Cannot add/edit inventory or manage cadets. |
-| Cadet | Cadet | Can view inventory and their own loans. |
-| Read-Only | RO | View-only access. No actions. |
+| Staff | Staff | Can view all pages and submit equipment requests. Cannot add/edit inventory or manage cadets. |
+| Cadet | Cadet | Can view inventory, their own loans, and submit equipment requests. |
+| Read-Only | RO | View-only access plus equipment request submission. No other actions. |
 
 ### Permission Reference
 
@@ -135,6 +137,8 @@ QStore IMS has five roles. Assign the appropriate role when creating each user a
 | Return loans | ✓ | ✓ | | | |
 | View own loans | ✓ | ✓ | ✓ | ✓ | |
 | View all loans | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Submit equipment requests | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Approve / deny requests | ✓ | ✓ | | | |
 | Manage cadets / staff | ✓ | ✓ | | | |
 | Run stocktake | ✓ | ✓ | | | |
 | Import / manage orders | ✓ | ✓ | | | |
@@ -212,7 +216,7 @@ The **Condition badge** and **Unsvc** count are derived automatically from these
 2. Complete the form:
    - **NSN** — National Stock Number in 4-2-3-4 format (e.g., *8470-66-001-0001*). Non-standard NSNs are accepted with a warning.
    - **Name** — Item description
-   - **Category** — Select from the unit's configured categories (see [Section 10 — Settings](#10-settings))
+   - **Category** — Select from the unit's configured categories (see [Section 11 — Settings](#11-settings))
    - **Authorised qty** — Establishment quantity
    - **On hand** — Current physical quantity
    - **Condition breakdown** — Enter a qty in each applicable condition field. The running total (shown top-right of the section) must equal On hand. Changing On hand automatically adjusts Svc to keep the total consistent.
@@ -259,7 +263,7 @@ The Loans page manages equipment issue and return. When any active loans are pas
 1. Navigate to **Loans → Issue** tab
 2. Select the **borrower** from the cadet/staff list (search by name or service number)
 3. Select the **purpose**:
-   - Initial Issue
+   - **Initial Issue** — see below for special behaviour
    - Annual Camp
    - Training Activity
    - Parade Night
@@ -277,6 +281,17 @@ The Loans page manages equipment issue and return. When any active loans are pas
 
 A loan reference number (LN-XXXX) is assigned automatically. The loan is added to the All Loans list as active.
 
+### Initial Issue
+
+**Initial Issue** is a protected loan purpose for the permanent issue of uniform and equipment to a cadet for the duration of their enlistment.
+
+- The **due date is automatically set to 6 years from today** (matching the standard cadet engagement period) and cannot be changed manually
+- The **long-term loan toggle is disabled** for Initial Issue — a fixed return date is always set
+- **Initial Issue cannot be deleted** from the loan purpose list in Settings — it is permanently available
+- Initial Issue items are clearly marked in the borrower's loan history
+
+> **Purpose:** Initial Issue covers items such as AMCU uniform, boots, beret, and personal equipment that remain with the cadet throughout their service.
+
 ### Using Issue Kits
 
 If you have pre-defined kits (e.g., *Initial Issue — Male Cadet*):
@@ -285,7 +300,7 @@ If you have pre-defined kits (e.g., *Initial Issue — Male Cadet*):
 2. Select the kit from the list
 3. The item lines are pre-filled — adjust quantities as needed before issuing
 
-See [Section 15 — Issue Kits](#15-issue-kits) for creating kits.
+See [Section 16 — Issue Kits](#16-issue-kits) for creating kits.
 
 ### Returning Equipment (OC / QM)
 
@@ -309,13 +324,92 @@ The **All Loans** tab shows every loan record with filter options:
 - **Overdue** — active loans past their due date
 - **All** — full history
 
+**Discharged borrowers:** When a cadet is marked inactive (discharged), all their active loans are immediately recalled — due dates are set to today and the loans are flagged with a **Discharged** badge in the All Loans table. These loans remain active until the QM physically processes the return. See [Section 7 — Cadets](#7-cadets--nominal-roll) for the discharge workflow.
+
 ### Printing Vouchers
 
 A printable loan voucher (AB180-style) is available from any loan record.
 
 ---
 
-## 6. Cadets / Nominal Roll
+## 6. Equipment Requests (Self-Service)
+
+The **Requests** page allows cadets, staff, and all users to submit equipment requests (AB189-style) without requiring direct access to the Issue tab. QMs and the OC review, approve, and issue from the same page.
+
+When pending requests are waiting for approval, a **badge showing the count** appears on the **Requests** navigation item (visible to QM and OC).
+
+### For Cadets and Staff — Submitting a Request
+
+1. Navigate to **Requests → New Request**
+2. Complete the form:
+   - **Purpose** — select from the standard list (Annual Camp, Training Activity, Parade Night, Field Exercise, Ceremonial, Course Attendance, Other)
+   - **Required by** — date the equipment is needed (optional but helpful)
+   - **Items** — add one line per item: enter a description, NSN (optional), and quantity. Click **+ Add item** to add more lines.
+   - **Notes** — any additional information for the QM
+3. Click **Submit Request**
+
+A request reference (REQ-XXXX) is assigned automatically. The request appears in **My Requests** where you can track its status.
+
+### Request Status Badges
+
+| Status | Meaning |
+|--------|---------|
+| **Pending** | Submitted, awaiting QM review |
+| **Approved** | QM has approved — issue will be processed separately |
+| **Issued** | Approved and equipment has been issued; loan references listed |
+| **Denied** | Request declined — reason shown on the request card |
+| **Withdrawn** | You withdrew the request before it was actioned |
+
+### Withdrawing a Request
+
+While a request is **Pending**, click **Withdraw** on the request card in **My Requests** to cancel it. Approved, issued, or denied requests cannot be withdrawn.
+
+### For QM and OC — Approving Requests
+
+1. Navigate to **Requests → Pending**
+2. Review each request card — it shows the requestor, purpose, required-by date, item lines, and any notes
+3. Choose an action:
+   - **Approve & Issue** — immediately creates loan records for each item and marks the request as Issued. The system auto-matches items to inventory by NSN then by description; unmatched lines are issued as non-stock loans.
+   - **Approve (issue later)** — marks the request as Approved. The QM issues the items manually from the standard Loans → Issue tab at a later time.
+   - **Deny** — prompts for a mandatory reason. The requestor can see the reason on their request card.
+
+### Approve & Issue — Matching Logic
+
+When a QM clicks **Approve & Issue**, the system attempts to link each request line to an inventory item:
+
+1. **NSN match** — if the request line has an NSN, the system looks for an inventory item with the same NSN
+2. **Name match** — if no NSN match is found, the system looks for an inventory item with a matching description (case-insensitive exact match)
+3. **Non-stock loan** — if neither match is found, the item is issued as a non-stock loan (no inventory deduction)
+
+The matching logic creates loan records automatically using the same rules as the standard Issue tab. The loan references are displayed on the request card after issue.
+
+### Blank AB189 Form (Print and Fill Offline)
+
+Click **⬇ Blank AB189 Form** on any tab to download a print-ready blank form. This is useful when:
+- A cadet needs to submit a request in writing (e.g. at camp without device access)
+- Brigade or CO requires a signed paper copy
+- The QM wants a physical form to process offline before entering into the system
+
+The blank form includes the unit name in the header (from Settings), all field labels, blank underlines for hand-written completion, and QM/OC signature blocks.
+
+### Importing a Filled AB189 PDF
+
+If a cadet has typed into (digitally filled) a blank AB189 PDF, the QM can import it to pre-populate a new request:
+
+1. On the **Requests** page, click **⬆ Import AB189 PDF**
+2. Select the filled PDF file
+3. The system extracts text and attempts to pre-fill the request form — items, purpose, required-by date, and notes
+4. Review all pre-filled fields and correct any parsing errors before submitting
+
+> **Note:** PDF import works reliably for **digitally-filled** PDFs (text typed into the PDF on a computer). Scanned paper forms are not supported in v2.3 — items would need to be entered manually.
+
+### Viewing All Requests (QM / OC)
+
+The **All Requests** tab shows the complete request history with a status filter bar. Click any status chip to filter the list. All request cards show the requestor, date, purpose, status, and items. Loan references appear on Issued requests.
+
+---
+
+## 7. Cadets / Nominal Roll
 
 The Cadets page manages the unit's personnel records for both cadets and staff.
 
@@ -376,9 +470,22 @@ Click **Edit** on any person to modify their record. To deactivate a person (e.g
 
 Tick **Show inactive** to view deactivated records.
 
+### Cadet Discharge — Automatic Loan Recall
+
+When a cadet is **deactivated** (Active unticked and saved), the system immediately:
+
+1. Sets the **due date to today** on all of that cadet's active loans
+2. Flags those loans as **Discharged** in the All Loans table (red badge and border)
+3. Writes a `cadet_discharge` audit entry listing all recalled loan references
+4. Shows a summary modal listing the outstanding items
+
+> **Purpose:** This ensures outstanding equipment does not go untracked when a cadet leaves the unit. The loans remain active — the QM must physically process the return of each item through the normal return workflow once the equipment is recovered.
+
+The Discharged badge remains visible in All Loans until each item is formally returned.
+
 ---
 
-## 7. Stocktake
+## 8. Stocktake
 
 The Stocktake page guides you through a physical count of all Q-Store items.
 
@@ -425,7 +532,7 @@ Click **⎙ Worksheet** to generate a blank printed count sheet. The worksheet l
 
 ---
 
-## 8. AAC QStore Orders
+## 9. AAC QStore Orders
 
 The **Orders** page is a unit-only tracking module for supply orders placed through the AAC QStore system. It does not connect to or modify AAC QStore — it reads exported PDFs and uses them to track orders and update your local IMS inventory.
 
@@ -513,7 +620,7 @@ Click **Delete** on the order detail to remove the import record. This does **no
 
 ---
 
-## 9. Audit Log
+## 10. Audit Log
 
 The Audit page provides a tamper-evident log of all actions taken in the system.
 
@@ -548,6 +655,11 @@ Both exports honour the active search and action filter — use filters to narro
 | cadet_add | Person added to nominal roll |
 | cadet_update | Person record updated |
 | cadet_delete | Person deactivated/deleted |
+| cadet_discharge | Cadet deactivated — active loans recalled automatically |
+| request_submitted | Equipment request submitted by a cadet/staff member |
+| request_approved | Request approved (issue pending or auto-issued) |
+| request_denied | Request denied; reason recorded |
+| request_withdrawn | Request withdrawn by the requestor |
 | user_add | User account created |
 | user_update | User account edited |
 | user_delete | User account deleted |
@@ -572,7 +684,7 @@ Each entry is cryptographically linked to the previous one. If any entry is alte
 
 ---
 
-## 10. Settings
+## 11. Settings
 
 Settings is accessible to the **OC only**. Navigate to **Settings** from the top navigation.
 
@@ -615,9 +727,18 @@ Manage the item categories available in the Inventory and stocktake pages. The d
 - Medical
 - ICT
 
-To customise: click each chip to remove a category, or type a new name in the text field and press **Enter** to add it. Click **Save categories** to apply. Click **Reset to defaults** to restore the original list.
+To customise:
 
-> **Note:** Removing a category does not affect existing items — they retain their stored category name. Update affected items individually if needed.
+- **Drag** the ⠿ handle to reorder categories
+- Click **↑** / **↓** to move a category up or down. Hold **Shift** while clicking to jump the item to the top or bottom
+- Type a new name in the text field and press **Enter** (or click **Add**) to add it
+- Click **✕** on a chip to remove a category
+
+Click **Save categories** to apply. Click **Reset to defaults** to restore the original list.
+
+> **Notes:**
+> - **Initial Issue** is a protected loan purpose and cannot be removed from the category list, regardless of what is shown here. It is always available on the Loans issue form.
+> - Removing a category does not affect existing items — they retain their stored category name. Update affected items individually if needed.
 
 ### User Accounts
 
@@ -629,9 +750,304 @@ Add, edit, and manage user accounts. Each user has:
 
 See [Section 3 — Managing User Accounts](#3-user-roles-and-permissions) for full details.
 
+### OC PIN Recovery
+
+Generate a 12-character one-shot recovery code. Store this code **off-device** (printed, in a safe, or in a password manager). If the OC forgets their PIN, this code can reset it from the login screen.
+
+- Click **Generate new code** to create a recovery code
+- The code is shown once — copy it immediately
+- Each code can only be used once; a new one must be generated after use
+
+See [Section 15 — OC PIN Recovery](#15-oc-pin-recovery) for full details.
+
+### Security
+
+Configure the auto-lock idle timeout.
+
+| Setting | Options | Default |
+|---------|---------|---------|
+| Auto-lock after idle | Disabled / 5 / 10 / 15 / 30 min / 1 hour | 15 minutes |
+
+When configured, the app locks automatically after the selected period without mouse, keyboard, or touch input. A PIN entry screen overlays the current page — work is not lost. The user enters their PIN to resume or clicks **Sign out / switch user** to log out fully.
+
+Changes take effect immediately without a reload.
+
+> **Tip:** Enable auto-lock on any device shared between users (duty computer, parade-night tablet) to prevent one user's session being accessed by another. 15 minutes is appropriate for most environments.
+
+See [Section 14 — PIN Security](#14-pin-security) for full auto-lock behaviour.
+
+### About
+
+Displays version information, authorship, and the proprietary licence.
+
 ---
 
-## 18. Reference — Uniform Sizing
+## 12. Cloud Sync (OneDrive)
+
+Cloud sync is optional. It backs up all data to a Microsoft OneDrive folder so it can be accessed from other devices and is protected against device loss.
+
+### Requirements
+
+- A Microsoft account (personal, school, or work)
+- An Azure App Registration with the redirect URI matching your app's URL
+
+### Setup
+
+1. Go to **Settings → Cloud sync**
+2. Note the **Redirect URI** shown — you must register this exact URI in Azure
+3. Enter your **Azure Application (Client) ID**
+4. Set the **OneDrive folder name** (default: *QStore*)
+5. Set the **file name** (default: *qstore_data.json*)
+6. Click **Save**
+7. Click **Sign in** and complete the Microsoft authentication flow
+
+> **Client ID security:** After the first successful sync, the Azure Client ID is hidden and replaced with a *Client ID configured* indicator. To view the ID at any time, click and hold the **Hold to reveal** button — the value is shown only while held and immediately hidden on release.
+
+### Using Cloud Sync
+
+- **Auto-sync** (default: on) — syncs automatically when you make changes
+- **Sync now** — manually push current data to OneDrive
+- **Load from cloud** — download and replace local data with the cloud copy (destructive — confirms before proceeding)
+
+> **Note:** Cloud sync is unavailable when the app is opened directly as a `file://` URL. Host it on a web server (GitHub Pages, SharePoint, or a local server) for cloud sync to work.
+
+---
+
+## 13. Backup and Restore
+
+Manual backup/restore is available in **Settings → Data backup & restore**. Use this to:
+- Keep a local copy off-device
+- Transfer data to a new device
+- Restore after accidental data loss
+
+### Exporting a Backup
+
+1. Click **Export backup**
+2. A JSON file is downloaded named `qstore-backup-<unitcode>-<date>.json`
+3. Store this file in a safe location (not on the same device)
+
+The backup includes all inventory, photos, loans, cadets, users, settings, supply orders, and the full audit chain.
+
+### Importing a Backup
+
+1. Click **Import backup**
+2. Select the previously exported `.json` file
+3. Confirm — **this replaces all current data**
+4. The audit chain is preserved and extended with an import entry
+
+### CSV Import
+
+Inventory items can be bulk-imported from a spreadsheet:
+
+1. Click **Import CSV**
+2. Download the template if needed
+3. Map your columns to the required fields
+4. Preview and confirm the import
+
+---
+
+## 14. PIN Security
+
+Each user authenticates with a 4-digit PIN.
+
+### PIN Rules
+
+- Must be exactly 4 digits
+- Stored using Argon2id hashing — the actual PIN is never stored after it is set
+
+### PIN Management Policy
+
+PINs are managed exclusively by the **OC (administrator)**. This is a deliberate security control:
+
+- **No self-service:** Users cannot view or change their own PINs
+- **OC sets initial PINs:** When a new user is created, the OC sets the PIN and gives it to the user verbally
+- **Show-once display:** After any PIN is set or reset, it is displayed once in a confirmation screen for the OC to note down. It cannot be retrieved again — not even by the OC
+- **Forgotten PIN:** If a user forgets their PIN, they must ask the OC to reset it via **Users → Reset PIN**
+
+### Auto-Lock (Idle Timeout)
+
+The OC can configure the app to lock automatically after inactivity. This is set in **Settings → Security → Auto-lock after idle**.
+
+**How it works:**
+- Any mouse, keyboard, or touch activity resets the idle timer
+- When the timer expires, a lock overlay appears over the current page — the user does not lose their place
+- Entering the correct PIN dismisses the overlay and resumes the session
+- Clicking **Sign out / switch user** on the lock screen performs a full logout
+
+**Lockout on the lock screen:** Failed PIN attempts follow the same escalating lockout as login — 5 wrong attempts triggers a 30-second delay, 10 triggers 5 minutes, 15+ triggers 30 minutes.
+
+**Audit trail:** Successful unlocks are recorded as `session_unlock`. Failed attempts are recorded as `login_failed`, the same as login failures.
+
+> **Recommendation:** Enable auto-lock on any shared or unattended device. 15 minutes is the default and suits most environments.
+
+### PIN Lockout
+
+Repeated failed attempts trigger automatic lockouts (applies to both login and lock screen unlock):
+
+| Failed attempts | Lockout duration |
+|----------------|-----------------|
+| 5 | 30 seconds |
+| 10 | 5 minutes |
+| 15+ | 30 minutes |
+
+Lockouts apply per user account. Other users are unaffected.
+
+---
+
+## 15. OC PIN Recovery
+
+The OC account has an additional recovery mechanism that is not available to other roles. It is important to set this up before it is needed.
+
+### Setting Up a Recovery Code (OC)
+
+1. Navigate to **Settings → OC PIN recovery**
+2. Click **Generate new code**
+3. The 12-character recovery code is displayed once — write it down immediately
+4. Store the code **off-device**: a printed copy in the unit safe, on a key cabinet, or in a secured off-device location
+5. Treat it with the same care as the safe combination — anyone with this code can reset the OC PIN and gain full administrative access
+
+> **Warning:** Recovery codes are single-use. After using a code to reset the OC PIN, generate a new one immediately. Without a recovery code, a lost OC PIN cannot be recovered.
+
+### Using a Recovery Code
+
+If the OC forgets their PIN:
+
+1. On the login screen, select the OC account
+2. Click **Forgot PIN?**
+3. Enter the 12-character recovery code
+4. Enter and confirm a new PIN
+5. The recovery code is consumed — generate a new one immediately from Settings
+
+### If the Recovery Code Is Also Lost
+
+There is no bypass for a lost OC PIN without a recovery code. Options:
+- Import a recent backup (data is restored, but the PIN issue remains — you will need to contact support)
+- Contact admin@seanscales.com.au for assistance
+
+---
+
+## 16. Issue Kits
+
+Issue kits are pre-defined bundles of items (e.g., *Initial Issue — Male Cadet*) that pre-fill the loan issue form with a single click.
+
+### Creating a Kit (OC / QM)
+
+1. Go to **Inventory**
+2. Click **⊞ Kits**
+3. Click **+ New kit**
+4. Enter a kit name (required) and description (optional)
+5. Add item lines — search for items and set quantities
+6. Click **Create kit**
+
+**Kit form behaviour:**
+- Clicking outside the form or pressing Escape does **not** close it — data is preserved until you explicitly save or cancel
+- When a kit has many item lines the list becomes scrollable; new lines are added at the bottom and the list scrolls automatically
+- Clicking **Cancel** asks for confirmation before discarding unsaved changes
+
+### Using a Kit
+
+1. Go to **Loans → Issue** tab
+2. Click **⊞ Load kit**
+3. Select the kit — item lines are pre-filled
+4. Adjust quantities if needed (e.g., different sizes)
+5. Proceed with the issue as normal
+
+**Notes:**
+- If a kit item has no stock on hand, it is still added to the issue list and will be recorded as *On Loan* against the inventory entry — a warning toast lists the affected items
+- Kits are templates only — they do not affect stock until the loan is issued
+- Renaming an inventory item is reflected in all kits automatically
+
+---
+
+## 17. QR Codes
+
+QR code labels allow quick item lookup using a phone or tablet camera.
+
+### Printing Labels
+
+1. On the Inventory page, filter to the items you want labels for (or show all)
+2. Click **⎙ QR codes**
+3. A PDF is generated with one label per item, including NSN, name, and QR code
+
+### Scanning Labels
+
+1. Click **⌖ Scan** on the Inventory page
+2. Allow camera access if prompted
+3. Point the camera at a QR code label
+4. The matching item is highlighted in the inventory list
+
+---
+
+## 18. Troubleshooting
+
+### App won't load / blank screen
+
+- Ensure JavaScript is enabled in the browser
+- Try a hard refresh: `Ctrl + Shift + R` (Windows) or `Cmd + Shift + R` (Mac)
+- Check the browser console (F12 → Console) for error messages
+
+### User forgot their PIN
+
+Users cannot reset their own PINs. The OC must click **Reset PIN** on the **Users** page to set a new PIN, then give it to the user verbally.
+
+### Forgot OC PIN — have recovery code
+
+Follow the steps in [Section 15 — OC PIN Recovery](#15-oc-pin-recovery). The recovery code is single-use — generate a new one immediately after use.
+
+### Forgot OC PIN — no recovery code
+
+There is no bypass for a lost OC PIN without a recovery code. Options:
+- Import a recent backup (data is restored but the PIN issue remains — contact support)
+- Contact admin@seanscales.com.au for assistance
+
+**Prevention:** Always generate and securely store a recovery code in Settings before it is needed.
+
+### Data appears missing after a browser update or profile change
+
+IndexedDB data is tied to the browser profile and origin. If you switch browsers, profiles, or reinstall the browser, data may not be present. **Always keep a current backup export.**
+
+### Cloud sync not working
+
+- Ensure the redirect URI in Azure exactly matches the URL shown in Settings
+- Ensure the Azure app has the required Microsoft Graph permissions (`Files.ReadWrite`, `offline_access`, `openid`, `profile`)
+- Try signing out and back in
+- Cloud sync requires the app to be served over HTTPS or from `localhost`
+
+### Search cursor jumps out of the box while typing
+
+Upgrade to the latest version of the app — this was fixed in v2.
+
+### Items show incorrect stock levels
+
+Run a stocktake to reconcile physical counts with the system. Check the Audit log for unexpected adjustments.
+
+### Audit chain verification fails
+
+A broken audit chain indicates that data has been modified outside the application (e.g., via browser DevTools or a corrupted import). Import from your most recent known-good backup.
+
+### Orders — extracted items look wrong after PDF import
+
+The PDF parser reads the QTYREQ column specifically for quantity values and rejects clothing size codes (e.g. "10R", "SIZE 10") from the quantity field automatically. If a quantity still looks wrong:
+
+1. In the editable review screen, click directly on the Qty Req cell for that row and type the correct number
+2. If the description is incorrect, click the Description cell and type the right text
+3. If the NSN is missing dashes or contains a zero/O confusion, correct it — the IMS match will update the IMS status badge as you type
+
+If the import produced **no items at all**, make sure the PDF was downloaded directly from the AAC QStore website (not printed to PDF from a browser, which strips the table structure). Try the download again and re-import.
+
+For password-protected PDFs, remove the password in a PDF reader before importing.
+
+### Equipment request submitted but not showing in Pending
+
+Ensure the user who submitted the request has the correct service number set on their user account. If the user account has no service number, the request still submits correctly — but the QM sees it in Pending immediately regardless.
+
+### Approve & Issue partially issued some items
+
+If the automatic issue failed for some lines, the request is marked **Approved** (not Issued) and the error is noted on the request card. The QM can issue the remaining items manually from **Loans → Issue** and reference the request number in remarks.
+
+---
+
+## 19. Reference — Uniform Sizing
 
 The **Reference** page is accessible from the main navigation bar and is available to all logged-in users. It provides ADF uniform and equipment sizing tables with conversions between AU/NATO (centimetres), US (inches/US sizes), and generalised sizes (XS–3XL), together with measurement guides for each garment type.
 
@@ -720,291 +1136,6 @@ AU/UK boot sizes use the same scale.
 | 64 | 25¼" | 2XL | 8  |
 
 *Full table including all intermediate sizes is available in the app's Reference page.*
-
-### OC PIN Recovery
-
-Generate a 12-character one-shot recovery code. Store this code **off-device** (printed, in a safe, or in a password manager). If the OC forgets their PIN, this code can reset it from the login screen.
-
-- Click **Generate new code** to create a recovery code
-- The code is shown once — copy it immediately
-- Each code can only be used once; a new one must be generated after use
-
-### Security
-
-Configure the auto-lock idle timeout. This is the only control in this section.
-
-| Setting | Options | Default |
-|---------|---------|---------|
-| Auto-lock after idle | Disabled / 5 / 10 / 15 / 30 min / 1 hour | 15 minutes |
-
-When configured, the app locks automatically after the selected period without mouse, keyboard, or touch input. A PIN entry screen overlays the current page — work is not lost. The user enters their PIN to resume or clicks **Sign out / switch user** to log out fully.
-
-Changes take effect immediately without a reload.
-
-> **Tip:** Enable auto-lock on any device shared between users (duty computer, parade-night tablet) to prevent one user's session being accessed by another. 15 minutes is appropriate for most environments.
-
-See [Section 13 — PIN Security](#13-pin-security) for full auto-lock behaviour.
-
-### About
-
-Displays version information, authorship, and the proprietary licence.
-
----
-
-## 11. Cloud Sync (OneDrive)
-
-Cloud sync is optional. It backs up all data to a Microsoft OneDrive folder so it can be accessed from other devices and is protected against device loss.
-
-### Requirements
-
-- A Microsoft account (personal, school, or work)
-- An Azure App Registration with the redirect URI matching your app's URL
-
-### Setup
-
-1. Go to **Settings → Cloud sync**
-2. Note the **Redirect URI** shown — you must register this exact URI in Azure
-3. Enter your **Azure Application (Client) ID**
-4. Set the **OneDrive folder name** (default: *QStore*)
-5. Set the **file name** (default: *qstore_data.json*)
-6. Click **Save**
-7. Click **Sign in** and complete the Microsoft authentication flow
-
-> **Client ID security:** After the first successful sync, the Azure Client ID is hidden and replaced with a *Client ID configured* indicator. To view the ID at any time, click and hold the **Hold to reveal** button — the value is shown only while held and immediately hidden on release.
-
-### Using Cloud Sync
-
-- **Auto-sync** (default: on) — syncs automatically when you make changes
-- **Sync now** — manually push current data to OneDrive
-- **Load from cloud** — download and replace local data with the cloud copy (destructive — confirms before proceeding)
-
-> **Note:** Cloud sync is unavailable when the app is opened directly as a `file://` URL. Host it on a web server (GitHub Pages, SharePoint, or a local server) for cloud sync to work.
-
----
-
-## 12. Backup and Restore
-
-Manual backup/restore is available in **Settings → Data backup & restore**. Use this to:
-- Keep a local copy off-device
-- Transfer data to a new device
-- Restore after accidental data loss
-
-### Exporting a Backup
-
-1. Click **Export backup**
-2. A JSON file is downloaded named `qstore-backup-<unitcode>-<date>.json`
-3. Store this file in a safe location (not on the same device)
-
-The backup includes all inventory, photos, loans, cadets, users, settings, supply orders, and the full audit chain.
-
-### Importing a Backup
-
-1. Click **Import backup**
-2. Select the previously exported `.json` file
-3. Confirm — **this replaces all current data**
-4. The audit chain is preserved and extended with an import entry
-
-### CSV Import
-
-Inventory items can be bulk-imported from a spreadsheet:
-
-1. Click **Import CSV**
-2. Download the template if needed
-3. Map your columns to the required fields
-4. Preview and confirm the import
-
----
-
-## 13. PIN Security
-
-Each user authenticates with a 4-digit PIN.
-
-### PIN Rules
-
-- Must be exactly 4 digits
-- Stored using Argon2id hashing — the actual PIN is never stored after it is set
-
-### PIN Management Policy
-
-PINs are managed exclusively by the **OC (administrator)**. This is a deliberate security control:
-
-- **No self-service:** Users cannot view or change their own PINs
-- **OC sets initial PINs:** When a new user is created, the OC sets the PIN and gives it to the user verbally
-- **Show-once display:** After any PIN is set or reset, it is displayed once in a confirmation screen for the OC to note down. It cannot be retrieved again — not even by the OC
-- **Forgotten PIN:** If a user forgets their PIN, they must ask the OC to reset it via **Users → Reset PIN**
-
-### Auto-Lock (Idle Timeout)
-
-The OC can configure the app to lock automatically after inactivity. This is set in **Settings → Security → Auto-lock after idle**.
-
-**How it works:**
-- Any mouse, keyboard, or touch activity resets the idle timer
-- When the timer expires, a lock overlay appears over the current page — the user does not lose their place
-- Entering the correct PIN dismisses the overlay and resumes the session
-- Clicking **Sign out / switch user** on the lock screen performs a full logout
-
-**Lockout on the lock screen:** Failed PIN attempts follow the same escalating lockout as login — 5 wrong attempts triggers a 30-second delay, 10 triggers 5 minutes, 15+ triggers 30 minutes.
-
-**Audit trail:** Successful unlocks are recorded as `session_unlock`. Failed attempts are recorded as `login_failed`, the same as login failures.
-
-> **Recommendation:** Enable auto-lock on any shared or unattended device. 15 minutes is the default and suits most environments.
-
-### PIN Lockout
-
-Repeated failed attempts trigger automatic lockouts (applies to both login and lock screen unlock):
-
-| Failed attempts | Lockout duration |
-|----------------|-----------------|
-| 5 | 30 seconds |
-| 10 | 5 minutes |
-| 15+ | 30 minutes |
-
-Lockouts apply per user account. Other users are unaffected.
-
----
-
-## 14. OC PIN Recovery
-
-The OC account has an additional recovery mechanism that is not available to other roles. It is important to set this up before it is needed.
-
-### Setting Up a Recovery Code (OC)
-
-1. Navigate to **Settings → OC PIN recovery**
-2. Click **Generate new code**
-3. The 12-character recovery code is displayed once — write it down immediately
-4. Store the code **off-device**: a printed copy in the unit safe, on a key cabinet, or in a secured off-device location
-5. Treat it with the same care as the safe combination — anyone with this code can reset the OC PIN and gain full administrative access
-
-> **Warning:** Recovery codes are single-use. After using a code to reset the OC PIN, generate a new one immediately. Without a recovery code, a lost OC PIN cannot be recovered.
-
-### Using a Recovery Code
-
-If the OC forgets their PIN:
-
-1. On the login screen, select the OC account
-2. Click **Forgot PIN?**
-3. Enter the 12-character recovery code
-4. Enter and confirm a new PIN
-5. The recovery code is consumed — generate a new one immediately from Settings
-
-### If the Recovery Code Is Also Lost
-
-There is no bypass for a lost OC PIN without a recovery code. Options:
-- Import a recent backup (data is restored, but the PIN issue remains — you will need to contact support)
-- Contact admin@seanscales.com.au for assistance
-
----
-
-## 15. Issue Kits
-
-Issue kits are pre-defined bundles of items (e.g., *Initial Issue — Male Cadet*) that pre-fill the loan issue form with a single click.
-
-### Creating a Kit (OC / QM)
-
-1. Go to **Inventory**
-2. Click **⊞ Kits**
-3. Click **+ New kit**
-4. Enter a kit name (required) and description (optional)
-5. Add item lines — search for items and set quantities
-6. Click **Create kit**
-
-**Kit form behaviour:**
-- Clicking outside the form or pressing Escape does **not** close it — data is preserved until you explicitly save or cancel
-- When a kit has many item lines the list becomes scrollable; new lines are added at the bottom and the list scrolls automatically
-- Clicking **Cancel** asks for confirmation before discarding unsaved changes
-
-### Using a Kit
-
-1. Go to **Loans → Issue** tab
-2. Click **⊞ Load kit**
-3. Select the kit — item lines are pre-filled
-4. Adjust quantities if needed (e.g., different sizes)
-5. Proceed with the issue as normal
-
-**Notes:**
-- If a kit item has no stock on hand, it is still added to the issue list and will be recorded as *On Loan* against the inventory entry — a warning toast lists the affected items
-- Kits are templates only — they do not affect stock until the loan is issued
-- Renaming an inventory item is reflected in all kits automatically
-
----
-
-## 16. QR Codes
-
-QR code labels allow quick item lookup using a phone or tablet camera.
-
-### Printing Labels
-
-1. On the Inventory page, filter to the items you want labels for (or show all)
-2. Click **⎙ QR codes**
-3. A PDF is generated with one label per item, including NSN, name, and QR code
-
-### Scanning Labels
-
-1. Click **⌖ Scan** on the Inventory page
-2. Allow camera access if prompted
-3. Point the camera at a QR code label
-4. The matching item is highlighted in the inventory list
-
----
-
-## 17. Troubleshooting
-
-### App won't load / blank screen
-
-- Ensure JavaScript is enabled in the browser
-- Try a hard refresh: `Ctrl + Shift + R` (Windows) or `Cmd + Shift + R` (Mac)
-- Check the browser console (F12 → Console) for error messages
-
-### User forgot their PIN
-
-Users cannot reset their own PINs. The OC must click **Reset PIN** on the **Users** page to set a new PIN, then give it to the user verbally.
-
-### Forgot OC PIN — have recovery code
-
-Follow the steps in [Section 14 — OC PIN Recovery](#14-oc-pin-recovery). The recovery code is single-use — generate a new one immediately after use.
-
-### Forgot OC PIN — no recovery code
-
-There is no bypass for a lost OC PIN without a recovery code. Options:
-- Import a recent backup (data is restored but the PIN issue remains — contact support)
-- Contact admin@seanscales.com.au for assistance
-
-**Prevention:** Always generate and securely store a recovery code in Settings before it is needed.
-
-### Data appears missing after a browser update or profile change
-
-IndexedDB data is tied to the browser profile and origin. If you switch browsers, profiles, or reinstall the browser, data may not be present. **Always keep a current backup export.**
-
-### Cloud sync not working
-
-- Ensure the redirect URI in Azure exactly matches the URL shown in Settings
-- Ensure the Azure app has the required Microsoft Graph permissions (`Files.ReadWrite`, `offline_access`, `openid`, `profile`)
-- Try signing out and back in
-- Cloud sync requires the app to be served over HTTPS or from `localhost`
-
-### Search cursor jumps out of the box while typing
-
-Upgrade to the latest version of the app — this was fixed in v2.
-
-### Items show incorrect stock levels
-
-Run a stocktake to reconcile physical counts with the system. Check the Audit log for unexpected adjustments.
-
-### Audit chain verification fails
-
-A broken audit chain indicates that data has been modified outside the application (e.g., via browser DevTools or a corrupted import). Import from your most recent known-good backup.
-
-### Orders — extracted items look wrong after PDF import
-
-The PDF parser reads the QTYREQ column specifically for quantity values and rejects clothing size codes (e.g. "10R", "SIZE 10") from the quantity field automatically. If a quantity still looks wrong:
-
-1. In the editable review screen, click directly on the Qty Req cell for that row and type the correct number
-2. If the description is incorrect, click the Description cell and type the right text
-3. If the NSN is missing dashes or contains a zero/O confusion, correct it — the IMS match will update the IMS status badge as you type
-
-If the import produced **no items at all**, make sure the PDF was downloaded directly from the AAC QStore website (not printed to PDF from a browser, which strips the table structure). Try the download again and re-import.
-
-For password-protected PDFs, remove the password in a PDF reader before importing.
 
 ---
 

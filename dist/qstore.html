@@ -6672,9 +6672,9 @@ details[open] > .help__section-summary::after {
 </style>
   <meta name="author" content="Sean Scales">
   <meta name="copyright" content="© 2025 Sean Scales. All rights reserved.">
-  <meta name="generator" content="QStore IMS Build 20260519-63BED912">
+  <meta name="generator" content="QStore IMS Build 20260519-2496D451">
   <meta name="license" content="Proprietary — redistribution and modification prohibited without written consent. Contact: admin@seanscales.com.au">
-  <!-- QStore IMS v2 | Author: Sean Scales | Build: 20260519-63BED912 | Built: 2026-05-19 22:21:53 UTC | © 2025 Sean Scales. All rights reserved. Proprietary software — unauthorised copying or modification is prohibited. admin@seanscales.com.au -->
+  <!-- QStore IMS v2 | Author: Sean Scales | Build: 20260519-2496D451 | Built: 2026-05-19 22:53:09 UTC | © 2025 Sean Scales. All rights reserved. Proprietary software — unauthorised copying or modification is prohibited. admin@seanscales.com.au -->
 </head>
 <body>
   <div id="app">
@@ -6708,7 +6708,7 @@ var QStoreApp=(()=>{var jne=Object.create;var yv=Object.defineProperty;var Une=O
 `&&(S=`
 `);var G=0,Z=!1;this.parse=function(z,fe,ie){if(typeof z!="string")throw new Error("Input must be a string");var P=z.length,$=v.length,se=S.length,ce=E.length,K=I(T),O=[],J=[],re=[],he=G=0;if(!z)return We();if(R||R!==!1&&z.indexOf(Y)===-1){for(var de=z.split(S),be=0;be<de.length;be++){if(re=de[be],G+=re.length,be!==de.length-1)G+=S.length;else if(ie)return We();if(!E||re.substring(0,ce)!==E){if(K){if(O=[],Ue(re.split(v)),Oe(),Z)return We()}else Ue(re.split(v));if(Q&&Q<=be)return O=O.slice(0,Q),We(!0)}}return We()}for(var ge=z.indexOf(v,G),_e=z.indexOf(S,G),ee=new RegExp(d(V)+d(Y),"g"),Pe=z.indexOf(Y,G);;)if(z[G]===Y)for(Pe=G,G++;;){if((Pe=z.indexOf(Y,Pe+1))===-1)return ie||J.push({type:"Quotes",code:"MissingQuotes",message:"Quoted field unterminated",row:O.length,index:G}),$e();if(Pe===P-1)return $e(z.substring(G,Pe).replace(ee,Y));if(Y===V&&z[Pe+1]===V)Pe++;else if(Y===V||Pe===0||z[Pe-1]!==V){ge!==-1&&ge<Pe+1&&(ge=z.indexOf(v,Pe+1));var lt=Qe((_e=_e!==-1&&_e<Pe+1?z.indexOf(S,Pe+1):_e)===-1?ge:Math.min(ge,_e));if(z.substr(Pe+1+lt,$)===v){re.push(z.substring(G,Pe).replace(ee,Y)),z[G=Pe+1+lt+$]!==Y&&(Pe=z.indexOf(Y,G)),ge=z.indexOf(v,G),_e=z.indexOf(S,G);break}if(lt=Qe(_e),z.substring(Pe+1+lt,Pe+1+lt+se)===S){if(re.push(z.substring(G,Pe).replace(ee,Y)),tt(Pe+1+lt+se),ge=z.indexOf(v,G),Pe=z.indexOf(Y,G),K&&(Oe(),Z))return We();if(Q&&O.length>=Q)return We(!0);break}J.push({type:"Quotes",code:"InvalidQuotes",message:"Trailing quote on quoted field is malformed",row:O.length,index:G}),Pe++}}else if(E&&re.length===0&&z.substring(G,G+ce)===E){if(_e===-1)return We();G=_e+se,_e=z.indexOf(S,G),ge=z.indexOf(v,G)}else if(ge!==-1&&(ge<_e||_e===-1))re.push(z.substring(G,ge)),G=ge+$,ge=z.indexOf(v,G);else{if(_e===-1)break;if(re.push(z.substring(G,_e)),tt(_e+se),K&&(Oe(),Z))return We();if(Q&&O.length>=Q)return We(!0)}return $e();function Ue(at){O.push(at),he=G}function Qe(at){var Ft=0;return Ft=at!==-1&&(at=z.substring(Pe+1,at))&&at.trim()===""?at.length:Ft}function $e(at){return ie||(at===void 0&&(at=z.substring(G)),re.push(at),G=P,Ue(re),K&&Oe()),We()}function tt(at){G=at,Ue(re),re=[],_e=z.indexOf(S,G)}function We(at){if(C.header&&!fe&&O.length&&!H){var Ft=O[0],Ke=Object.create(null),kt=new Set(Ft);let Rt=!1;for(let bt=0;bt<Ft.length;bt++){let Mt=Ft[bt];if(Ke[Mt=I(C.transformHeader)?C.transformHeader(Mt,bt):Mt]){let mt,nr=Ke[Mt];for(;mt=Mt+"_"+nr,nr++,kt.has(mt););kt.add(mt),Ft[bt]=mt,Ke[Mt]++,Rt=!0,(j=j===null?{}:j)[mt]=Mt}else Ke[Mt]=1,Ft[bt]=Mt;kt.add(Mt)}Rt&&console.warn("Duplicate headers found and renamed."),H=!0}return{data:O,errors:J,meta:{delimiter:v,linebreak:S,aborted:Z,truncated:!!at,cursor:he+(fe||0),renamedHeaders:j}}}function Oe(){T(We()),O=[],J=[]}},this.abort=function(){Z=!0},this.getCharIndex=function(){return G}}function p(C){var v=C.data,S=a[v.workerId],E=!1;if(v.error)S.userError(v.error,v.file);else if(v.results&&v.results.data){var T={abort:function(){E=!0,m(v.workerId,{data:[],errors:[],meta:{aborted:!0}})},pause:x,resume:x};if(I(S.userStep)){for(var Q=0;Q<v.results.data.length&&(S.userStep({data:v.results.data[Q],errors:v.results.errors,meta:v.results.meta},T),!E);Q++);delete v.results}else I(S.userChunk)&&(S.userChunk(v.results,T,v.file),delete v.results)}v.finished&&!E&&m(v.workerId,v.results)}function m(C,v){var S=a[C];I(S.userComplete)&&S.userComplete(v),S.terminate(),delete a[C]}function x(){throw new Error("Not implemented.")}function w(C){if(typeof C!="object"||C===null)return C;var v,S=Array.isArray(C)?[]:{};for(v in C)S[v]=w(C[v]);return S}function b(C,v){return function(){C.apply(v,arguments)}}function I(C){return typeof C=="function"}return o.parse=function(C,v){var S=(v=v||{}).dynamicTyping||!1;if(I(S)&&(v.dynamicTypingFunction=S,S={}),v.dynamicTyping=S,v.transform=!!I(v.transform)&&v.transform,!v.worker||!o.WORKERS_SUPPORTED)return S=null,o.NODE_STREAM_INPUT,typeof C=="string"?(C=(E=>E.charCodeAt(0)!==65279?E:E.slice(1))(C),S=new(v.download?c:f)(v)):C.readable===!0&&I(C.read)&&I(C.on)?S=new h(v):(e.File&&C instanceof File||C instanceof Object)&&(S=new A(v)),S.stream(C);(S=(()=>{var E;return!!o.WORKERS_SUPPORTED&&(E=(()=>{var T=e.URL||e.webkitURL||null,Q=r.toString();return o.BLOB_URL||(o.BLOB_URL=T.createObjectURL(new Blob(["var global = (function() { if (typeof self !== 'undefined') { return self; } if (typeof window !== 'undefined') { return window; } if (typeof global !== 'undefined') { return global; } return {}; })(); global.IS_PAPA_WORKER=true; ","(",Q,")();"],{type:"text/javascript"})))})(),(E=new e.Worker(E)).onmessage=p,E.id=s++,a[E.id]=E)})()).userStep=v.step,S.userChunk=v.chunk,S.userComplete=v.complete,S.userError=v.error,v.step=I(v.step),v.chunk=I(v.chunk),v.complete=I(v.complete),v.error=I(v.error),delete v.worker,S.postMessage({input:C,config:v,workerId:S.id})},o.unparse=function(C,v){var S=!1,E=!0,T=",",Q=`\r
 `,R='"',j=R+R,H=!1,Y=null,V=!1,G=((()=>{if(typeof v=="object"){if(typeof v.delimiter!="string"||o.BAD_DELIMITERS.filter(function(fe){return v.delimiter.indexOf(fe)!==-1}).length||(T=v.delimiter),typeof v.quotes!="boolean"&&typeof v.quotes!="function"&&!Array.isArray(v.quotes)||(S=v.quotes),typeof v.skipEmptyLines!="boolean"&&typeof v.skipEmptyLines!="string"||(H=v.skipEmptyLines),typeof v.newline=="string"&&(Q=v.newline),typeof v.quoteChar=="string"&&(R=v.quoteChar),typeof v.header=="boolean"&&(E=v.header),Array.isArray(v.columns)){if(v.columns.length===0)throw new Error("Option columns is empty");Y=v.columns}v.escapeChar!==void 0&&(j=v.escapeChar+R),v.escapeFormulae instanceof RegExp?V=v.escapeFormulae:typeof v.escapeFormulae=="boolean"&&v.escapeFormulae&&(V=/^[=+\-@\t\r].*$/)}})(),new RegExp(d(R),"g"));if(typeof C=="string"&&(C=JSON.parse(C)),Array.isArray(C)){if(!C.length||Array.isArray(C[0]))return Z(null,C,H);if(typeof C[0]=="object")return Z(Y||Object.keys(C[0]),C,H)}else if(typeof C=="object")return typeof C.data=="string"&&(C.data=JSON.parse(C.data)),Array.isArray(C.data)&&(C.fields||(C.fields=C.meta&&C.meta.fields||Y),C.fields||(C.fields=Array.isArray(C.data[0])?C.fields:typeof C.data[0]=="object"?Object.keys(C.data[0]):[]),Array.isArray(C.data[0])||typeof C.data[0]=="object"||(C.data=[C.data])),Z(C.fields||[],C.data||[],H);throw new Error("Unable to serialize unrecognized input");function Z(fe,ie,P){var $="",se=(typeof fe=="string"&&(fe=JSON.parse(fe)),typeof ie=="string"&&(ie=JSON.parse(ie)),Array.isArray(fe)&&0<fe.length),ce=!Array.isArray(ie[0]);if(se&&E){for(var K=0;K<fe.length;K++)0<K&&($+=T),$+=z(fe[K],K);0<ie.length&&($+=Q)}for(var O=0;O<ie.length;O++){var J=(se?fe:ie[O]).length,re=!1,he=se?Object.keys(ie[O]).length===0:ie[O].length===0;if(P&&!se&&(re=P==="greedy"?ie[O].join("").trim()==="":ie[O].length===1&&ie[O][0].length===0),P==="greedy"&&se){for(var de=[],be=0;be<J;be++){var ge=ce?fe[be]:be;de.push(ie[O][ge])}re=de.join("").trim()===""}if(!re){for(var _e=0;_e<J;_e++){0<_e&&!he&&($+=T);var ee=se&&ce?fe[_e]:_e;$+=z(ie[O][ee],_e)}O<ie.length-1&&(!P||0<J&&!he)&&($+=Q)}}return $}function z(fe,ie){var P,$;return fe==null?"":fe.constructor===Date?JSON.stringify(fe).slice(1,25):($=!1,V&&typeof fe=="string"&&V.test(fe)&&(fe="'"+fe,$=!0),P=fe.toString().replace(G,j),($=$||S===!0||typeof S=="function"&&S(fe,ie)||Array.isArray(S)&&S[ie]||((se,ce)=>{for(var K=0;K<ce.length;K++)if(-1<se.indexOf(ce[K]))return!0;return!1})(P,o.BAD_DELIMITERS)||-1<P.indexOf(T)||P.charAt(0)===" "||P.charAt(P.length-1)===" ")?R+P+R:P)}},o.RECORD_SEP="",o.UNIT_SEP="",o.BYTE_ORDER_MARK="\uFEFF",o.BAD_DELIMITERS=["\r",`
-`,'"',o.BYTE_ORDER_MARK],o.WORKERS_SUPPORTED=!n&&!!e.Worker,o.NODE_STREAM_INPUT=1,o.LocalChunkSize=10485760,o.RemoteChunkSize=5242880,o.DefaultDelimiter=",",o.Parser=g,o.ParserHandle=u,o.NetworkStreamer=c,o.FileStreamer=A,o.StringStreamer=f,o.ReadableStreamStreamer=h,e.jQuery&&((t=e.jQuery).fn.parse=function(C){var v=C.config||{},S=[];return this.each(function(Q){if(!(t(this).prop("tagName").toUpperCase()==="INPUT"&&t(this).attr("type").toLowerCase()==="file"&&e.FileReader)||!this.files||this.files.length===0)return!0;for(var R=0;R<this.files.length;R++)S.push({file:this.files[R],inputElem:this,instanceConfig:t.extend({},v)})}),E(),this;function E(){if(S.length===0)I(C.complete)&&C.complete();else{var Q,R,j,H,Y=S[0];if(I(C.before)){var V=C.before(Y.file,Y.inputElem);if(typeof V=="object"){if(V.action==="abort")return Q="AbortError",R=Y.file,j=Y.inputElem,H=V.reason,void(I(C.error)&&C.error({name:Q},R,j,H));if(V.action==="skip")return void T();typeof V.config=="object"&&(Y.instanceConfig=t.extend(Y.instanceConfig,V.config))}else if(V==="skip")return void T()}var G=Y.instanceConfig.complete;Y.instanceConfig.complete=function(Z){I(G)&&G(Z,Y.file,Y.inputElem),T()},o.parse(Y.file,Y.instanceConfig)}}function T(){S.splice(0,1),E()}}),i&&(e.onmessage=function(C){C=C.data,o.WORKER_ID===void 0&&C&&(o.WORKER_ID=C.workerId),typeof C.input=="string"?e.postMessage({workerId:o.WORKER_ID,results:o.parse(C.input,C.config),finished:!0}):(e.File&&C.input instanceof File||C.input instanceof Object)&&(C=o.parse(C.input,C.config))&&e.postMessage({workerId:o.WORKER_ID,results:C,finished:!0})}),(c.prototype=Object.create(l.prototype)).constructor=c,(A.prototype=Object.create(l.prototype)).constructor=A,(f.prototype=Object.create(f.prototype)).constructor=f,(h.prototype=Object.create(l.prototype)).constructor=h,o})});var W5e={};$8(W5e,{boot:()=>j5e});var Ev="20260519-63BED912",sM="2026-05-19 22:21:53 UTC",Lne="Sean Scales",oM="admin@seanscales.com.au";var Gne="QStore IMS v2.2",Kne=["https://woodifi.github.io","http://localhost","http://127.0.0.1","null"];function lM(){let r="color:#c9a227;font-size:13px;font-weight:700;letter-spacing:0.05em;",e="color:#8b98a8;font-size:11px;",t="color:#e05252;font-size:11px;font-weight:600;",n="color:#d0d8e4;font-size:11px;";console.groupCollapsed("%c\u25B6 QStore IMS%c  \u2502  \xA9 Sean Scales  \u2502  Build\xA0"+Ev,r,e),console.log("%cProduct  %c"+Gne,e,n),console.log("%cAuthor   %c"+Lne,e,n),console.log("%cContact  %c"+oM,e,n),console.log("%cBuild    %c"+Ev,e,n),console.log("%cBuilt    %c"+sM,e,n),console.log("%cLicence  %cProprietary \u2014 All Rights Reserved",e,n),console.log("%c\u26A0 Unauthorised copying, modification or redistribution of this software is prohibited and may result in legal action.",t),console.groupEnd()}function cM(){let r=String(window.location.origin);Kne.some(t=>r===t||r.startsWith(t+"/"))||console.warn("[QStore IMS] \u26A0 This application is running from an unrecognised origin: "+r+`.
+`,'"',o.BYTE_ORDER_MARK],o.WORKERS_SUPPORTED=!n&&!!e.Worker,o.NODE_STREAM_INPUT=1,o.LocalChunkSize=10485760,o.RemoteChunkSize=5242880,o.DefaultDelimiter=",",o.Parser=g,o.ParserHandle=u,o.NetworkStreamer=c,o.FileStreamer=A,o.StringStreamer=f,o.ReadableStreamStreamer=h,e.jQuery&&((t=e.jQuery).fn.parse=function(C){var v=C.config||{},S=[];return this.each(function(Q){if(!(t(this).prop("tagName").toUpperCase()==="INPUT"&&t(this).attr("type").toLowerCase()==="file"&&e.FileReader)||!this.files||this.files.length===0)return!0;for(var R=0;R<this.files.length;R++)S.push({file:this.files[R],inputElem:this,instanceConfig:t.extend({},v)})}),E(),this;function E(){if(S.length===0)I(C.complete)&&C.complete();else{var Q,R,j,H,Y=S[0];if(I(C.before)){var V=C.before(Y.file,Y.inputElem);if(typeof V=="object"){if(V.action==="abort")return Q="AbortError",R=Y.file,j=Y.inputElem,H=V.reason,void(I(C.error)&&C.error({name:Q},R,j,H));if(V.action==="skip")return void T();typeof V.config=="object"&&(Y.instanceConfig=t.extend(Y.instanceConfig,V.config))}else if(V==="skip")return void T()}var G=Y.instanceConfig.complete;Y.instanceConfig.complete=function(Z){I(G)&&G(Z,Y.file,Y.inputElem),T()},o.parse(Y.file,Y.instanceConfig)}}function T(){S.splice(0,1),E()}}),i&&(e.onmessage=function(C){C=C.data,o.WORKER_ID===void 0&&C&&(o.WORKER_ID=C.workerId),typeof C.input=="string"?e.postMessage({workerId:o.WORKER_ID,results:o.parse(C.input,C.config),finished:!0}):(e.File&&C.input instanceof File||C.input instanceof Object)&&(C=o.parse(C.input,C.config))&&e.postMessage({workerId:o.WORKER_ID,results:C,finished:!0})}),(c.prototype=Object.create(l.prototype)).constructor=c,(A.prototype=Object.create(l.prototype)).constructor=A,(f.prototype=Object.create(f.prototype)).constructor=f,(h.prototype=Object.create(l.prototype)).constructor=h,o})});var W5e={};$8(W5e,{boot:()=>j5e});var Ev="20260519-2496D451",sM="2026-05-19 22:53:09 UTC",Lne="Sean Scales",oM="admin@seanscales.com.au";var Gne="QStore IMS v2.2",Kne=["https://woodifi.github.io","http://localhost","http://127.0.0.1","null"];function lM(){let r="color:#c9a227;font-size:13px;font-weight:700;letter-spacing:0.05em;",e="color:#8b98a8;font-size:11px;",t="color:#e05252;font-size:11px;font-weight:600;",n="color:#d0d8e4;font-size:11px;";console.groupCollapsed("%c\u25B6 QStore IMS%c  \u2502  \xA9 Sean Scales  \u2502  Build\xA0"+Ev,r,e),console.log("%cProduct  %c"+Gne,e,n),console.log("%cAuthor   %c"+Lne,e,n),console.log("%cContact  %c"+oM,e,n),console.log("%cBuild    %c"+Ev,e,n),console.log("%cBuilt    %c"+sM,e,n),console.log("%cLicence  %cProprietary \u2014 All Rights Reserved",e,n),console.log("%c\u26A0 Unauthorised copying, modification or redistribution of this software is prohibited and may result in legal action.",t),console.groupEnd()}function cM(){let r=String(window.location.origin);Kne.some(t=>r===t||r.startsWith(t+"/"))||console.warn("[QStore IMS] \u26A0 This application is running from an unrecognised origin: "+r+`.
 QStore IMS is proprietary software owned by Sean Scales (admin@seanscales.com.au).
 If you did not receive this copy directly from the author, you may be using an unauthorised distribution.
 Build ID: `+Ev+"  |  Built: "+sM)}var zne=["\xA9 2025 Sean Scales","admin@seanscales.com.au","Proprietary Software Licence"];function AM(){let r=document.documentElement.innerHTML,e=zne.filter(t=>!r.includes(t));e.length>0&&console.error("[QStore IMS] \u26A0 Integrity check failed \u2014 "+e.length+` copyright sentinel(s) are missing from the document.
@@ -9697,14 +9697,27 @@ Continue?`))){r&&(r.disabled=!0);try{let n=await Nv(e.userId);await or.append({a
       <table class="help__table">
         <thead><tr><th>Role</th><th>What they can do</th></tr></thead>
         <tbody>
-          <tr><td><strong>OC</strong></td><td>Full access including Settings. Assign to the Commanding Officer only.</td></tr>
-          <tr><td><strong>QM</strong></td><td>Full operational access \u2014 inventory, loans, cadets, stocktake, audit. Cannot access Settings.</td></tr>
-          <tr><td><strong>Staff</strong></td><td>View all pages. Cannot add/edit inventory or manage cadets.</td></tr>
-          <tr><td><strong>Cadet</strong></td><td>View inventory and their own loans only.</td></tr>
+          <tr><td><strong>OC</strong></td><td>Full access including Settings, Users, approvals, and PIN management. Assign to the Commanding Officer only.</td></tr>
+          <tr><td><strong>QM</strong></td><td>Full operational access \u2014 inventory, loans, cadets, stocktake, orders, audit, equipment request approval. Cannot access Settings.</td></tr>
+          <tr><td><strong>Staff</strong></td><td>View all pages and submit equipment requests. Cannot add/edit inventory or manage cadets.</td></tr>
+          <tr><td><strong>Cadet</strong></td><td>View inventory, view their own loans, and submit equipment requests.</td></tr>
           <tr><td><strong>Read-Only</strong></td><td>View-only. No actions.</td></tr>
         </tbody>
       </table>
-      <p class="help__note">Only the OC can access the <strong>Users</strong> and <strong>Settings</strong> pages. Only OC and QM can issue/return loans, edit inventory, or run stocktakes.</p>
+      <table class="help__table" style="margin-top:0.5rem">
+        <thead><tr><th>Action</th><th>OC</th><th>QM</th><th>Staff</th><th>Cadet</th><th>RO</th></tr></thead>
+        <tbody>
+          <tr><td>View inventory / cadets / loans</td><td>\u2713</td><td>\u2713</td><td>\u2713</td><td>\u2713</td><td>\u2713</td></tr>
+          <tr><td>Submit equipment requests</td><td>\u2713</td><td>\u2713</td><td>\u2713</td><td>\u2713</td><td>\u2014</td></tr>
+          <tr><td>Issue / return loans</td><td>\u2713</td><td>\u2713</td><td>\u2014</td><td>\u2014</td><td>\u2014</td></tr>
+          <tr><td>Approve / deny requests</td><td>\u2713</td><td>\u2713</td><td>\u2014</td><td>\u2014</td><td>\u2014</td></tr>
+          <tr><td>Edit inventory / cadets</td><td>\u2713</td><td>\u2713</td><td>\u2014</td><td>\u2014</td><td>\u2014</td></tr>
+          <tr><td>Stocktake / Orders</td><td>\u2713</td><td>\u2713</td><td>\u2014</td><td>\u2014</td><td>\u2014</td></tr>
+          <tr><td>Audit log</td><td>\u2713</td><td>\u2713</td><td>\u2014</td><td>\u2014</td><td>\u2014</td></tr>
+          <tr><td>Settings / Users</td><td>\u2713</td><td>\u2014</td><td>\u2014</td><td>\u2014</td><td>\u2014</td></tr>
+        </tbody>
+      </table>
+      <p class="help__note">Only the OC can access the <strong>Users</strong> and <strong>Settings</strong> pages. Only OC and QM can issue/return loans, approve requests, edit inventory, or run stocktakes.</p>
     `},{id:"users",title:"User accounts",icon:"\u{1F465}",body:`
       <p>The <strong>Users</strong> page (OC only) is where you create and manage login accounts for everyone who uses the app.</p>
 
@@ -9786,8 +9799,18 @@ Continue?`))){r&&(r.disabled=!0);try{let n=await Nv(e.userId);await or.append({a
       </ol>
       <p>A loan reference (LN-XXXX) is assigned automatically.</p>
 
+      <h4>Initial Issue</h4>
+      <p>The <strong>Initial Issue</strong> purpose creates a long-term personal issue record. The due date is automatically set to six years from today and is locked \u2014 it cannot be changed. Initial Issue loans are never flagged as overdue regardless of age.</p>
+      <p class="help__note">Initial Issue is a protected purpose and cannot be deleted from Settings categories. It is not available in the self-service Requests form \u2014 the QM must create it directly.</p>
+
+      <h4>Long-term loans</h4>
+      <p>Tick <strong>Long-term loan</strong> on the issue form (step 3 of the kit picker) to mark a loan as indefinite. Long-term loans do not require a due date and are never flagged as overdue.</p>
+
       <h4>Using an issue kit</h4>
-      <p>Click <strong>\u229E Load kit</strong> on the Issue tab to pre-fill items from a saved kit. Adjust quantities before issuing.</p>
+      <p>Click <strong>\u229E Load kit</strong> on the Issue tab to pre-fill items from a saved kit. Adjust quantities before issuing. Out-of-stock items are shown with a red "nil stock" badge \u2014 they can still be added as non-stock lines if needed.</p>
+
+      <h4>Non-stock and unit/activity loans</h4>
+      <p>On the issue form you can add lines for items not yet in inventory (non-stock) or issue to a unit/activity rather than an individual (unit loan). When a non-stock item is returned, you are prompted to add it to inventory.</p>
 
       <h4>Returning equipment <span class="help__role">OC / QM</span></h4>
       <ol>
@@ -9801,7 +9824,49 @@ Continue?`))){r&&(r.disabled=!0);try{let n=await Nv(e.userId);await or.append({a
       <p>Initial Issue \xB7 Annual Camp \xB7 Training Activity \xB7 Parade Night \xB7 Field Exercise \xB7 Ceremonial \xB7 Course Attendance \xB7 Other</p>
 
       <h4>All Loans tab</h4>
-      <p>Filter by Active, Returned, Overdue, or All. Search by borrower name or loan reference.</p>
+      <p>Filter by Active, Returned, Overdue, or All. Search by borrower name or loan reference. Use the <strong>Borrower</strong> picker to show only loans for a specific person \u2014 pill counts update to reflect that borrower's loans.</p>
+      <p>Loans belonging to a discharged cadet are flagged with a red <strong>Discharged</strong> badge. These are automatically recalled (due date set to discharge date) when a cadet is deactivated.</p>
+    `},{id:"requests",title:"Equipment requests",icon:"\u{1F4CB}",body:`
+      <p>The <strong>Requests</strong> page lets cadets and staff submit equipment requests that QMs and OCs can then approve, issue, or deny \u2014 all within the IMS.</p>
+
+      <h4>Submitting a request (all roles except Read-Only)</h4>
+      <ol>
+        <li>Go to <strong>Requests \u2192 Submit Request</strong></li>
+        <li>Enter the purpose, required-by date, and optional notes</li>
+        <li>Add item lines \u2014 description, NSN (optional), and quantity</li>
+        <li>Click <strong>Submit Request</strong></li>
+      </ol>
+      <p>The request is assigned a reference number (REQ-NNNN) and appears in the QM's pending queue immediately.</p>
+      <p>You can also <strong>import a pre-filled AB189 PDF</strong>: click <strong>Import AB189 PDF</strong> to extract the purpose, required-by date, and item lines from a scanned or digital AB189 form. Review and edit before submitting.</p>
+
+      <h4>Request statuses</h4>
+      <table class="help__table">
+        <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><span style="color:#b45309">Pending</span></td><td>Awaiting QM/OC review</td></tr>
+          <tr><td><span style="color:#1d4ed8">Approved</span></td><td>Approved but items not yet physically issued</td></tr>
+          <tr><td><span style="color:#166534">Issued</span></td><td>Items issued and loan record(s) created</td></tr>
+          <tr><td><span style="color:#991b1b">Denied</span></td><td>Request rejected (denial reason shown)</td></tr>
+          <tr><td>Withdrawn</td><td>Withdrawn by the requestor before a decision</td></tr>
+        </tbody>
+      </table>
+
+      <h4>Withdrawing a request</h4>
+      <p>Open your request from <strong>My Requests</strong> and click <strong>Withdraw</strong>. Only pending requests can be withdrawn.</p>
+
+      <h4>QM / OC \u2014 reviewing requests <span class="help__role">OC / QM</span></h4>
+      <p>The <strong>Pending</strong> tab shows all requests awaiting a decision. A nav badge shows the count of pending requests. From the detail view:</p>
+      <ul>
+        <li><strong>Approve &amp; Issue</strong> \u2014 creates loan records immediately. Each line is matched to inventory by NSN, then by name; unmatched lines become non-stock loan lines. Loan references are stored on the request.</li>
+        <li><strong>Approve</strong> \u2014 marks the request approved without creating loans (use when items will be issued later at the counter).</li>
+        <li><strong>Deny</strong> \u2014 enter a denial reason; the requestor sees this on their My Requests tab.</li>
+      </ul>
+
+      <h4>Blank AB189 PDF</h4>
+      <p>Click <strong>\u2399 Blank AB189</strong> to download a print-ready blank AB189 Equipment Request form. The form includes your unit details and approval blocks \u2014 cadets fill it in by hand and hand it to the QM, who can then scan/import it.</p>
+
+      <h4>All Requests tab <span class="help__role">OC / QM</span></h4>
+      <p>Shows all requests regardless of status. Use the status filter to narrow the list.</p>
     `},{id:"kits",title:"Issue kits",icon:"\u229E",body:`
       <p>Issue kits are saved item bundles that pre-fill the loan issue form \u2014 useful for Initial Issue or camp packing lists.</p>
 
@@ -9845,8 +9910,10 @@ Continue?`))){r&&(r.disabled=!0);try{let n=await Nv(e.userId);await or.append({a
         <li>Click <strong>Save</strong></li>
       </ol>
 
-      <h4>Deactivating a person</h4>
-      <p>Click <strong>Edit</strong> and untick <strong>Active</strong>. The record and loan history are retained.</p>
+      <h4>Deactivating a person (discharge)</h4>
+      <p>Click <strong>Edit</strong> and untick <strong>Active</strong>, then click <strong>Save</strong>.</p>
+      <p><strong>Automatic loan recall:</strong> If the cadet has any active loans at the time of deactivation, a discharge modal lists all outstanding items. All active loans are automatically recalled \u2014 their due date is set to today and they are flagged as <strong>Discharged</strong> in the All Loans list with a red badge and border. The QM should retrieve these items.</p>
+      <p class="help__note">Deactivated records and all loan history are retained indefinitely. Tick <strong>Show inactive</strong> on the Cadets page to view them.</p>
     `},{id:"stocktake",title:"Stocktake",icon:"\u{1F522}",body:`
       <h4>Running a stocktake <span class="help__role">OC / QM</span></h4>
       <p>Each item has <strong>five count columns</strong> matching every condition state in the system:</p>
@@ -9938,17 +10005,23 @@ Continue?`))){r&&(r.disabled=!0);try{let n=await Nv(e.userId);await or.append({a
         <thead><tr><th>Action</th><th>Meaning</th></tr></thead>
         <tbody>
           <tr><td>add / adjust</td><td>Inventory item added or edited</td></tr>
+          <tr><td>item_delete</td><td>Inventory item deleted</td></tr>
           <tr><td>issue / return</td><td>Loan issued or returned</td></tr>
           <tr><td>cadet_add / cadet_update</td><td>Nominal roll changes</td></tr>
+          <tr><td>cadet_discharge</td><td>Cadet deactivated \u2014 outstanding loans automatically recalled</td></tr>
           <tr><td>user_add / user_update / user_delete</td><td>User account management</td></tr>
           <tr><td>pin_change</td><td>PIN set or reset</td></tr>
           <tr><td>login / login_failed</td><td>Login events</td></tr>
-          <tr><td>data_export / data_imported</td><td>Backup actions</td></tr>
-          <tr><td>stocktake</td><td>Stocktake finalised</td></tr>
           <tr><td>session_unlock</td><td>Locked session resumed after PIN entry</td></tr>
+          <tr><td>data_export / data_imported</td><td>Backup actions</td></tr>
+          <tr><td>stocktake / stocktake_writeoff</td><td>Stocktake finalised / write-off recorded during stocktake</td></tr>
           <tr><td>order-import</td><td>AAC QStore order PDF imported</td></tr>
           <tr><td>order-received</td><td>Order approved and items received into IMS</td></tr>
           <tr><td>order-delete</td><td>Order record deleted</td></tr>
+          <tr><td>request_submitted</td><td>Equipment request submitted by a user</td></tr>
+          <tr><td>request_approved</td><td>Equipment request approved (and optionally issued) by QM/OC</td></tr>
+          <tr><td>request_denied</td><td>Equipment request denied by QM/OC</td></tr>
+          <tr><td>request_withdrawn</td><td>Equipment request withdrawn by the requestor</td></tr>
         </tbody>
       </table>
     `},{id:"pin",title:"PINs and security",icon:"\u{1F510}",body:`
