@@ -96,6 +96,7 @@ let _root        = null;
 let _activeTab   = null;          // 'issue' | 'return' | 'all'
 let _allFilter   = 'active';      // 'active' | 'returned' | 'overdue' | 'all'
 let _allSearch   = '';
+let _allBorrower = '';            // svcNo of selected borrower, '' = show all
 
 // Issue-tab transient state — the in-progress batch of lines, plus the
 // borrower selection. Reset on submit or when the user switches away.
@@ -111,9 +112,10 @@ let _returnState = null;          // { svcNo, refsChecked: Set }
 
 export async function mount(rootEl) {
   AUTH.requirePermission('view');
-  _root      = rootEl;
-  _allFilter = 'active';
-  _allSearch = '';
+  _root        = rootEl;
+  _allFilter   = 'active';
+  _allSearch   = '';
+  _allBorrower = '';
   _issueState  = _freshIssueState();
   _returnState = _freshReturnState();
   _activeTab   = _firstAllowedTab();
@@ -828,11 +830,41 @@ async function _submitReturn(body) {
 async function _renderAllTab(body) {
   AUTH.requirePermission('view');
 
-  const all = await Storage.loans.list();
+  const [all, cadets] = await Promise.all([
+    Storage.loans.list(),
+    Storage.cadets.list(),
+  ]);
   const today = _todayLocalIsoDate();
 
-  // Apply filter then search.
+  // Build a sorted list of borrowers who have at least one loan record,
+  // for the person-picker datalist. Use denormalised borrowerName from the
+  // loan records so it matches even if the cadet record was later removed.
+  const borrowerMap = new Map();
+  all.forEach((l) => {
+    if (l.borrowerSvc && !borrowerMap.has(l.borrowerSvc)) {
+      borrowerMap.set(l.borrowerSvc, l.borrowerName || l.borrowerSvc);
+    }
+  });
+  // Enrich with live cadet records where possible (rank may have changed).
+  cadets.forEach((c) => {
+    if (borrowerMap.has(c.svcNo)) {
+      borrowerMap.set(c.svcNo, `${c.rank || ''} ${c.surname || ''} ${c.firstName ? c.firstName.charAt(0) + '.' : ''}`.trim());
+    }
+  });
+  const borrowerOptions = [...borrowerMap.entries()]
+    .sort((a, b) => a[1].localeCompare(b[1]))
+    .map(([svc, name]) => ({ svc, name }));
+
+  // Resolved selected borrower name (for the chip label).
+  const selectedBorrowerName = _allBorrower
+    ? (borrowerMap.get(_allBorrower) || _allBorrower)
+    : '';
+
+  // Apply borrower → status filter → text search (most restrictive first).
   let filtered = all;
+  if (_allBorrower) {
+    filtered = filtered.filter((l) => l.borrowerSvc === _allBorrower);
+  }
   if (_allFilter === 'active') {
     filtered = filtered.filter((l) => l.active === true);
   } else if (_allFilter === 'returned') {
@@ -846,29 +878,57 @@ async function _renderAllTab(body) {
       [l.ref, l.itemName, l.nsn, l.borrowerName, l.borrowerSvc, l.purpose, l.remarks]
         .join(' ').toLowerCase().includes(q));
   }
-  // Sort by issueDate desc (most recent first), tie-break by ref desc so
-  // batches stay grouped.
+  // Sort: issueDate desc, tie-break ref desc (keeps batches together).
   filtered.sort((a, b) => {
     const d = (b.issueDate || '').localeCompare(a.issueDate || '');
     return d !== 0 ? d : (b.ref || '').localeCompare(a.ref || '');
   });
 
-  // Restrict view for non-OC/QM users to their own loans (viewOwnLoans).
-  // We'll wire that properly in v2.2 when user-cadet linking lands; for now
-  // OC/QM see all, others see all (read-only).
   const canReturn = AUTH.can('return');
 
+  // Pill counts respect the borrower filter so the numbers are meaningful
+  // in person-view (e.g. "3 active for this person").
+  const scope = _allBorrower ? all.filter((l) => l.borrowerSvc === _allBorrower) : all;
   const filterCounts = {
-    all:      all.length,
-    active:   all.filter((l) => l.active === true).length,
-    returned: all.filter((l) => l.active === false).length,
-    overdue:  all.filter((l) => l.active === true && l.dueDate && l.dueDate < today).length,
+    all:      scope.length,
+    active:   scope.filter((l) => l.active === true).length,
+    returned: scope.filter((l) => l.active === false).length,
+    overdue:  scope.filter((l) => l.active === true && l.dueDate && l.dueDate < today).length,
   };
+
+  const datalistId = 'loan-all-borrower-list';
 
   body.innerHTML = `
     <div class="loan__all">
       <header class="loan__all-toolbar">
         <div class="loan__all-filters">
+
+          <div class="loan__borrower-row">
+            <div class="loan__borrower-pick">
+              <input type="search"
+                     class="loan__borrower-search"
+                     list="${datalistId}"
+                     placeholder="Filter by person…"
+                     aria-label="Filter loans by borrower"
+                     value="${esc(selectedBorrowerName)}"
+                     autocomplete="off">
+              <datalist id="${datalistId}">
+                ${borrowerOptions.map((b) =>
+                  `<option value="${esc(b.name)}" data-svc="${esc(b.svc)}"></option>`
+                ).join('')}
+              </datalist>
+              ${_allBorrower ? `
+                <button type="button" class="btn btn--sm btn--ghost loan__borrower-clear"
+                        data-action="clear-borrower" title="Show all borrowers">✕ Clear</button>
+              ` : ''}
+            </div>
+            ${_allBorrower ? `
+              <span class="loan__borrower-banner">
+                Showing loans for <strong>${esc(selectedBorrowerName)}</strong>
+              </span>
+            ` : ''}
+          </div>
+
           <input type="search" class="loan__all-search"
                  placeholder="Search ref, item, borrower, NSN…"
                  aria-label="Search loans"
@@ -898,8 +958,8 @@ async function _renderAllTab(body) {
 
       <div class="loan__meta">
         ${filtered.length} ${filtered.length === 1 ? 'loan' : 'loans'} shown
-        ${(_allSearch || _allFilter !== 'all') && all.length !== filtered.length
-          ? `<span class="loan__meta-of"> of ${all.length}</span>` : ''}
+        ${(_allBorrower || _allSearch || _allFilter !== 'all') && all.length !== filtered.length
+          ? `<span class="loan__meta-of"> of ${all.length} total</span>` : ''}
       </div>
 
       <div class="loan__table-wrap">
@@ -912,7 +972,7 @@ async function _renderAllTab(body) {
     </div>
   `;
 
-  _wireAllTab(body);
+  _wireAllTab(body, borrowerOptions);
 }
 
 function _allTableHtml(loans, today, canReturn) {
@@ -984,7 +1044,39 @@ function _allRowHtml(loan, today, canReturn) {
   `;
 }
 
-function _wireAllTab(body) {
+function _wireAllTab(body, borrowerOptions = []) {
+  // Borrower picker — match typed text against the datalist options by name.
+  const borrowerInput = $('.loan__borrower-search', body);
+  if (borrowerInput) {
+    borrowerInput.addEventListener('change', () => {
+      const val = borrowerInput.value.trim();
+      if (!val) {
+        _allBorrower = '';
+        _renderAllTab(body);
+        return;
+      }
+      const match = borrowerOptions.find((b) => b.name === val);
+      const newSvc = match ? match.svc : '';
+      if (newSvc !== _allBorrower) {
+        _allBorrower = newSvc;
+        _renderAllTab(body);
+      }
+    });
+    // Also respond to the user clearing the field with the × in a search input.
+    borrowerInput.addEventListener('search', () => {
+      if (!borrowerInput.value) {
+        _allBorrower = '';
+        _renderAllTab(body);
+      }
+    });
+  }
+
+  // Clear borrower button.
+  $('[data-action="clear-borrower"]', body)?.addEventListener('click', () => {
+    _allBorrower = '';
+    _renderAllTab(body);
+  });
+
   $('.loan__all-search', body)?.addEventListener('input', (e) => {
     _allSearch = e.target.value;
     _renderAllTab(body);

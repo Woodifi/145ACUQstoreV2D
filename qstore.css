@@ -2110,6 +2110,49 @@ input {
   flex-wrap: wrap;
 }
 
+/* Borrower person-picker row */
+.loan__borrower-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 100%;       /* always occupies its own line inside the flex-wrap */
+}
+
+.loan__borrower-pick {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.loan__borrower-search {
+  width: 230px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  padding: 7px 10px;
+  font-size: 14px;
+}
+
+.loan__borrower-clear {
+  white-space: nowrap;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.loan__borrower-banner {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+}
+
+.loan__borrower-banner strong {
+  color: var(--accent);
+}
+
 .loan__all-search {
   flex: 1;
   min-width: 220px;
