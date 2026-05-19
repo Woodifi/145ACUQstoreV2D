@@ -2,15 +2,16 @@
 // QStore IMS v2 — Cloud sync (OneDrive + MSAL)
 // =============================================================================
 // Provides a CloudProvider interface and one implementation: OneDriveProvider
-// using @azure/msal-browser 2.38.x. v2.0 ships only OneDrive; the interface
+// using @azure/msal-browser 5.x. v2.0 ships only OneDrive; the interface
 // exists so we can drop in Google Drive or Dropbox later without changing
 // sync.js or any UI code.
 //
-// MSAL VERSION CHOICE
-//   We pin MSAL Browser 2.38.3 — the same version v1 uses. Microsoft's CDN
-//   for MSAL is fully deprecated as of v3.0, so we MUST bundle from npm
-//   regardless. Pinning v2 minimises divergence from v1's well-tested setup.
-//   Upgrading to MSAL 5.x is in the v2.1 backlog as a focused task.
+// MSAL VERSION
+//   @azure/msal-browser 5.x (upgraded from 2.38.3 in v2.3). Key v3+ change:
+//   PublicClientApplication requires an explicit async initialize() call
+//   before any other MSAL API. Also: storeAuthStateInCookie and
+//   navigateToLoginRequestUrl were removed from configuration in v5, and
+//   error handling should use err.errorCode rather than err.message.
 //
 // AUTH FLOW
 //   OAuth 2.0 Authorization Code Flow with PKCE — MSAL handles all of it.
@@ -118,15 +119,13 @@ export class OneDriveProvider {
     try {
       this._msal = new msal.PublicClientApplication({
         auth: {
-          clientId:                  this._clientId,
-          authority:                 'https://login.microsoftonline.com/common',
-          redirectUri:               this._getRedirectUri(),
-          postLogoutRedirectUri:     this._getRedirectUri(),
-          navigateToLoginRequestUrl: true,
+          clientId:              this._clientId,
+          authority:             'https://login.microsoftonline.com/common',
+          redirectUri:           this._getRedirectUri(),
+          postLogoutRedirectUri: this._getRedirectUri(),
         },
         cache: {
-          cacheLocation:          'localStorage',
-          storeAuthStateInCookie: false,
+          cacheLocation: 'localStorage',
         },
         system: {
           loggerOptions: {
@@ -138,6 +137,11 @@ export class OneDriveProvider {
           },
         },
       });
+
+      // CRITICAL (v3+) — initialize() must be called before any other MSAL
+      // API. In v2 the constructor was synchronous and ready immediately;
+      // v3+ deferred this work into an async initialize() step.
+      await this._msal.initialize();
 
       // CRITICAL — handleRedirectPromise() must be called on every page load
       // to complete an in-flight Authorization Code Flow + PKCE exchange.
@@ -207,18 +211,18 @@ export class OneDriveProvider {
       this._msal.setActiveAccount(this._account);
       this._lastError = null;
     } catch (err) {
-      const msg = err.message || String(err);
-      // Popup blocked — fall back to redirect.
-      if (msg.includes('popup_window_error') || msg.includes('user_cancelled')) {
+      const code = err.errorCode || '';
+      // Popup blocked or user closed it — fall back to redirect.
+      if (code === 'popup_window_error' || code === 'user_cancelled') {
         await this._msal.loginRedirect(request);
         return;
       }
       // "interaction_in_progress" means a previous flow didn't complete.
       // Most likely a stuck state in localStorage. Surface a clear message.
-      if (msg.includes('interaction_in_progress')) {
+      if (code === 'interaction_in_progress') {
         throw new Error('A sign-in is already in progress. Refresh the page and try again.');
       }
-      this._lastError = msg;
+      this._lastError = err.message || String(err);
       throw err;
     }
   }
@@ -433,15 +437,19 @@ export class OneDriveProvider {
   }
 
   _formatInitError(err) {
-    const msg = err.message || String(err);
-    if (msg.includes('redirect_uri_mismatch') || msg.includes('AADSTS50011')) {
+    // In MSAL v5, err.message returns a documentation link rather than a
+    // description. Use err.errorCode for MSAL-defined codes, err.errorMessage
+    // for server-returned content (AADSTS codes), and err.name for class type.
+    const code    = err.errorCode    || '';
+    const errMsg  = err.errorMessage || err.message || String(err);
+    if (code === 'redirect_uri_mismatch' || errMsg.includes('AADSTS50011')) {
       const uri = this._getRedirectUri();
       return `Azure registration mismatch. Add this URI in the Azure Portal under App registrations → Authentication → Single-page application: ${uri}`;
     }
-    if (msg.includes('ClientAuthError') || msg.includes('client_id')) {
+    if (err.name === 'ClientAuthError' || code.includes('client_id') || code === 'invalid_client') {
       return 'Invalid Client ID. Check the Azure portal and confirm the app registration exists.';
     }
-    return msg;
+    return errMsg;
   }
 }
 

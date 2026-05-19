@@ -14,7 +14,7 @@
     "dist": "node build.js --dist"
   },
   "dependencies": {
-    "@azure/msal-browser": "2.38.3",
+    "@azure/msal-browser": "^5.11.0",
     "hash-wasm": "^4.11.0",
     "jspdf": "^4.2.1",
     "jsqr": "^1.4.0",
