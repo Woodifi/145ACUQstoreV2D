@@ -54,6 +54,7 @@ async function _renderList() {
                    data-action="import-pdf">
             Import PDF Order
           </label>
+          <span class="orders__import-status" data-target="import-status" aria-live="polite"></span>
         </div>
       </div>
 
@@ -142,8 +143,10 @@ async function _onImportFile(e) {
   if (_importing) return;
   _importing = true;
 
-  const importBtn = $('.orders__import-btn', _root);
-  if (importBtn) importBtn.classList.add('btn--loading');
+  const importBtn    = $('.orders__import-btn', _root);
+  const importStatus = $('[data-target="import-status"]', _root);
+  if (importBtn)    importBtn.classList.add('btn--loading');
+  if (importStatus) importStatus.textContent = 'Reading PDF…';
 
   try {
     const buf    = await file.arrayBuffer();
@@ -228,7 +231,8 @@ async function _onImportFile(e) {
     }
   } finally {
     _importing = false;
-    if (importBtn) importBtn.classList.remove('btn--loading');
+    if (importBtn)    importBtn.classList.remove('btn--loading');
+    if (importStatus) importStatus.textContent = '';
   }
 }
 

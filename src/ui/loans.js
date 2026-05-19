@@ -314,98 +314,89 @@ function _issueLinesHtml(lines, availableItems) {
 }
 
 function _issueLineHtml(line, index, allItems) {
-  // Non-stock mode — free text description, optional NSN, no inventory link.
-  if (line.nonStock) {
-    return `
-      <div class="loan__line loan__line--nonstock" data-line-index="${index}">
-        <div class="loan__line-row">
-          <label class="form__field form__field--grow">
-            ${index === 0 ? '<span class="form__label">Item description *</span>' : ''}
-            <input type="text" data-line-field="nonStockDesc"
-                   placeholder="e.g. Hat, Bush / Boots Pair"
-                   value="${esc(line.nonStockDesc || '')}"
-                   autocomplete="off">
-          </label>
-          <label class="form__field" style="flex:0 0 160px">
-            ${index === 0 ? '<span class="form__label">NSN (optional)</span>' : ''}
-            <input type="text" data-line-field="nonStockNsn"
-                   placeholder="0000-00-000-0000"
-                   value="${esc(line.nonStockNsn || '')}"
-                   autocomplete="off" spellcheck="false">
-          </label>
-          <label class="form__field loan__qty-field">
-            ${index === 0 ? '<span class="form__label">Qty *</span>' : ''}
-            <input type="number" data-line-field="qty"
-                   value="${line.qty}" min="1" step="1">
-          </label>
-          ${index > 0 ? `
-            <button type="button" class="btn btn--sm btn--ghost loan__line-remove"
-                    data-action="issue-remove-line" data-line-index="${index}"
-                    aria-label="Remove this line">×</button>
-          ` : '<span class="loan__line-spacer"></span>'}
-        </div>
-        <div class="loan__line-opts">
-          <label class="loan__line-nonstock-lbl loan__line-nonstock-lbl--on">
-            <input type="checkbox" data-line-field="nonStock" data-line-index="${index}" checked>
-            Non-stock item
-          </label>
-          <span class="loan__line-nonstock-hint">Not from IMS stock — inventory updated on return if NSN matches.</span>
-          <label class="form__field loan__line-notes-field">
-            <input type="text" data-line-field="lineNotes"
-                   placeholder="Notes (optional)"
-                   value="${esc(line.lineNotes || '')}"
-                   maxlength="200">
-          </label>
-        </div>
-      </div>
-    `;
-  }
+  // Both stock and non-stock modes share the same row structure:
+  //   [main field (grow)] [qty (fixed)] [remove / spacer (fixed)]
+  // This keeps all rows aligned regardless of mode.
+  // The NSN input (non-stock) lives in the opts area, not the top row.
 
-  // Standard stock-item mode.
-  const item      = line.itemId ? allItems.find((i) => i.id === line.itemId) : null;
-  const avail     = item ? item._avail : 0;
+  const item       = line.nonStock ? null : (line.itemId ? allItems.find((i) => i.id === line.itemId) : null);
+  const avail      = item ? item._avail : 0;
   const outOfStock = item && avail === 0;
 
+  const labelRow = index === 0
+    ? `<div class="loan__line-labels">
+         <span class="loan__line-label-main">${line.nonStock ? 'Item description *' : 'Item *'}</span>
+         <span class="loan__line-label-qty">Qty *</span>
+       </div>`
+    : '';
+
+  const mainInput = line.nonStock
+    ? `<input type="text" data-line-field="nonStockDesc"
+              class="loan__item-search"
+              placeholder="e.g. Hat, Bush / Boots Pair"
+              value="${esc(line.nonStockDesc || '')}"
+              autocomplete="off">`
+    : `<input type="text" data-line-field="itemSearch"
+              class="loan__item-search"
+              placeholder="Search items by name or NSN…"
+              value="${esc(item ? item.name + ' (' + (item.nsn || 'no NSN') + ')' : '')}"
+              autocomplete="off"
+              list="loan-item-list-${index}">
+       <datalist id="loan-item-list-${index}">
+         ${allItems.map((i) =>
+           `<option value="${esc(i.name)} (${esc(i.nsn || 'no NSN')})"
+                    data-id="${esc(i.id)}"
+                    data-avail="${i._avail}">`).join('')}
+       </datalist>
+       <input type="hidden" data-line-field="itemId" value="${esc(line.itemId)}">
+       ${item
+         ? outOfStock
+           ? `<span class="form__hint loan__stock-badge loan__stock-badge--nil"
+                    title="No units currently on hand. Issuing will record the loan against this inventory item with qty shown as On Loan.">⚠ None on hand — will record as On Loan</span>`
+           : `<span class="form__hint loan__stock-badge">${avail} available</span>`
+         : ''}`;
+
+  const optsNsn = line.nonStock
+    ? `<label class="loan__line-nsn-field">
+         <input type="text" data-line-field="nonStockNsn"
+                placeholder="NSN (optional, e.g. 0000-00-000-0000)"
+                value="${esc(line.nonStockNsn || '')}"
+                autocomplete="off" spellcheck="false" style="font-size:12px">
+       </label>`
+    : '';
+
+  const optsNonstockLabel = line.nonStock
+    ? `<label class="loan__line-nonstock-lbl loan__line-nonstock-lbl--on">
+         <input type="checkbox" data-line-field="nonStock" data-line-index="${index}" checked>
+         Non-stock item
+       </label>
+       <span class="loan__line-nonstock-hint">Not from IMS stock — inventory updated on return if NSN matches.</span>`
+    : `<label class="loan__line-nonstock-lbl"
+              title="Use this for items not recorded in the inventory — e.g. items on order, unit-sourced equipment">
+         <input type="checkbox" data-line-field="nonStock" data-line-index="${index}">
+         Non-stock item
+       </label>`;
+
   return `
-    <div class="loan__line" data-line-index="${index}">
+    <div class="loan__line ${line.nonStock ? 'loan__line--nonstock' : ''}" data-line-index="${index}">
+      ${labelRow}
       <div class="loan__line-row">
-        <label class="form__field form__field--grow">
-          ${index === 0 ? '<span class="form__label">Item *</span>' : ''}
-          <input type="text" data-line-field="itemSearch"
-                 class="loan__item-search"
-                 placeholder="Search items by name or NSN…"
-                 value="${esc(item ? `${item.name} (${item.nsn || 'no NSN'})` : '')}"
-                 autocomplete="off"
-                 list="loan-item-list-${index}">
-          <datalist id="loan-item-list-${index}">
-            ${allItems.map((i) =>
-              `<option value="${esc(i.name)} (${esc(i.nsn || 'no NSN')})"
-                       data-id="${esc(i.id)}"
-                       data-avail="${i._avail}">`).join('')}
-          </datalist>
-          <input type="hidden" data-line-field="itemId" value="${esc(line.itemId)}">
-          ${item
-            ? outOfStock
-              ? `<span class="form__hint loan__stock-badge loan__stock-badge--nil">⚠ Out of stock — use non-stock or substitute</span>`
-              : `<span class="form__hint loan__stock-badge">${avail} available</span>`
-            : ''}
-        </label>
-        <label class="form__field loan__qty-field">
-          ${index === 0 ? '<span class="form__label">Qty *</span>' : ''}
+        <div class="loan__line-main">
+          ${mainInput}
+        </div>
+        <label class="loan__qty-field">
           <input type="number" data-line-field="qty"
                  value="${line.qty}" min="1" step="1">
         </label>
-        ${index > 0 ? `
-          <button type="button" class="btn btn--sm btn--ghost loan__line-remove"
-                  data-action="issue-remove-line" data-line-index="${index}"
-                  aria-label="Remove this line">×</button>
-        ` : '<span class="loan__line-spacer"></span>'}
+        ${index > 0
+          ? `<button type="button" class="btn btn--sm btn--ghost loan__line-remove"
+                     data-action="issue-remove-line" data-line-index="${index}"
+                     aria-label="Remove this line">×</button>`
+          : '<span class="loan__line-spacer"></span>'}
       </div>
       <div class="loan__line-opts">
-        <label class="loan__line-nonstock-lbl">
-          <input type="checkbox" data-line-field="nonStock" data-line-index="${index}">
-          Non-stock item
-        </label>
+        ${optsNonstockLabel}
+        ${optsNsn}
         <label class="form__field loan__line-notes-field">
           <input type="text" data-line-field="lineNotes"
                  placeholder="Notes (optional)"
@@ -488,7 +479,7 @@ function _wireIssueTab(body, activeCadets, allItems) {
         itemHidden.value = match ? match.id : '';
         if (match) {
           _issueState.lines[idx].itemId = match.id;
-          // Warn if out of stock but don't clamp — QM can override with non-stock.
+          // Re-render to show updated stock badge (available qty or "None on hand").
           _render();
         } else {
           _issueState.lines[idx].itemId = '';
@@ -557,8 +548,8 @@ async function _loadKitIntoIssue(kit, _unusedItems, allItems) {
   _issueState.lines = existing.length > 0 ? existing : [_freshLine()];
   if (outOfStock.length > 0) {
     showToast(
-      `⚠ ${outOfStock.length} kit item(s) out of stock: ${outOfStock.join(', ')}. ` +
-      `Use the non-stock checkbox to issue anyway, or substitute a different item.`,
+      `⚠ ${outOfStock.length} kit item${outOfStock.length === 1 ? '' : 's'} with no stock on hand: ${outOfStock.join(', ')}. ` +
+      `These will be issued and recorded as On Loan against the inventory entry.`,
       'warn', 9000,
     );
   }
@@ -625,11 +616,9 @@ async function _submitIssue(body) {
       if (!ln.itemId) { lineErrors.push(`Line ${num}: choose an item from the list.`); continue; }
       const item = await Storage.items.get(ln.itemId);
       if (!item) { lineErrors.push(`Line ${num}: item no longer exists.`); continue; }
-      const avail = Math.max(0, (Number(item.onHand) || 0) - (Number(item.onLoan) || 0));
-      if (qty > avail) {
-        lineErrors.push(`Line ${num}: only ${avail} of "${item.name}" available. Use non-stock to override.`);
-        continue;
-      }
+      // Zero-stock inventory issuing is allowed — the item remains linked to the IMS
+      // entry and onLoan is incremented regardless of onHand. This supports initial
+      // setup / reconciliation of previously hand-issued equipment.
       resolvedLines.push({ nonStock: false, item, qty, lineNotes: ln.lineNotes || '' });
     }
   }
@@ -638,15 +627,18 @@ async function _submitIssue(body) {
   if (resolvedLines.length === 0) { errEl.textContent = 'Add at least one item.'; return; }
 
   // Detect over-allocation across stock lines for the same item.
+  // Only hard-error when the item has actual on-hand stock and we're drawing
+  // more than is available — zero-stock items are allowed (reconciliation mode).
   const sumByItemId = new Map();
   for (const r of resolvedLines.filter((r) => !r.nonStock)) {
     sumByItemId.set(r.item.id, (sumByItemId.get(r.item.id) || 0) + r.qty);
   }
   for (const [itemId, totalQty] of sumByItemId) {
-    const r     = resolvedLines.find((r) => !r.nonStock && r.item.id === itemId);
-    const avail = Math.max(0, (Number(r.item.onHand) || 0) - (Number(r.item.onLoan) || 0));
-    if (totalQty > avail) {
-      errEl.textContent = `Total qty for "${r.item.name}" (${totalQty}) exceeds available (${avail}). Combine the lines.`;
+    const r      = resolvedLines.find((r) => !r.nonStock && r.item.id === itemId);
+    const onHand = Number(r.item.onHand) || 0;
+    const avail  = Math.max(0, onHand - (Number(r.item.onLoan) || 0));
+    if (onHand > 0 && totalQty > avail) {
+      errEl.textContent = `Total qty for "${r.item.name}" (${totalQty}) exceeds available (${avail}). Combine the lines or reduce the quantity.`;
       return;
     }
   }
@@ -713,12 +705,16 @@ async function _submitIssue(body) {
           issuedBy:     sessionUser,
         };
 
-        // Atomic stock check + update (fail → abort this line).
+        // Atomic stock check + update.
+        // If onHand > 0, guard against race conditions where stock was issued by
+        // another session between validation and commit. Zero-stock items are
+        // allowed through for reconciliation purposes.
         const fresh = await Storage.items.get(item.id);
         if (!fresh) throw new Error(`"${item.name}" was deleted during issue.`);
-        const freshAvail = Math.max(0, (Number(fresh.onHand) || 0) - (Number(fresh.onLoan) || 0));
-        if (qty > freshAvail) {
-          throw new Error(`Race: only ${freshAvail} of "${item.name}" now available.`);
+        const freshOnHand = Number(fresh.onHand) || 0;
+        const freshAvail  = Math.max(0, freshOnHand - (Number(fresh.onLoan) || 0));
+        if (freshOnHand > 0 && qty > freshAvail) {
+          throw new Error(`Only ${freshAvail} of "${item.name}" are now available — the form was open while stock changed. Please reduce the quantity and try again.`);
         }
         fresh.onLoan = (Number(fresh.onLoan) || 0) + qty;
         await Storage.items.put(fresh);
@@ -758,10 +754,12 @@ async function _submitIssue(body) {
         ).join('')}
       </ul>
       <div class="form__actions">
-        <button type="button" class="btn btn--ghost" data-action="print-batch-voucher">
+        <button type="button" class="btn btn--ghost" data-action="print-batch-voucher"
+                title="Issue Voucher — internal record of items issued to this borrower. Print and file with the loan.">
           ⎙ Issue Voucher
         </button>
-        <button type="button" class="btn btn--ghost" data-action="print-batch-ab189">
+        <button type="button" class="btn btn--ghost" data-action="print-batch-ab189"
+                title="AB189 — Army Book 189 loan card. Required for formal Army property accountability.">
           ⎙ AB189
         </button>
         <button type="button" class="btn btn--primary" data-action="modal-close">OK</button>
@@ -1407,9 +1405,12 @@ function _allRowHtml(loan, today, canReturn) {
     loan.unitLoan ? `<span class="loan__badge loan__badge--unitloan" title="Unit/Activity loan">Unit</span>` : '',
   ].join('');
 
+  const detailId = `loan-detail-${esc(loan.ref).replace(/\W/g, '-')}`;
   return `
     <tr class="loan__row ${overdue ? 'loan__row--overdue' : ''}
-                       ${loan.active === false ? 'loan__row--returned' : ''}">
+                       ${loan.active === false ? 'loan__row--returned' : ''}"
+        data-detail-target="${detailId}" role="button" tabindex="0"
+        title="Tap to expand details" aria-expanded="false">
       <td class="loan__ref">${esc(loan.ref)}</td>
       <td class="loan__date">${esc(loan.issueDate || '')}</td>
       <td>
@@ -1437,6 +1438,16 @@ function _allRowHtml(loan, today, canReturn) {
                 title="Print AB189 equipment request form for this batch">
           ⎙ AB189
         </button>
+      </td>
+    </tr>
+    <tr class="loan__row-detail" id="${detailId}" hidden aria-hidden="true">
+      <td colspan="9">
+        <dl class="loan__detail-dl">
+          <div><dt>Issued</dt><dd>${esc(loan.issueDate || '—')}</dd></div>
+          <div><dt>Purpose</dt><dd>${esc(loan.purpose || '—')}</dd></div>
+          <div><dt>Due</dt><dd>${loan.longTermLoan ? 'Long-term' : esc(loan.dueDate || '—')}</dd></div>
+          ${loan.notes ? `<div><dt>Notes</dt><dd>${esc(loan.notes)}</dd></div>` : ''}
+        </dl>
       </td>
     </tr>
   `;
@@ -1487,6 +1498,24 @@ function _wireAllTab(body, borrowerOptions = []) {
       _wireAllTab(body);
     });
   });
+  // Row expand/collapse for mobile — tapping a loan row reveals its detail row.
+  body.querySelectorAll('[data-detail-target]').forEach((row) => {
+    row.addEventListener('click', (e) => {
+      // Don't expand if the user clicked a button inside the row.
+      if (e.target.closest('button')) return;
+      const detailId = row.dataset.detailTarget;
+      const detailRow = body.querySelector(`#${detailId}`);
+      if (!detailRow) return;
+      const isOpen = !detailRow.hidden;
+      detailRow.hidden = isOpen;
+      detailRow.setAttribute('aria-hidden', String(isOpen));
+      row.setAttribute('aria-expanded', String(!isOpen));
+    });
+    row.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); row.click(); }
+    });
+  });
+
   // Print outstanding button — generates a PDF of currently-active loans
   // sorted by due date ascending (most overdue first). Honours the search
   // filter but ignores the active/returned/overdue/all toggle, because

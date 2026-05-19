@@ -118,7 +118,8 @@ function _toolbarHtml(session, categories) {
              <span class="stk__status-text">
                ${_countsByItem.size} item${_countsByItem.size === 1 ? '' : 's'} counted
                ${startedAt ? `&middot; started ${esc(startedAt)}` : ''}
-             </span>`
+             </span>
+             <span class="stk__autosave" title="Counts are saved automatically as you type">✓ Auto-saved</span>`
           : `<span class="stk__status-badge stk__status-badge--idle">No active stocktake</span>
              <span class="stk__status-text">Enter counts below to begin.</span>`}
       </div>

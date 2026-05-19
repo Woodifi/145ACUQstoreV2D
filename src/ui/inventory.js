@@ -146,7 +146,28 @@ async function _render() {
   const totalItems  = await Storage.items.count();
   const categories  = await getCategories(items);
 
+  // Check whether a stocktake has ever been finalised.
+  // The warning banner persists until at least one stocktake is completed.
+  const lastStocktake = await Storage.audit.list({ action: 'stocktake_finalise', limit: 1, order: 'desc' });
+  const stocktakeDone = lastStocktake.length > 0;
+
+  const stocktakeWarnHtml = stocktakeDone ? '' : `
+    <div class="inv__stocktake-warn" role="alert">
+      <span class="inv__stocktake-warn-icon">⚠</span>
+      <div class="inv__stocktake-warn-body">
+        <strong>Stock counts are unverified.</strong>
+        Quantities shown may not reflect actual physical stock until a full stocktake is
+        performed and finalised. Items issued before QStore was installed may cause
+        discrepancies between <em>On hand</em> and <em>On loan</em> figures.
+        <a href="#" class="inv__stocktake-warn-link" data-nav="stocktake">
+          Go to Stocktake →
+        </a>
+      </div>
+    </div>
+  `;
+
   const contentHtml = `
+    ${stocktakeWarnHtml}
     <div class="inv__meta">
       ${items.length} ${items.length === 1 ? 'item' : 'items'} shown
       ${(_searchTerm || _categoryFilter) && totalItems !== items.length
@@ -279,8 +300,9 @@ function _itemRowHtml(item, photoUrl, { canEdit, canDel }) {
   // exists specifically for the "some but not all units broken" case
   // that v1 had no visual marker for.
   const { label: condLabel, modifier: condModifier } = _deriveCondition(item.condition, onHand, unsvc);
-  const condCss = `inv__cond inv__cond--${condModifier}`;
-  const bdText  = _breakdownText(item);
+  const condCss    = `inv__cond inv__cond--${condModifier}`;
+  const bdText     = _breakdownText(item);
+  const bdTooltip  = _breakdownTooltip(item);
 
   const photoCell = photoUrl
     ? `<img class="inv__thumb" src="${esc(photoUrl)}" alt="" loading="lazy"
@@ -324,8 +346,8 @@ function _itemRowHtml(item, photoUrl, { canEdit, canDel }) {
       <td class="inv__col-qty inv__col-qty--loan">${onLoan}</td>
       <td class="inv__col-qty inv__col-qty--unsvc">${unsvc || ''}</td>
       <td class="inv__col-cond">
-        <span class="${condCss}">${esc(condLabel)}</span>
-        ${bdText ? `<div class="inv__cond-bd">${esc(bdText)}</div>` : ''}
+        <span class="${condCss}" title="${esc(condLabel)}">${esc(condLabel)}</span>
+        ${bdText ? `<div class="inv__cond-bd" title="${esc(bdTooltip)}">${esc(bdText)}</div>` : ''}
       </td>
       <td class="inv__col-loc">${esc(item.loc || '—')}</td>
       ${actionsCell}
@@ -365,6 +387,17 @@ function _onCategoryChange(e) {
 }
 
 async function _onRootClick(e) {
+  // Handle in-page navigation links (e.g. stocktake warning banner).
+  const navTarget = e.target.closest('[data-nav]');
+  if (navTarget) {
+    e.preventDefault();
+    _root.dispatchEvent(new CustomEvent('dash:navigate', {
+      bubbles: true,
+      detail: { page: navTarget.dataset.nav },
+    }));
+    return;
+  }
+
   const target = e.target.closest('[data-action]');
   if (!target) return;
   const action = target.dataset.action;
@@ -638,31 +671,31 @@ async function _openItemFormModal({ mode, item }) {
           </div>
           <div class="inv__breakdown-row">
             <label class="inv__bd-field">
-              <span class="inv__bd-label inv__bd-label--svc">Svc</span>
+              <span class="inv__bd-label inv__bd-label--svc" title="Serviceable — ready for issue">Svc</span>
               <input type="number" name="qtyServiceable" min="0" step="1" inputmode="numeric"
                      value="${esc(String(bd.qtyServiceable))}" class="inv__bd-input"
                      title="Serviceable — ready for issue">
             </label>
             <label class="inv__bd-field">
-              <span class="inv__bd-label inv__bd-label--uns">U/S</span>
+              <span class="inv__bd-label inv__bd-label--uns" title="Unserviceable — damaged or non-functional">U/S</span>
               <input type="number" name="qtyUnserviceable" min="0" step="1" inputmode="numeric"
                      value="${esc(String(bd.qtyUnserviceable))}" class="inv__bd-input"
                      title="Unserviceable — damaged or non-functional">
             </label>
             <label class="inv__bd-field">
-              <span class="inv__bd-label inv__bd-label--repr">Repr</span>
+              <span class="inv__bd-label inv__bd-label--repr" title="In repair — temporarily unavailable">Repr</span>
               <input type="number" name="qtyRepair" min="0" step="1" inputmode="numeric"
                      value="${esc(String(bd.qtyRepair))}" class="inv__bd-input"
                      title="In repair — temporarily unavailable">
             </label>
             <label class="inv__bd-field">
-              <span class="inv__bd-label inv__bd-label--cal">Cal</span>
+              <span class="inv__bd-label inv__bd-label--cal" title="Calibration due — must be calibrated before issue">Cal</span>
               <input type="number" name="qtyCalibrationDue" min="0" step="1" inputmode="numeric"
                      value="${esc(String(bd.qtyCalibrationDue))}" class="inv__bd-input"
                      title="Calibration due — must be calibrated before issue">
             </label>
             <label class="inv__bd-field">
-              <span class="inv__bd-label inv__bd-label--wo">W/O</span>
+              <span class="inv__bd-label inv__bd-label--wo" title="Written off — beyond repair, pending Board of Survey">W/O</span>
               <input type="number" name="qtyWrittenOff" min="0" step="1" inputmode="numeric"
                      value="${esc(String(bd.qtyWrittenOff))}" class="inv__bd-input"
                      title="Written off — beyond repair, pending Board of Survey">
@@ -1187,6 +1220,24 @@ function _breakdownText(item) {
   if (qC > 0) parts.push(`${qC} Cal`);
   if (qW > 0) parts.push(`${qW} W/O`);
   return parts.join(' · ');
+}
+
+// Full-text expansion of the abbreviations in _breakdownText — used as tooltip.
+function _breakdownTooltip(item) {
+  if (item.qtyServiceable == null) return '';
+  const qS = Number(item.qtyServiceable)    || 0;
+  const qU = Number(item.qtyUnserviceable)  || 0;
+  const qR = Number(item.qtyRepair)         || 0;
+  const qC = Number(item.qtyCalibrationDue) || 0;
+  const qW = Number(item.qtyWrittenOff)     || 0;
+  if (qU === 0 && qR === 0 && qC === 0 && qW === 0) return '';
+  const parts = [];
+  if (qS > 0) parts.push(`${qS} Serviceable`);
+  if (qU > 0) parts.push(`${qU} Unserviceable`);
+  if (qR > 0) parts.push(`${qR} In repair`);
+  if (qC > 0) parts.push(`${qC} Calibration due`);
+  if (qW > 0) parts.push(`${qW} Written off`);
+  return parts.join(', ');
 }
 
 // -----------------------------------------------------------------------------

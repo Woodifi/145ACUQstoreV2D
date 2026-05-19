@@ -351,3 +351,75 @@ END OF LOG — append new entries above this line
   MANUAL.md: Section 8 Orders fully rewritten; troubleshooting updated
   README.md: non-technical quick-start added
   Build: 20260519-CF8F6C8A  Commit: da3139a  -> master
+
+[2026-05-19T05:35:00Z] FILE MODIFIED — Multiple files (UX Fix batch: Fixes 4–12 + test fix)
+  Implements 9 remaining UX improvements from the usability audit:
+  Fix 4: Condition abbreviation tooltips (inventory.js)
+    - Added title attrs to all inv__bd-label spans (Svc/U/S/Repr/Cal/W/O)
+    - Added _breakdownTooltip() function returning full plain-English expansion
+    - Inventory list row: condLabel badge + inv__cond-bd div both get title tooltips
+  Fix 5: Splash countdown label (splash.js)
+    - Bare number replaced with "Starting in X…" label for clarity
+  Fix 6: Out-of-stock steering message (loans.js)
+    - Badge message now says "tick 'Non-stock item' below to issue anyway"
+    - Non-stock checkbox gets explanatory title tooltip
+  Fix 7: Help (?) button in shell header (shell.js + qstore.css)
+    - Added shell__help button next to logout; navigates to Help page
+    - Hidden on mobile alongside logout; has hover style matching primary colour
+  Fix 8: Plain-language error messages
+    - csv-import.js: 3 raw error messages replaced with user-friendly wording
+    - settings.js: "Internal error: file input missing" → reload suggestion
+  Fix 9: PDF import progress indicator (orders.js + qstore.css)
+    - "Reading PDF…" status appears next to Import PDF Order button during load
+    - Cleared on success or error; styled as muted italic
+  Fix 10: Stocktake auto-save indicator (stocktake.js + qstore.css)
+    - "✓ Auto-saved" badge appears in toolbar when draft is in progress
+    - Reinforces that counts persist automatically (already saved to IndexedDB)
+  Fix 11: AB189/Issue Voucher label tooltips (loans.js)
+    - Post-issue modal buttons now explain what each document is for
+  Fix 12: Mobile expandable row details (loans.js + qstore.css)
+    - Each loan row in All Loans tab has a tap-to-expand detail row
+    - Detail row shows hidden-on-mobile columns: Issued, Purpose, Due, Notes
+    - Keyboard accessible (Enter/Space to toggle); aria-expanded tracking
+  Test fix: test-export-import.mjs schemaVersion expectation updated 2→3
+  npm install: added pdfjs-dist (was missing from wip node_modules)
+  Build: 20260519-4359BE94  All 23 tests passing
+
+[2026-05-19T05:46:00Z] FILE MODIFIED — reference.js, help.js, loans.js, qstore.css (3 improvements)
+  1. AMCU Sizing Reference Guide (reference.js, help.js)
+     - SHIRT_ROWS: updated from old NATO cm/height codes (87/R, 92/R) to AMCU format
+       (80S/R/L, 85S/R/L, 90S/R/L, 95S/R/L, 100S/R/L, 105S/R/L, 110S/R/L, 115S/R/L)
+       Chest measured in cm, rounded down to nearest 5 cm
+     - TROUSER_ROWS: updated from cm-waist to inch-waist (28", 30", 32"..."44") with
+       S/R/L leg codes — AMCU trouser code format e.g. "34R"
+     - Table headers/descriptions updated to reflect AMCU labelling conventions
+     - help.js: sizing reference description updated to match AMCU reality
+  2. Issuing items with zero available stock (loans.js)
+     - Removed hard block on issuing when qty > avail for inventory items
+     - Zero-stock issuing now allowed: onLoan incremented regardless of onHand
+     - Over-allocation check now only hard-errors when onHand > 0 (reconciliation exemption)
+     - Atomic stock check relaxed: race-condition guard only applies when onHand > 0
+     - Out-of-stock badge message updated: "⚠ None on hand — will record as On Loan"
+     - Kit-loading toast updated to remove wrong "use non-stock" guidance
+     - Supports initial-setup/migration scenario where kit was previously hand-issued
+  3. UI layout stability for mixed stock/non-stock rows (loans.js, qstore.css)
+     - loan__line is now a block container; inner row always has 3 columns:
+       [main-field grow] [qty 80px] [remove/spacer 32px]
+     - NSN field moved from side-by-side column (broke alignment) into opts area below
+     - loan__line-labels added: shows "Item / Qty" column headers only on first row
+     - loan__line-main wrapper ensures item search and description fill the same space
+     - loan__qty-field aligned with stretch so input fills the fixed-width cell
+     - loan__line-nonstock-hint displayed inline in opts row (not a separate layout block)
+     - All rows consistent width regardless of non-stock toggle state
+  Build: 20260519-1F90486D  All 15 test suites passing (491 tests, 0 failed)
+
+[2026-05-19T06:33:00Z] FILE MODIFIED — inventory.js, qstore.css (stocktake warning banner)
+  Persistent "Stock counts are unverified" banner on Inventory page:
+  - Shown whenever no stocktake_finalise entry exists in the audit log
+  - Automatically disappears after the first stocktake is completed and finalised
+  - Non-dismissible — cannot be hidden by the user, only cleared by doing a stocktake
+  - Amber left-border panel with icon, plain-English explanation, and "Go to Stocktake →" link
+  - Link dispatches dash:navigate so shell handles the page transition correctly
+  - inv__stocktake-warn* CSS added; dark-mode safe via color-mix
+  - _onRootClick: added data-nav handler so the banner link works alongside data-action
+  Build: 20260519-15D12C3B  All 491 tests pass

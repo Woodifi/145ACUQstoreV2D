@@ -161,10 +161,17 @@ function _unitSectionHtml(settings) {
     `<option value="${esc(r)}">`
   ).join('');
 
+  const isFirstSetup = !unitName.trim();
+
   return `
-    <section class="settings__section" data-section="unit">
+    <section class="settings__section settings__section--unit-details" data-section="unit">
       <header class="settings__section-header">
-        <h2 class="settings__section-title">Unit details</h2>
+        <h2 class="settings__section-title">
+          Unit details
+          ${isFirstSetup
+            ? `<span class="settings__setup-badge">⬅ Start here</span>`
+            : ''}
+        </h2>
         <p class="settings__section-hint">
           These fields appear in the app header, on the login screen, and on
           generated AB189 forms and reports. Only the OC can edit them.
@@ -1791,7 +1798,7 @@ async function _doImportData(btn) {
         // operation cleanly.
         const fileInput = $('input[data-target="import-file"]', _root);
         if (!fileInput) {
-          showToast('Internal error: file input missing.', 'error');
+          showToast('Something went wrong — please reload the page and try again.', 'error');
           return;
         }
         // One-shot listener so repeated imports don't stack handlers.

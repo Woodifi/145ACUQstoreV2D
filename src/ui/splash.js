@@ -23,7 +23,7 @@ export function showSplash() {
     </div>
     <div class="splash__footer">
       <span class="splash__loading-text">Loading</span><span class="splash__dots"></span>
-      &nbsp;&nbsp;<span class="splash__count" data-target="splash-count">5</span>
+      <span class="splash__count-label">&nbsp;&nbsp;Starting in <span data-target="splash-count">5</span>…</span>
     </div>
   `;
   document.body.appendChild(el);

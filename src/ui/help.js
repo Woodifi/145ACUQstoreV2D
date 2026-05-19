@@ -34,8 +34,10 @@ const SECTIONS = [
       You will be prompted to change this immediately — do so before continuing.</p>
 
       <h4>Initial setup</h4>
+      <p>After first login, the Dashboard shows a <strong>setup checklist</strong> with three steps: set unit details, add your first inventory item, and add cadets.
+      Click <strong>Go →</strong> on any step to jump straight there. The checklist disappears once all three steps are complete, or when you dismiss it.</p>
       <ol>
-        <li>Go to <strong>Settings → Unit details</strong></li>
+        <li>Go to <strong>Settings → Unit details</strong> (the section is highlighted with a "⬅ Start here" badge until you save a unit name)</li>
         <li>Enter your unit name, unit code, state, OC/QM name, and rank</li>
         <li>Upload a unit logo (optional)</li>
         <li>Click <strong>Save unit details</strong></li>
@@ -486,13 +488,13 @@ const SECTIONS = [
     body: `
       <p>The <strong>Reference</strong> page (accessible from the main navigation) provides ADF uniform and equipment sizing tables with conversion between AU/NATO (centimetres), US (inches) and generalised sizes (XS–3XL), together with measurement guides for each garment type.</p>
 
-      <h4>Shirts &amp; Jackets</h4>
-      <p>ADF shirts and jackets use NATO sizing in the format <code>CHEST(cm) / HEIGHT-BAND</code>. Height bands: <strong>S</strong> (Short, under 170 cm), <strong>R</strong> (Regular, 170–183 cm), <strong>L</strong> (Long/Tall, over 183 cm).</p>
+      <h4>Shirts &amp; Jackets (AMCU)</h4>
+      <p>AMCU shirts and field jackets use a chest-plus-height code: <code>CHEST(cm) + HEIGHT-BAND</code> with no separator. e.g. <code>90R</code> = 90 cm chest, Regular height. Chest is measured in centimetres and rounded <em>down</em> to the nearest 5 cm. Height bands: <strong>S</strong> (Short, under 170 cm), <strong>R</strong> (Regular, 170–183 cm), <strong>L</strong> (Long/Tall, over 183 cm).</p>
       <p><em>How to measure chest:</em> Tape around the fullest part of the chest, under the armpits and across the shoulder blades. Keep horizontal and snug.</p>
 
-      <h4>Trousers</h4>
-      <p>NATO trouser sizing uses <code>WAIST(cm) / LEG-BAND</code>. Leg bands: <strong>S</strong> (inside leg ≤ 76 cm), <strong>R</strong> (77–84 cm), <strong>L</strong> (≥ 85 cm).</p>
-      <p><em>How to measure waist:</em> Around the natural waist, approximately 2.5 cm above the navel. <em>Inside leg:</em> From crotch seam down to ankle bone, standing straight.</p>
+      <h4>Trousers (AMCU)</h4>
+      <p>AMCU trousers are sized by <code>WAIST(in) + LEG-BAND</code>, e.g. <code>34R</code> = 34-inch waist, Regular length. Leg bands: <strong>S</strong> (inside leg ≤ 76 cm), <strong>R</strong> (77–84 cm), <strong>L</strong> (≥ 85 cm).</p>
+      <p><em>How to measure waist:</em> Around the natural waist, approximately 2.5 cm above the navel, in centimetres — then divide by 2.54 and round to the nearest even inch. <em>Inside leg:</em> From crotch seam down to ankle bone, standing straight.</p>
 
       <h4>Boots</h4>
       <p>AU boot sizes use the same scale as UK sizes. Add half a size when wearing thick military socks. Measure foot length from heel to longest toe on a flat surface.</p>

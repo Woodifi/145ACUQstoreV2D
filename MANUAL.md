@@ -77,16 +77,27 @@ After changing the default PIN, complete unit setup:
 3. Upload a unit logo if desired
 4. Click **Save unit details**
 
+#### Backfilling pre-existing loans (migration)
+
+If equipment was already on issue before QStore was installed, record those loans so accountability is maintained from day one.
+
+**Items with no stock on hand (`On hand = 0`):** Issue normally — the system will record the loan against the inventory entry and increment *On Loan* even though no physical stock is present. The badge will show *"⚠ None on hand — will record as On Loan"*.
+
+**Items where more units are out than `On hand` shows:** The system will not allow issuing past the recorded on-hand quantity. In this case, temporarily edit the item and set `On hand = 0`, record all the outstanding loans, then run a stocktake to set the correct physical count. The stocktake report will flag the discrepancy for reconciliation.
+
 ### Dashboard
 
 After logging in, the **Dashboard** (home page) gives an at-a-glance overview of the Q-Store:
 
+- **Setup checklist** — shown to the OC until unit details, items, and cadets are all configured. Click **Go →** next to any step to jump straight to that page. Dismiss once you're done.
 - **Stat tiles** — total items, items on loan, overdue loans, and unserviceable items
 - **Stocktake status** — date and readiness of the last stocktake
-- **Quick actions** — shortcuts to Issue, Return, Add Item, and run a Stocktake
+- **Quick actions** — shortcuts to Inventory, Loans, Cadets, Stocktake, Audit log, and Settings
 - **Recent audit** — the five most recent audit log entries
 
 The Dashboard is the first page shown after login. Click **Dashboard** in the navigation bar to return to it at any time.
+
+> **Tip:** The **?** button in the top-right corner of the header opens this help guide at any time.
 
 ### Adding Users
 
@@ -911,7 +922,7 @@ Issue kits are pre-defined bundles of items (e.g., *Initial Issue — Male Cadet
 5. Proceed with the issue as normal
 
 **Notes:**
-- If a kit item has zero available stock, it is skipped with a warning
+- If a kit item has no stock on hand, it is still added to the issue list and will be recorded as *On Loan* against the inventory entry — a warning toast lists the affected items
 - Kits are templates only — they do not affect stock until the loan is issued
 - Renaming an inventory item is reflected in all kits automatically
 

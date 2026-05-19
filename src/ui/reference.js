@@ -27,32 +27,36 @@ export async function mount(rootEl) {
 // Sizing data
 // -----------------------------------------------------------------------------
 
-// Shirts & Jackets — NATO chest-height sizing (used on AMCU, DPCU jackets, etc.)
-// NATO size = CHEST(cm)/HEIGHT(cm)  e.g. "87/170"
+// Shirts & Jackets — AMCU sizing (chest cm rounded to 5 cm + height band)
+// AMCU size code = CHEST(cm) + HEIGHT-BAND  e.g. "90R"
 // Height bands: S < 170 cm  |  R 170–183 cm  |  L > 183 cm
+// Chest measured in cm, rounded DOWN to nearest 5 cm.
 const SHIRT_ROWS = [
-  // [ natoCode, chestCm, genSize, usChestIn ]
-  { nato: '87/S–R–L',  chest: 87,  gen: 'XS',  usIn: 34 },
-  { nato: '92/S–R–L',  chest: 92,  gen: 'S',   usIn: 36 },
-  { nato: '97/S–R–L',  chest: 97,  gen: 'M',   usIn: 38 },
-  { nato: '102/S–R–L', chest: 102, gen: 'L',   usIn: 40 },
-  { nato: '107/S–R–L', chest: 107, gen: 'XL',  usIn: 42 },
-  { nato: '112/S–R–L', chest: 112, gen: '2XL', usIn: 44 },
-  { nato: '117/S–R–L', chest: 117, gen: '3XL', usIn: 46 },
+  // [ chest5cm, genSize, usChestIn ]
+  { chest:  80, gen: 'XS',  usIn: 31 },
+  { chest:  85, gen: 'S',   usIn: 33 },
+  { chest:  90, gen: 'M',   usIn: 35 },
+  { chest:  95, gen: 'L',   usIn: 37 },
+  { chest: 100, gen: 'XL',  usIn: 39 },
+  { chest: 105, gen: '2XL', usIn: 41 },
+  { chest: 110, gen: '3XL', usIn: 43 },
+  { chest: 115, gen: '4XL', usIn: 45 },
 ];
 
-// Trousers — waist (cm) × leg length code
+// Trousers — AMCU sizing (waist in inches + leg band)
+// AMCU trouser code = WAIST(in) + LEG-BAND  e.g. "34R"
 // Leg codes: S = inside leg ≤ 76 cm  |  R = 77–84 cm  |  L ≥ 85 cm
 const TROUSER_ROWS = [
-  // [ waistCm, genSize, usWaistIn ]
-  { waist: 75,  gen: 'XS',  usIn: 29 },
-  { waist: 80,  gen: 'S',   usIn: 31 },
-  { waist: 85,  gen: 'M',   usIn: 33 },
-  { waist: 90,  gen: 'L',   usIn: 35 },
-  { waist: 95,  gen: 'XL',  usIn: 37 },
-  { waist: 100, gen: '2XL', usIn: 39 },
-  { waist: 105, gen: '3XL', usIn: 41 },
-  { waist: 110, gen: '4XL', usIn: 43 },
+  // [ waistIn, waistCm, genSize ]
+  { waistIn: 28, waistCm: 71, gen: 'XS'  },
+  { waistIn: 30, waistCm: 76, gen: 'S'   },
+  { waistIn: 32, waistCm: 81, gen: 'S-M' },
+  { waistIn: 34, waistCm: 86, gen: 'M'   },
+  { waistIn: 36, waistCm: 91, gen: 'L'   },
+  { waistIn: 38, waistCm: 96, gen: 'XL'  },
+  { waistIn: 40, waistCm: 101,gen: '2XL' },
+  { waistIn: 42, waistCm: 107,gen: '3XL' },
+  { waistIn: 44, waistCm: 112,gen: '4XL' },
 ];
 
 // Boots — AU/UK shoe size (same scale), US Men's, US Women's, foot length
@@ -106,19 +110,19 @@ function _shirtTableHtml() {
       <td class="ref__td--center">${r.gen}</td>
       <td class="ref__td--center">${r.usIn}"</td>
       <td class="ref__td--small">
-        ${r.chest}/S &nbsp;•&nbsp; ${r.chest}/R &nbsp;•&nbsp; ${r.chest}/L
+        <code>${r.chest}S</code> &nbsp;•&nbsp; <code>${r.chest}R</code> &nbsp;•&nbsp; <code>${r.chest}L</code>
       </td>
     </tr>`).join('');
 
   return `
     <div class="ref__measure-box">
       <strong>How to measure — chest</strong>
-      <p>Wrap the tape around the fullest part of the chest, under the armpits and across the shoulder blades. Keep the tape horizontal and snug but not tight. Record in centimetres.</p>
-      <strong>Height bands (torso code)</strong>
+      <p>Wrap the tape around the fullest part of the chest, under the armpits and across the shoulder blades. Keep the tape horizontal and snug but not tight. Record in centimetres, then round <em>down</em> to the nearest 5 cm to find your size.</p>
+      <strong>Height bands (second character)</strong>
       <p><strong>S</strong> (Short) = height under 170 cm &nbsp;|&nbsp;
          <strong>R</strong> (Regular) = 170–183 cm &nbsp;|&nbsp;
          <strong>L</strong> (Long/Tall) = over 183 cm</p>
-      <p class="ref__note">NATO size format: <em>CHEST / HEIGHT-BAND</em> e.g. <code>102/R</code> = 102 cm chest, Regular height.</p>
+      <p class="ref__note">AMCU size format: <em>CHEST(cm) + HEIGHT-BAND</em> e.g. <code>90R</code> = 90 cm chest, Regular height. This format is printed on the inner label of the garment.</p>
     </div>
 
     <div class="ref__table-wrap">
@@ -128,32 +132,32 @@ function _shirtTableHtml() {
             <th>Chest (cm)</th>
             <th>Gen. size</th>
             <th>US chest</th>
-            <th>NATO codes (S / R / L)</th>
+            <th>AMCU codes (S / R / L)</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>
     </div>
-    <p class="ref__note">* If between sizes, select the larger size. For layering (e.g. body armour carrier), go one size up.</p>
+    <p class="ref__note">* If between sizes, select the larger size. When wearing body armour or load-bearing equipment underneath, go one size up.</p>
   `;
 }
 
 function _trouserTableHtml() {
   const rows = TROUSER_ROWS.map(r => `
     <tr>
-      <td class="ref__td--center">${r.waist}</td>
+      <td class="ref__td--center">${r.waistIn}"</td>
+      <td class="ref__td--center">~${r.waistCm}</td>
       <td class="ref__td--center">${r.gen}</td>
-      <td class="ref__td--center">${r.usIn}"</td>
       <td class="ref__td--small">
-        ${r.waist}/S &nbsp;•&nbsp; ${r.waist}/R &nbsp;•&nbsp; ${r.waist}/L
+        <code>${r.waistIn}S</code> &nbsp;•&nbsp; <code>${r.waistIn}R</code> &nbsp;•&nbsp; <code>${r.waistIn}L</code>
       </td>
     </tr>`).join('');
 
   return `
     <div class="ref__measure-box">
       <strong>How to measure — waist</strong>
-      <p>Measure around the natural waist (approximately 2.5 cm above the navel). Keep the tape horizontal and flat against the skin. Record in centimetres.</p>
-      <strong>Leg length bands (inseam code)</strong>
+      <p>Measure around the natural waist (approximately 2.5 cm above the navel). Keep the tape horizontal and flat against the skin. Convert centimetres to inches (÷ 2.54), then round to the nearest even inch to find your size.</p>
+      <strong>Leg length bands (second character)</strong>
       <p><strong>S</strong> (Short) = inside leg ≤ 76 cm &nbsp;|&nbsp;
          <strong>R</strong> (Regular) = 77–84 cm &nbsp;|&nbsp;
          <strong>L</strong> (Long) = ≥ 85 cm</p>
@@ -165,16 +169,16 @@ function _trouserTableHtml() {
       <table class="ref__table">
         <thead>
           <tr>
-            <th>Waist (cm)</th>
+            <th>Waist (in)</th>
+            <th>Waist (~cm)</th>
             <th>Gen. size</th>
-            <th>US waist</th>
-            <th>NATO codes (S / R / L)</th>
+            <th>AMCU codes (S / R / L)</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>
     </div>
-    <p class="ref__note">* NATO trouser size format: <em>WAIST / LEG-BAND</em> e.g. <code>90/R</code> = 90 cm waist, Regular length.</p>
+    <p class="ref__note">* AMCU trouser size format: <em>WAIST(in) + LEG-BAND</em> e.g. <code>34R</code> = 34-inch waist, Regular length. This format is printed on the inner waistband label.</p>
   `;
 }
 

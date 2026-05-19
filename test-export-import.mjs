@@ -70,7 +70,7 @@ expect(v1.ok, `chain valid pre-export (count=${v1.count})`);
 
 console.log('\n[3] Export builds a complete snapshot');
 const snapshot = await Storage.exportAll();
-eq(snapshot.schemaVersion, 2, 'schemaVersion');
+eq(snapshot.schemaVersion, 3, 'schemaVersion');
 expect(typeof snapshot.exportedAt === 'string' && snapshot.exportedAt.includes('T'),
   'exportedAt is ISO');
 expect(snapshot.items.length === 1, 'items present');

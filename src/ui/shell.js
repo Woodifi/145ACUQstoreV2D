@@ -296,6 +296,8 @@ async function _renderShell() {
           <div class="shell__session-name">${esc(_session.name)}</div>
           <div class="shell__session-role">${esc(AUTH.ROLES[_session.role]?.label || _session.role)}</div>
         </div>
+        <button type="button" class="shell__help" data-action="help"
+                aria-label="Help" title="Open help &amp; user guide">?</button>
         <button type="button" class="shell__logout" data-action="logout">Sign out</button>
         <button type="button" class="shell__hamburger" aria-expanded="false"
                 aria-label="Open menu" data-action="toggle-nav">
@@ -314,6 +316,7 @@ async function _renderShell() {
   // Wire logout buttons (desktop header + mobile nav).
   _root.addEventListener('click', (e) => {
     if (e.target.closest('[data-action="logout"]')) _onLogout();
+    if (e.target.closest('[data-action="help"]')) _navigateTo('help');
   });
 
   const nav       = $('.shell__nav', _root);

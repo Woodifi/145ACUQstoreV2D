@@ -114,7 +114,7 @@ async function _handleSelectedFile(file, spec) {
   try {
     text = await file.text();
   } catch (err) {
-    showToast(`Could not read file: ${err.message || err}`, 'error');
+    showToast('Could not read that file. Make sure it is a CSV and not open in another program.', 'error');
     return;
   }
 
@@ -122,7 +122,7 @@ async function _handleSelectedFile(file, spec) {
   try {
     result = await spec.parser(text);
   } catch (err) {
-    showToast(`CSV parse failed: ${err.message || err}`, 'error');
+    showToast('That file could not be read as a CSV. Check it opens correctly in a spreadsheet app and re-export as CSV.', 'error');
     return;
   }
 
@@ -312,7 +312,7 @@ function _showPreview(filename, parseResult, spec) {
           await _doCommit(rows, spec, importable);
           close();
         } catch (err) {
-          showToast(`Import failed: ${err.message || err}`, 'error');
+          showToast('Import failed — the data could not be saved. Try again or restart the app.', 'error');
           confirmBtn.disabled = false;
           confirmBtn.textContent = `Import ${importable} row(s)`;
         }

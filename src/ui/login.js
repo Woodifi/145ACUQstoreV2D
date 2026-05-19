@@ -165,6 +165,11 @@ async function _renderPinKeypad() {
             <button type="button" class="login__key login__key--backspace"
                     data-action="backspace" aria-label="Backspace">⌫</button>
           </div>
+          <div class="login__forgot-row">
+            <button type="button" class="login__forgot-link" data-action="forgot-pin">
+              Forgot PIN?
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -335,7 +340,7 @@ async function _submitPin() {
     case 'user_not_found':      msg = 'This account no longer exists.';                     break;
     case 'invalid_user_record': msg = 'Account is missing a PIN. Contact your CO or QM.';   break;
     case 'unknown_algorithm':   msg = 'Account uses an unsupported hash. Reset required.';  break;
-    case 'thrown':              msg = 'Sign-in error. Check your connection and reload.';   break;
+    case 'thrown':              msg = 'Sign-in error. The app still works offline — try again or reload the page.'; break;
     default:                    msg = 'Sign-in failed. Try again or pick a different user.';
   }
 
@@ -371,10 +376,12 @@ function _startLockoutCountdown(unlockAt) {
       _refreshPinDisplay();
       return;
     }
-    const display = secs >= 60
-      ? `${Math.ceil(secs / 60)} min ${secs % 60} s`
-      : `${secs} s`;
-    if (errorEl) errorEl.textContent = `Too many attempts — locked for ${display}`;
+    const mins = Math.floor(secs / 60);
+    const display = mins >= 1
+      ? `${mins} minute${mins !== 1 ? 's' : ''}`
+      : `${secs} second${secs !== 1 ? 's' : ''}`;
+    if (errorEl) errorEl.textContent =
+      `Too many incorrect PINs. Please wait ${display} before trying again.`;
   };
 
   _tick();

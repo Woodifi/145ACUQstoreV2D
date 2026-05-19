@@ -354,6 +354,27 @@ input {
   color: var(--text-primary);
 }
 
+.login__forgot-row {
+  text-align: center;
+  margin-top: 16px;
+}
+
+.login__forgot-link {
+  background: none;
+  border: none;
+  padding: 4px 8px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.login__forgot-link:hover {
+  color: var(--accent);
+}
+
 /* =============================================================================
  * SHELL (post-login)
  * ============================================================================= */
@@ -424,6 +445,23 @@ input {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-top: 2px;
+}
+
+.shell__help {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 6px 11px;
+  border-radius: var(--radius-sm);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.shell__help:hover {
+  border-color: var(--primary);
+  color: var(--primary);
 }
 
 .shell__logout {
@@ -792,6 +830,51 @@ input {
 .inv__actions {
   display: flex;
   gap: 8px;
+}
+
+/* Persistent stocktake-required warning banner */
+.inv__stocktake-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: color-mix(in srgb, #f59e0b 12%, var(--bg-panel));
+  border: 1px solid #f59e0b;
+  border-left: 4px solid #f59e0b;
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.inv__stocktake-warn-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.inv__stocktake-warn-body {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-primary);
+}
+
+.inv__stocktake-warn-body strong {
+  display: block;
+  margin-bottom: 3px;
+  color: #92400e;
+}
+
+.inv__stocktake-warn-link {
+  display: inline-block;
+  margin-top: 6px;
+  font-weight: 600;
+  color: #92400e;
+  text-decoration: underline;
+}
+
+.inv__stocktake-warn-link:hover {
+  color: #78350f;
 }
 
 .inv__meta {
@@ -1359,6 +1442,33 @@ input {
   margin: 0 0 6px;
   font-size: 18px;
   color: var(--gold);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* "Start here" badge on Unit Details when unit name not yet set */
+.settings__setup-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: var(--accent);
+  color: #fff;
+  padding: 2px 10px;
+  border-radius: 20px;
+  letter-spacing: 0.03em;
+  animation: pulse-badge 2s ease-in-out infinite;
+}
+
+@keyframes pulse-badge {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.65; }
+}
+
+/* Highlight the entire unit-details section when it's a first setup */
+.settings__section--unit-details:has(.settings__setup-badge) {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb, 59,130,246), 0.15);
 }
 
 .settings__section-hint {
@@ -1946,26 +2056,68 @@ input {
 
 /* Per-line item row inside the batch-issue list. Item search takes most
  * of the width; qty is narrow; remove button is a square. */
-.loan__lines { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+.loan__lines { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
 
+/* Each issue line is a block container — rows inside handle the flex layout */
 .loan__line {
-  display: flex;
-  gap: 8px;
-  align-items: flex-end;
+  display: block;
 }
 
-.loan__qty-field { flex: 0 0 80px; }
-.loan__qty-field input { text-align: right; }
+/* Label row — only shown on first line; keeps column labels aligned */
+.loan__line-labels {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-bottom: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.loan__line-label-main {
+  flex: 1;
+  min-width: 0;
+}
+.loan__line-label-qty {
+  flex: 0 0 80px;
+  text-align: right;
+  padding-right: 40px; /* leave room for remove/spacer column */
+}
+
+/* Inner row: [main grow] [qty fixed] [remove/spacer fixed] */
+.loan__line-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+/* Main field wrapper (item search or description) */
+.loan__line-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.loan__qty-field {
+  flex: 0 0 80px;
+  display: flex;
+  align-items: stretch;
+}
+.loan__qty-field input {
+  width: 100%;
+  text-align: right;
+}
 
 .loan__line-remove {
   flex: 0 0 32px;
   width: 32px;
+  align-self: center;
   height: 36px;
   padding: 0;
   font-size: 18px;
   line-height: 1;
-  align-self: flex-end;
-  margin-bottom: 0;
 }
 
 .loan__line-spacer { flex: 0 0 32px; }
@@ -2262,9 +2414,33 @@ input {
   vertical-align: top;
 }
 
+.loan__row[data-detail-target] { cursor: pointer; }
 .loan__row:hover td { background: rgba(255, 255, 255, 0.02); }
 
 .loan__row--returned td { opacity: 0.55; }
+
+/* Expandable detail row (visible when toggled) */
+.loan__row-detail td {
+  padding: 0 12px 10px 12px;
+  background: var(--bg-input);
+}
+.loan__detail-dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  margin: 0;
+  font-size: 12px;
+}
+.loan__detail-dl > div {
+  display: flex;
+  gap: 4px;
+}
+.loan__detail-dl dt {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.loan__detail-dl dt::after { content: ":"; }
+.loan__detail-dl dd { margin: 0; }
 
 .loan__ref,
 .loan__date {
@@ -3003,6 +3179,13 @@ input {
 .stk__status-text {
   font-size: 13px;
   color: var(--text-secondary);
+}
+
+.stk__autosave {
+  font-size: 12px;
+  color: var(--success, #2e7d32);
+  opacity: 0.75;
+  margin-left: 4px;
 }
 
 .stk__actions {
@@ -4155,6 +4338,106 @@ details[open] > .help__section-summary::after {
   margin-bottom: 28px;
 }
 
+/* Setup wizard card */
+.dash__setup-card {
+  background: var(--bg-panel);
+  border: 2px solid var(--accent);
+  border-radius: var(--radius-md);
+  padding: 20px 24px;
+  margin-bottom: 28px;
+}
+
+.dash__setup-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.dash__setup-icon {
+  font-size: 1.6rem;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.dash__setup-title {
+  font-size: 1rem;
+  color: var(--text-primary);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.dash__setup-sub {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.dash__setup-dismiss {
+  margin-left: auto;
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+.dash__setup-dismiss:hover { opacity: 1; }
+
+.dash__setup-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dash__setup-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.dash__setup-step--done {
+  opacity: 0.55;
+}
+
+.dash__setup-check {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.dash__setup-step--done .dash__setup-check {
+  background: var(--success, #16a34a);
+}
+
+.dash__setup-step-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dash__setup-hint {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.dash__setup-go {
+  flex-shrink: 0;
+}
+
 .dash__title {
   font-size: 22px;
   font-weight: 700;
@@ -4673,6 +4956,7 @@ details[open] > .help__section-summary::after {
 
   /* Hide desktop-only header elements on mobile */
   .shell__session  { display: none; }
+  .shell__help     { display: none; }
   .shell__logout   { display: none; }
 
   /* Sync: keep the icon, hide the label text */
@@ -4879,6 +5163,11 @@ details[open] > .help__section-summary::after {
 
 .orders__import-btn {
   cursor: pointer;
+}
+.orders__import-status {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-style: italic;
 }
 .orders__import-btn.btn--loading {
   opacity: 0.7;
@@ -5471,19 +5760,27 @@ details[open] > .help__section-summary::after {
 .loan__longterm-toggle .form__hint { display: block; margin-top: 2px; }
 
 /* Issue line layout — two rows (main inputs + opts strip) */
-.loan__line-row {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  flex-wrap: wrap;
-}
+/* (loan__line-row defined above with the other .loan__line* rules) */
 
 .loan__line-opts {
   display: flex;
   align-items: center;
-  gap: 16px;
-  margin-top: 4px;
+  gap: 12px;
+  margin-top: 5px;
   flex-wrap: wrap;
+}
+
+/* NSN sub-field inside opts (non-stock mode only) */
+.loan__line-nsn-field {
+  flex: 0 1 200px;
+}
+.loan__line-nsn-field input {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  padding: 5px 8px;
 }
 
 .loan__line-nonstock-lbl {
@@ -5508,7 +5805,7 @@ details[open] > .help__section-summary::after {
 
 .loan__line-notes-field {
   flex: 1;
-  min-width: 160px;
+  min-width: 140px;
 }
 
 .loan__line-notes-field input {
@@ -5524,9 +5821,10 @@ details[open] > .help__section-summary::after {
 /* Non-stock line highlight */
 .loan__line--nonstock {
   background: color-mix(in srgb, var(--accent) 6%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
   border-radius: var(--radius-sm);
   padding: 8px 10px;
+  margin-top: 2px;
 }
 
 /* Stock availability hint on item lines */

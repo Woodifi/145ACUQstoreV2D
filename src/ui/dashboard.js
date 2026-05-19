@@ -72,6 +72,31 @@ async function _render() {
   const session     = AUTH.getSession();
   const unitName    = settings.unitName || 'QStore IMS';
 
+  // Setup checklist: show for OC when any step is incomplete.
+  const setupSteps = isCO ? [
+    {
+      done: !!(settings.unitName && settings.unitName.trim()),
+      label: 'Set unit details (name, code, state)',
+      nav: 'settings',
+      hint: 'Settings → Unit Details',
+    },
+    {
+      done: totalItems > 0,
+      label: 'Add your first inventory item',
+      nav: 'inventory',
+      hint: 'Inventory → + Add item',
+    },
+    {
+      done: (await Storage.cadets.list()).length > 0,
+      label: 'Add cadets / nominal roll',
+      nav: 'cadets',
+      hint: 'Cadets → + Add cadet',
+    },
+  ] : [];
+  const setupComplete   = setupSteps.every(s => s.done);
+  const setupDismissed  = !!(await Storage.settings.get('ui.setupDismissed'));
+  const showSetup       = isCO && !setupComplete && !setupDismissed;
+
   render(_root, `
     <section class="dash">
       <header class="dash__header">
@@ -83,6 +108,37 @@ async function _render() {
                   data-action="refresh" title="Refresh dashboard">↺</button>
         </div>
       </header>
+
+      <!-- ── Setup wizard (new OC only, until all steps done) ── -->
+      ${showSetup ? `
+        <div class="dash__setup-card">
+          <div class="dash__setup-header">
+            <span class="dash__setup-icon">🚀</span>
+            <div>
+              <strong class="dash__setup-title">Welcome — let's get QStore set up</strong>
+              <p class="dash__setup-sub">Complete these steps to get started.
+                 You can dismiss this once finished.</p>
+            </div>
+            <button type="button" class="dash__setup-dismiss btn btn--ghost btn--sm"
+                    data-action="dismiss-setup" title="Dismiss this card">✕</button>
+          </div>
+          <ol class="dash__setup-steps">
+            ${setupSteps.map((s, i) => `
+              <li class="dash__setup-step ${s.done ? 'dash__setup-step--done' : ''}">
+                <span class="dash__setup-check">${s.done ? '✓' : String(i + 1)}</span>
+                <span class="dash__setup-step-body">
+                  <strong>${esc(s.label)}</strong>
+                  ${!s.done ? `<span class="dash__setup-hint">${esc(s.hint)}</span>` : ''}
+                </span>
+                ${!s.done
+                  ? `<button type="button" class="btn btn--primary btn--sm dash__setup-go"
+                             data-nav="${esc(s.nav)}">Go →</button>`
+                  : ''}
+              </li>
+            `).join('')}
+          </ol>
+        </div>
+      ` : ''}
 
       <!-- ── Stat tiles ── -->
       <div class="dash__tiles">
@@ -187,6 +243,11 @@ async function _render() {
 
   // Wire events.
   $('[data-action="refresh"]', _root)?.addEventListener('click', () => _render());
+
+  $('[data-action="dismiss-setup"]', _root)?.addEventListener('click', async () => {
+    await Storage.settings.set('ui.setupDismissed', true);
+    await _render();
+  });
 
   _root.querySelectorAll('[data-nav]').forEach(btn => {
     btn.addEventListener('click', (e) => {
