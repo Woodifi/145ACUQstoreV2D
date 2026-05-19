@@ -427,3 +427,8 @@ END OF LOG — append new entries above this line
 [2026-05-19T06:35:00Z] GIT COMMIT + PUSH — 4bd718b -> origin/master
   Committed 18 files (2770 insertions, 1534 deletions)
   Pushed to https://github.com/Woodifi/145ACUQstoreV2D.git master
+
+[2026-05-19T06:49:00Z] GIT COMMIT + PUSH — 3bfe57f -> origin/master
+  feat: detect and remove phantom borrowers from loan records
+  Files: dist/qstore.html, docs/index.html, qstore.css, src/ui/loans.js, src/storage.js
+  Build: 20260519-1BB9D332  |  491 tests, 0 failed
