@@ -423,3 +423,7 @@ END OF LOG — append new entries above this line
   - inv__stocktake-warn* CSS added; dark-mode safe via color-mix
   - _onRootClick: added data-nav handler so the banner link works alongside data-action
   Build: 20260519-15D12C3B  All 491 tests pass
+
+[2026-05-19T06:35:00Z] GIT COMMIT + PUSH — 4bd718b -> origin/master
+  Committed 18 files (2770 insertions, 1534 deletions)
+  Pushed to https://github.com/Woodifi/145ACUQstoreV2D.git master
