@@ -2355,7 +2355,7 @@ function _aboutSectionHtml() {
       </header>
 
       <div class="about__block">
-        <div class="about__app-name">QStore IMS <span class="about__version">v2.1</span></div>
+        <div class="about__app-name">QStore IMS <span class="about__version">v2.3</span></div>
         <p class="about__tagline">Inventory Management System for Australian Army Cadet Q-Stores</p>
       </div>
 

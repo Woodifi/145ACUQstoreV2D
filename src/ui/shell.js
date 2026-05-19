@@ -36,6 +36,7 @@ import * as Users     from './users.js';
 import * as Settings  from './settings.js';
 import * as Help      from './help.js';
 import * as Orders    from './orders.js';
+import * as Requests  from './requests.js';
 import * as Reference from './reference.js';
 import { openModal }  from './modal.js';
 import { esc, $, render } from './util.js';
@@ -45,9 +46,10 @@ const PAGES = {
   inventory: { label: 'Inventory', perm: 'view',     mount: Inventory.mount },
   loans:     { label: 'Loans',     perm: 'view',     mount: Loans.mount     },
   cadets:    { label: 'Cadets',    perm: 'view',     mount: Cadets.mount    },
-  stocktake: { label: 'Stocktake', perm: 'editItem', mount: Stocktake.mount },
-  orders:    { label: 'Orders',    perm: 'editItem', mount: Orders.mount    },
-  audit:     { label: 'Audit',     perm: 'audit',    mount: Audit.mount     },
+  stocktake: { label: 'Stocktake', perm: 'editItem',     mount: Stocktake.mount  },
+  orders:    { label: 'Orders',    perm: 'editItem',     mount: Orders.mount     },
+  requests:  { label: 'Requests',  perm: 'requestIssue', mount: Requests.mount   },
+  audit:     { label: 'Audit',     perm: 'audit',        mount: Audit.mount      },
   users:     { label: 'Users',     coOnly: true,     mount: Users.mount     },
   settings:  { label: 'Settings',  coOnly: true,     mount: Settings.mount  },
   reference: { label: 'Reference',  perm: 'view',     mount: Reference.mount },
@@ -496,19 +498,34 @@ async function _mountPage(pageKey) {
 
 async function _updateOverdueBadge() {
   if (!_root) return;
+
+  // ---- Overdue loans badge on "Loans" nav button ----
   const loansNavBtn = _root.querySelector('.shell__nav-link[data-page="loans"]');
-  if (!loansNavBtn) return;
+  if (loansNavBtn) {
+    const today = new Date().toISOString().slice(0, 10);
+    const active = await Storage.loans.listActive();
+    const overdueCount = active.filter(l => !l.longTermLoan && l.dueDate && l.dueDate < today).length;
 
-  const today = new Date().toISOString().slice(0, 10);
-  const active = await Storage.loans.listActive();
-  const overdueCount = active.filter(l => !l.longTermLoan && l.dueDate && l.dueDate < today).length;
+    if (overdueCount > 0) {
+      loansNavBtn.innerHTML =
+        `Loans <span class="shell__nav-badge">${overdueCount}</span>`;
+    } else {
+      loansNavBtn.textContent = 'Loans';
+    }
+  }
 
-  // The label is always "Loans"; we replace it to add/remove the badge.
-  if (overdueCount > 0) {
-    loansNavBtn.innerHTML =
-      `Loans <span class="shell__nav-badge">${overdueCount}</span>`;
-  } else {
-    loansNavBtn.textContent = 'Loans';
+  // ---- Pending requests badge on "Requests" nav button (QM / CO only) ----
+  const reqNavBtn = _root.querySelector('.shell__nav-link[data-page="requests"]');
+  if (reqNavBtn && (AUTH.can('issue') || AUTH.isCO())) {
+    try {
+      const pending = await Storage.requests.listByStatus('pending');
+      if (pending.length > 0) {
+        reqNavBtn.innerHTML =
+          `Requests <span class="shell__nav-badge">${pending.length}</span>`;
+      } else {
+        reqNavBtn.textContent = 'Requests';
+      }
+    } catch { /* non-fatal */ }
   }
 }
 

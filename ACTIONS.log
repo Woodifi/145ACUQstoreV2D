@@ -301,7 +301,7 @@ END OF LOG — append new entries above this line
     - §12 PIN Security: rewrote "Changing Your PIN" as "PIN Management Policy"
   Build: 20260518-567A8229  Bundle: 3474.0 KB  →  master
 
-[2026-05-19 UTC] FEATURE � Reference page (uniform sizing guide)
+[2026-05-19 UTC] FEATURE � Reference page (uniform sizing guide)
   - Created src/ui/reference.js: static page with 4 tabs (Shirts & Jackets,
     Trousers, Boots, Hats & Berets). Each tab has a how-to-measure guide and
     conversion table (AU/NATO cm <-> US inch/size <-> generalised XS-3XL).
@@ -432,3 +432,18 @@ END OF LOG — append new entries above this line
   feat: detect and remove phantom borrowers from loan records
   Files: dist/qstore.html, docs/index.html, qstore.css, src/ui/loans.js, src/storage.js
   Build: 20260519-1BB9D332  |  491 tests, 0 failed
+
+[2026-05-19T21:39:00Z] GIT COMMIT + PUSH — ade6d4c -> origin/master
+  feat(loans): Initial Issue purpose + cadet discharge recall
+  Files: src/ui/loans.js, src/ui/cadets.js, src/ui/settings.js, qstore.css, dist/, docs/
+  Build: 20260519-334F1A44  |  491 tests, 0 failed
+
+[2026-05-19T21:10:00Z] GIT COMMIT + PUSH — 2c87967 -> origin/master
+  feat(settings): improve category management UX
+  Changes:
+    • qstore.css — .modal__panel now flex-column with max-height(100dvh-48px); added
+      .cat__editor-scroll (scrollable list zone), .cat__editor-drag-handle,
+      .cat__editor-item--dragging, .cat__editor-item--drag-over, .cat__editor-footer
+    • src/ui/settings.js — _onManageCategories(): scrollable list container in modal;
+      Shift+↑/↓ to jump item to top/bottom; HTML5 drag-and-drop reordering via ⠿ handle
+  Build: 20260519-571C50FD  |  491 tests, 0 failed

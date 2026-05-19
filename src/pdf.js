@@ -1096,6 +1096,150 @@ export async function generateAB189(loans, opts = {}) {
   return _packageResult(doc, filename);
 }
 
+// =============================================================================
+// BLANK AB189 (fillable / printable template)
+// =============================================================================
+
+/**
+ * Generate a blank, printable AB189 Equipment Request form.
+ * Used by cadets/staff to fill in offline and submit physically or
+ * import back into the system via PDF text extraction.
+ *
+ * @param {Object} [opts]
+ * @param {Object} [opts.unit]     Unit branding settings.
+ * @param {number} [opts.rows=8]   Number of blank equipment item rows to include.
+ * @returns {Promise<{filename: string, blob: Blob, bytes: number}>}
+ */
+export async function generateBlankAB189(opts = {}) {
+  const unit = opts.unit || {};
+  const rows = Math.max(3, Math.min(20, opts.rows || 8));
+  const doc  = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+  let y = PAGE.MARGIN;
+
+  // ---- Header ----
+  doc.setFillColor(...COL.armyGreen);
+  doc.rect(PAGE.MARGIN, y, PAGE.CW, 16, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.setTextColor(...COL.tan);
+  doc.text('EQUIPMENT REQUEST', PAGE.MARGIN + 4, y + 7);
+  doc.setFontSize(11);
+  doc.text('AB 189', PAGE.MARGIN + PAGE.CW - 4, y + 7, { align: 'right' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(220, 220, 200);
+  const subtitle = unit.unitName
+    ? `${unit.unitName} — Q-Store`
+    : 'Australian Army Cadets — Unit Quartermaster';
+  doc.text(subtitle, PAGE.MARGIN + 4, y + 13);
+  y += 20;
+
+  // ---- Request meta row ----
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(...COL.txtMuted);
+  doc.text('Request date:', PAGE.MARGIN, y);
+  _blankLine(doc, PAGE.MARGIN + 26, y, 55);
+  if (unit.unitCode) {
+    doc.text(`Unit code: ${unit.unitCode}`, PAGE.MARGIN + 90, y);
+  }
+  doc.setFontSize(8);
+  doc.setTextColor(...COL.txtSub);
+  doc.text(`Blank form generated: ${_nowFmt()}`, PAGE.MARGIN + 90, y + 5);
+  doc.setDrawColor(...COL.tan);
+  doc.setLineWidth(0.5);
+  doc.line(PAGE.MARGIN, y + 8, PAGE.MARGIN + PAGE.CW, y + 8);
+  y += 14;
+
+  // ---- Requesting member section ----
+  y = _drawSectionBand(doc, y, 'Requesting member');
+  y = _blankLabelRow(doc, y, 'Service No.', 80);
+  y = _blankLabelRow(doc, y, 'Rank', 40);
+  y = _blankLabelRow(doc, y, 'Surname', 80);
+  y = _blankLabelRow(doc, y, 'Given names', 80);
+  y = _blankLabelRow(doc, y, 'Platoon / Flight', 60);
+  y += 2;
+
+  // ---- Equipment requested table ----
+  y = _drawSectionBand(doc, y, 'Equipment requested');
+
+  const COLS = [
+    { x: PAGE.MARGIN + 2,   label: '#',            w: 8,  align: 'left'  },
+    { x: PAGE.MARGIN + 12,  label: 'NSN',          w: 42, align: 'left'  },
+    { x: PAGE.MARGIN + 56,  label: 'Nomenclature / Description', w: 96, align: 'left' },
+    { x: PAGE.MARGIN + 154, label: 'Qty',          w: 14, align: 'right' },
+  ];
+
+  // Column header row.
+  doc.setFillColor(180, 175, 165);
+  doc.rect(PAGE.MARGIN, y, PAGE.CW, 6, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(50, 50, 40);
+  for (const c of COLS) {
+    const tx = c.align === 'right' ? c.x + c.w - 1 : c.x;
+    doc.text(c.label, tx, y + 4.5, c.align === 'right' ? { align: 'right' } : undefined);
+  }
+  y += 7;
+
+  // Blank item rows.
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  for (let i = 0; i < rows; i++) {
+    if (i % 2 === 1) {
+      doc.setFillColor(...COL.rowFillEven);
+      doc.rect(PAGE.MARGIN, y - 1, PAGE.CW, 7, 'F');
+    }
+    doc.setTextColor(...COL.txtDark);
+    doc.text(String(i + 1), COLS[0].x, y + 4);
+    // Underlines for NSN, description, qty.
+    doc.setDrawColor(150, 145, 135);
+    doc.setLineWidth(0.3);
+    doc.line(COLS[1].x, y + 4.5, COLS[1].x + COLS[1].w - 2, y + 4.5);
+    doc.line(COLS[2].x, y + 4.5, COLS[2].x + COLS[2].w - 2, y + 4.5);
+    doc.line(COLS[3].x, y + 4.5, COLS[3].x + COLS[3].w - 1, y + 4.5);
+    y += 7;
+  }
+  y += 4;
+
+  // ---- Purpose and details section ----
+  y = _drawSectionBand(doc, y, 'Purpose and details');
+  y = _blankLabelRow(doc, y, 'Purpose', 100);
+  y = _blankLabelRow(doc, y, 'Required by (date)', 60);
+  y = _blankLabelRow(doc, y, 'Remarks / Notes', 120);
+  y += 4;
+
+  // ---- Approval blocks ----
+  _drawAB189ApprovalBlocks(doc, y, unit);
+  _drawFooter(doc);
+
+  const filename = `AB189_Blank_${_todayIsoDate()}.pdf`;
+  return _packageResult(doc, filename);
+}
+
+// Blank form helpers -----------------------------------------------------------
+
+/** Draw a label + underline row and return the new y cursor. */
+function _blankLabelRow(doc, y, label, lineWidth) {
+  const LABEL_W = 48;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...COL.txtMuted);
+  doc.text(label, PAGE.MARGIN + 2, y + 4);
+  doc.setDrawColor(120, 115, 105);
+  doc.setLineWidth(0.3);
+  doc.line(PAGE.MARGIN + LABEL_W, y + 4.5, PAGE.MARGIN + LABEL_W + lineWidth, y + 4.5);
+  return y + 8;
+}
+
+/** Draw a horizontal underline (for date fields etc. that don't have a label). */
+function _blankLine(doc, x, y, width) {
+  doc.setDrawColor(120, 115, 105);
+  doc.setLineWidth(0.3);
+  doc.line(x, y + 0.5, x + width, y + 0.5);
+}
+
 // AB189 drawing helpers -------------------------------------------------------
 
 function _drawAB189Header(doc, y, unit) {
