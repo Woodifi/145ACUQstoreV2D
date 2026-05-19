@@ -657,22 +657,40 @@ function _openApproveModal(order, nsnMap) {
         <p>This will update your IMS inventory based on the items in Order
            <strong>#${esc(order.orderId)}</strong>.</p>
 
+        <p class="ord__approve-note">
+          Edit <strong>Qty to receive</strong> for each item — defaults to the recorded received quantity
+          (or required qty if none was entered). Set to 0 to skip an item.
+        </p>
+
         ${matchedItems.length ? `
           <h4 class="ord__approve-heading ord__approve-heading--found">
             ${matchedItems.length} item${matchedItems.length !== 1 ? 's' : ''} found in IMS
-            <span class="ord__approve-sub">— onHand qty will be increased</span>
+            <span class="ord__approve-sub">— onHand (serviceable) will be increased</span>
           </h4>
           <table class="orders__table orders__table--compact">
-            <thead><tr><th>NSN</th><th>Description</th><th>Qty</th><th>IMS Name</th><th>onHand</th></tr></thead>
+            <thead><tr>
+              <th>NSN</th><th>Description</th>
+              <th class="orders__col-num">Ordered</th>
+              <th class="orders__col-num">Qty to receive</th>
+              <th>IMS Name</th>
+              <th class="orders__col-num">Current onHand</th>
+            </tr></thead>
             <tbody>
               ${matchedItems.map(item => {
                 const imsItem = nsnMap.get(item.nsn);
+                const dflt    = item.qtyReceived ?? item.qtyRequired ?? 0;
                 return `<tr>
                   <td>${esc(item.nsn)}</td>
                   <td>${esc(item.description)}</td>
-                  <td>${esc(String(item.qtyRequired ?? '?'))}</td>
+                  <td class="orders__col-num">${esc(String(item.qtyRequired ?? '—'))}</td>
+                  <td class="orders__col-num">
+                    <input type="number" class="form__input ord__rcv-qty"
+                           data-nsn="${esc(item.nsn)}" data-new="0"
+                           value="${dflt}" min="0" step="1"
+                           style="width:70px;text-align:right">
+                  </td>
                   <td>${esc(imsItem?.name || '—')}</td>
-                  <td>${esc(String(imsItem?.onHand ?? '—'))}</td>
+                  <td class="orders__col-num">${esc(String(imsItem?.onHand ?? '—'))}</td>
                 </tr>`;
               }).join('')}
             </tbody>
@@ -682,16 +700,29 @@ function _openApproveModal(order, nsnMap) {
         ${newItems.length ? `
           <h4 class="ord__approve-heading ord__approve-heading--new">
             ${newItems.length} new item${newItems.length !== 1 ? 's' : ''} (not in IMS)
-            <span class="ord__approve-sub">— will be created</span>
+            <span class="ord__approve-sub">— will be created with the specified quantity</span>
           </h4>
           <table class="orders__table orders__table--compact">
-            <thead><tr><th>NSN</th><th>Description</th><th>Qty</th></tr></thead>
+            <thead><tr>
+              <th>NSN</th><th>Description</th>
+              <th class="orders__col-num">Ordered</th>
+              <th class="orders__col-num">Qty to receive</th>
+            </tr></thead>
             <tbody>
-              ${newItems.map(item => `<tr>
-                <td>${esc(item.nsn)}</td>
-                <td>${esc(item.description)}</td>
-                <td>${esc(String(item.qtyRequired ?? '?'))}</td>
-              </tr>`).join('')}
+              ${newItems.map(item => {
+                const dflt = item.qtyReceived ?? item.qtyRequired ?? 0;
+                return `<tr>
+                  <td>${esc(item.nsn)}</td>
+                  <td>${esc(item.description)}</td>
+                  <td class="orders__col-num">${esc(String(item.qtyRequired ?? '—'))}</td>
+                  <td class="orders__col-num">
+                    <input type="number" class="form__input ord__rcv-qty"
+                           data-nsn="${esc(item.nsn)}" data-new="1"
+                           value="${dflt}" min="0" step="1"
+                           style="width:70px;text-align:right">
+                  </td>
+                </tr>`;
+              }).join('')}
             </tbody>
           </table>
           <label class="ord__approve-cat-label">
@@ -737,9 +768,16 @@ function _openApproveModal(order, nsnMap) {
         confirmBtn.disabled = true;
         if (errEl) errEl.textContent = '';
         try {
+          // Build a map of nsn → qty to receive from the editable inputs.
+          const qtyMap = new Map();
+          panel.querySelectorAll('.ord__rcv-qty').forEach((input) => {
+            const nsn = input.dataset.nsn;
+            const qty = Math.max(0, parseInt(input.value, 10) || 0);
+            if (nsn) qtyMap.set(nsn, qty);
+          });
           const newItemCat = catSel?.value || 'equipment';
           const notes      = notesTa?.value?.trim() || '';
-          await _doApprove(order, nsnMap, newItemCat, notes);
+          await _doApprove(order, nsnMap, newItemCat, notes, qtyMap);
           close();
           const updated = await Storage.orders.get(order.id);
           if (updated) await _renderDetail(updated);
@@ -754,13 +792,17 @@ function _openApproveModal(order, nsnMap) {
 
 // ── Approve: update IMS inventory ────────────────────────────────────────────
 
-async function _doApprove(order, nsnMap, newItemCat, notes) {
+async function _doApprove(order, nsnMap, newItemCat, notes, qtyMap = new Map()) {
   const session  = AUTH.getSession();
   const userName = session?.name || 'QM';
   const now      = new Date().toISOString();
 
   for (const orderItem of order.items.filter(i => i.nsn)) {
-    const qty      = Math.max(0, orderItem.qtyRequired || 0);
+    // Use the qty from the modal's editable input; fall back to qtyRequired.
+    const qty = qtyMap.has(orderItem.nsn)
+      ? Math.max(0, qtyMap.get(orderItem.nsn))
+      : Math.max(0, orderItem.qtyRequired || 0);
+    if (qty === 0) continue;   // user set to 0 → skip this line
     const existing = nsnMap.get(orderItem.nsn);
 
     if (existing) {

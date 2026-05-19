@@ -123,9 +123,13 @@ export async function mount(rootEl) {
   return function unmount() { _root = null; };
 }
 
-function _freshIssueState()  { return { svcNo: '', lines: [_freshLine()] }; }
+function _freshIssueState()  {
+  return { svcNo: '', lines: [_freshLine()], longTermLoan: false, unitLoan: false, activityName: '' };
+}
 function _freshReturnState() { return { svcNo: '', refsChecked: new Set() }; }
-function _freshLine()        { return { itemId: '', qty: 1 }; }
+function _freshLine()        {
+  return { itemId: '', qty: 1, nonStock: false, nonStockDesc: '', nonStockNsn: '', lineNotes: '' };
+}
 
 function _firstAllowedTab() {
   for (const t of TABS) if (AUTH.can(t.perm)) return t.key;
@@ -200,24 +204,40 @@ async function _renderIssueTab(body) {
     ? (await Storage.loans.listForCadet(borrower.svcNo)).filter((l) => l.active === true)
     : [];
 
-  // For the item picker — filter to items with available stock. We compute
-  // available = onHand - onLoan. Items at zero or below don't appear; the
-  // user can still see them on the inventory page.
-  const availableItems = items
-    .map((i) => ({ ...i, _avail: Math.max(0, (Number(i.onHand) || 0) - (Number(i.onLoan) || 0)) }))
-    .filter((i) => i._avail > 0);
+  // All items with computed availability (avail = onHand - onLoan).
+  // We include out-of-stock items so the QM can see what's in the kit but
+  // can't be issued from stock — they can substitute or use non-stock override.
+  const allItemsWithAvail = items.map((i) => ({
+    ...i,
+    _avail: Math.max(0, (Number(i.onHand) || 0) - (Number(i.onLoan) || 0)),
+  }));
 
   body.innerHTML = `
     <div class="loan__issue">
       <div class="loan__issue-form">
+
         <h3 class="loan__heading">1. Borrower</h3>
-        ${_borrowerPickerHtml('issue', _issueState.svcNo, activeCadets, borrower)}
+        <label class="loan__unit-loan-toggle">
+          <input type="checkbox" data-issue-field="unitLoan"
+                 ${_issueState.unitLoan ? 'checked' : ''}>
+          <span>Unit / Activity loan</span>
+          <span class="form__hint">Tick for hired items or equipment assigned to an activity rather than an individual.</span>
+        </label>
+        ${_issueState.unitLoan
+          ? `<label class="form__field">
+               <span class="form__label">Activity / description *</span>
+               <input type="text" name="activityName" data-issue-field="activityName"
+                      maxlength="120" placeholder="e.g. Annual Camp 2026 — Abseiling gear"
+                      value="${esc(_issueState.activityName)}">
+             </label>`
+          : _borrowerPickerHtml('issue', _issueState.svcNo, activeCadets, borrower)
+        }
 
         <h3 class="loan__heading">2. Items
           <button type="button" class="btn btn--ghost btn--sm loan__load-kit"
                   data-action="load-kit" title="Pre-fill with a saved kit">⊞ Load kit</button>
         </h3>
-        ${_issueLinesHtml(_issueState.lines, availableItems)}
+        ${_issueLinesHtml(_issueState.lines, allItemsWithAvail)}
 
         <h3 class="loan__heading">3. Issue details</h3>
         <div class="form__row">
@@ -227,17 +247,25 @@ async function _renderIssueTab(body) {
               ${PURPOSES.map((p) => `<option value="${esc(p)}">${esc(p)}</option>`).join('')}
             </select>
           </label>
-          <label class="form__field">
-            <span class="form__label">Due date *</span>
+          <label class="form__field loan__due-date-field"
+                 style="${_issueState.longTermLoan ? 'opacity:0.4;pointer-events:none' : ''}">
+            <span class="form__label">Due date${_issueState.longTermLoan ? '' : ' *'}</span>
             <input type="date" name="dueDate" data-issue-field="dueDate"
-                   value="${esc(_defaultDueDate())}" required>
+                   value="${esc(_issueState.longTermLoan ? '' : _defaultDueDate())}"
+                   ${_issueState.longTermLoan ? 'disabled' : 'required'}>
           </label>
         </div>
+        <label class="loan__longterm-toggle">
+          <input type="checkbox" data-issue-field="longTermLoan"
+                 ${_issueState.longTermLoan ? 'checked' : ''}>
+          <span>Long-term loan (no return date)</span>
+          <span class="form__hint">Use for initial uniform / equipment issue for the period of engagement. Loan will not show as overdue.</span>
+        </label>
         <label class="form__field">
-          <span class="form__label">Remarks</span>
-          <textarea name="remarks" rows="2" maxlength="300"
+          <span class="form__label">Notes</span>
+          <textarea name="remarks" rows="2" maxlength="400"
                     data-issue-field="remarks"
-                    placeholder="optional"></textarea>
+                    placeholder="optional — e.g. Annual camp kit, size details"></textarea>
         </label>
 
         <div class="form__error" data-issue-error role="alert"></div>
@@ -271,7 +299,7 @@ async function _renderIssueTab(body) {
     </div>
   `;
 
-  _wireIssueTab(body, activeCadets, availableItems);
+  _wireIssueTab(body, activeCadets, allItemsWithAvail);
 }
 
 function _issueLinesHtml(lines, availableItems) {
@@ -285,50 +313,131 @@ function _issueLinesHtml(lines, availableItems) {
   `;
 }
 
-function _issueLineHtml(line, index, availableItems) {
-  const item = line.itemId ? availableItems.find((i) => i.id === line.itemId) : null;
-  const maxQty = item ? item._avail : 1;
+function _issueLineHtml(line, index, allItems) {
+  // Non-stock mode — free text description, optional NSN, no inventory link.
+  if (line.nonStock) {
+    return `
+      <div class="loan__line loan__line--nonstock" data-line-index="${index}">
+        <div class="loan__line-row">
+          <label class="form__field form__field--grow">
+            ${index === 0 ? '<span class="form__label">Item description *</span>' : ''}
+            <input type="text" data-line-field="nonStockDesc"
+                   placeholder="e.g. Hat, Bush / Boots Pair"
+                   value="${esc(line.nonStockDesc || '')}"
+                   autocomplete="off">
+          </label>
+          <label class="form__field" style="flex:0 0 160px">
+            ${index === 0 ? '<span class="form__label">NSN (optional)</span>' : ''}
+            <input type="text" data-line-field="nonStockNsn"
+                   placeholder="0000-00-000-0000"
+                   value="${esc(line.nonStockNsn || '')}"
+                   autocomplete="off" spellcheck="false">
+          </label>
+          <label class="form__field loan__qty-field">
+            ${index === 0 ? '<span class="form__label">Qty *</span>' : ''}
+            <input type="number" data-line-field="qty"
+                   value="${line.qty}" min="1" step="1">
+          </label>
+          ${index > 0 ? `
+            <button type="button" class="btn btn--sm btn--ghost loan__line-remove"
+                    data-action="issue-remove-line" data-line-index="${index}"
+                    aria-label="Remove this line">×</button>
+          ` : '<span class="loan__line-spacer"></span>'}
+        </div>
+        <div class="loan__line-opts">
+          <label class="loan__line-nonstock-lbl loan__line-nonstock-lbl--on">
+            <input type="checkbox" data-line-field="nonStock" data-line-index="${index}" checked>
+            Non-stock item
+          </label>
+          <span class="loan__line-nonstock-hint">Not from IMS stock — inventory updated on return if NSN matches.</span>
+          <label class="form__field loan__line-notes-field">
+            <input type="text" data-line-field="lineNotes"
+                   placeholder="Notes (optional)"
+                   value="${esc(line.lineNotes || '')}"
+                   maxlength="200">
+          </label>
+        </div>
+      </div>
+    `;
+  }
+
+  // Standard stock-item mode.
+  const item      = line.itemId ? allItems.find((i) => i.id === line.itemId) : null;
+  const avail     = item ? item._avail : 0;
+  const outOfStock = item && avail === 0;
+
   return `
     <div class="loan__line" data-line-index="${index}">
-      <label class="form__field form__field--grow">
-        ${index === 0 ? '<span class="form__label">Item *</span>' : ''}
-        <input type="text" data-line-field="itemSearch"
-               class="loan__item-search"
-               placeholder="Search items by name or NSN…"
-               value="${esc(item ? `${item.name} (${item.nsn || 'no NSN'})` : '')}"
-               autocomplete="off"
-               list="loan-item-list-${index}">
-        <datalist id="loan-item-list-${index}">
-          ${availableItems.map((i) =>
-            `<option value="${esc(i.name)} (${esc(i.nsn || 'no NSN')})"
-                     data-id="${esc(i.id)}"
-                     data-avail="${i._avail}">`).join('')}
-        </datalist>
-        <input type="hidden" data-line-field="itemId" value="${esc(line.itemId)}">
-        ${item ? `<span class="form__hint">${item._avail} available</span>` : ''}
-      </label>
-      <label class="form__field loan__qty-field">
-        ${index === 0 ? '<span class="form__label">Qty *</span>' : ''}
-        <input type="number" data-line-field="qty"
-               value="${line.qty}" min="1" max="${maxQty}" step="1">
-      </label>
-      ${index > 0 ? `
-        <button type="button" class="btn btn--sm btn--ghost loan__line-remove"
-                data-action="issue-remove-line" data-line-index="${index}"
-                aria-label="Remove this line">×</button>
-      ` : '<span class="loan__line-spacer"></span>'}
+      <div class="loan__line-row">
+        <label class="form__field form__field--grow">
+          ${index === 0 ? '<span class="form__label">Item *</span>' : ''}
+          <input type="text" data-line-field="itemSearch"
+                 class="loan__item-search"
+                 placeholder="Search items by name or NSN…"
+                 value="${esc(item ? `${item.name} (${item.nsn || 'no NSN'})` : '')}"
+                 autocomplete="off"
+                 list="loan-item-list-${index}">
+          <datalist id="loan-item-list-${index}">
+            ${allItems.map((i) =>
+              `<option value="${esc(i.name)} (${esc(i.nsn || 'no NSN')})"
+                       data-id="${esc(i.id)}"
+                       data-avail="${i._avail}">`).join('')}
+          </datalist>
+          <input type="hidden" data-line-field="itemId" value="${esc(line.itemId)}">
+          ${item
+            ? outOfStock
+              ? `<span class="form__hint loan__stock-badge loan__stock-badge--nil">⚠ Out of stock — use non-stock or substitute</span>`
+              : `<span class="form__hint loan__stock-badge">${avail} available</span>`
+            : ''}
+        </label>
+        <label class="form__field loan__qty-field">
+          ${index === 0 ? '<span class="form__label">Qty *</span>' : ''}
+          <input type="number" data-line-field="qty"
+                 value="${line.qty}" min="1" step="1">
+        </label>
+        ${index > 0 ? `
+          <button type="button" class="btn btn--sm btn--ghost loan__line-remove"
+                  data-action="issue-remove-line" data-line-index="${index}"
+                  aria-label="Remove this line">×</button>
+        ` : '<span class="loan__line-spacer"></span>'}
+      </div>
+      <div class="loan__line-opts">
+        <label class="loan__line-nonstock-lbl">
+          <input type="checkbox" data-line-field="nonStock" data-line-index="${index}">
+          Non-stock item
+        </label>
+        <label class="form__field loan__line-notes-field">
+          <input type="text" data-line-field="lineNotes"
+                 placeholder="Notes (optional)"
+                 value="${esc(line.lineNotes || '')}"
+                 maxlength="200">
+        </label>
+      </div>
     </div>
   `;
 }
 
-function _wireIssueTab(body, activeCadets, availableItems) {
-  // Borrower picker change — search input + datalist.
-  const borrowerInput = $('input[data-borrower-search="issue"]', body);
+function _wireIssueTab(body, activeCadets, allItems) {
+  // Unit-loan toggle — swaps cadet picker for activity text field.
+  const unitLoanCb = $('input[data-issue-field="unitLoan"]', body);
+  unitLoanCb?.addEventListener('change', () => {
+    _issueState.unitLoan = unitLoanCb.checked;
+    _issueState.svcNo = '';
+    _render();
+  });
+
+  // Long-term loan toggle — disables due-date field.
+  const ltlCb = $('input[data-issue-field="longTermLoan"]', body);
+  ltlCb?.addEventListener('change', () => {
+    _issueState.longTermLoan = ltlCb.checked;
+    _render();
+  });
+
+  // Borrower picker (cadet mode).
+  const borrowerInput  = $('input[data-borrower-search="issue"]', body);
   const borrowerHidden = $('input[data-borrower-id="issue"]', body);
   borrowerInput?.addEventListener('input', () => {
-    const val = borrowerInput.value;
-    // Try to find an exact match in our cadet list (the datalist option
-    // texts are formatted '<rank> <surname> (<svcNo>)').
+    const val   = borrowerInput.value;
     const match = activeCadets.find((c) =>
       `${c.rank} ${c.surname} (${c.svcNo})` === val);
     borrowerHidden.value = match ? match.svcNo : '';
@@ -338,44 +447,77 @@ function _wireIssueTab(body, activeCadets, availableItems) {
     }
   });
 
-  // Per-line item search inputs — same pattern.
+  // Activity name input (unit-loan mode) — keep state in sync on blur.
+  const activityInput = $('input[data-issue-field="activityName"]', body);
+  activityInput?.addEventListener('input', () => {
+    _issueState.activityName = activityInput.value;
+  });
+
+  // Per-line wiring.
   $$('.loan__line', body).forEach((lineEl) => {
     const idx = Number(lineEl.dataset.lineIndex);
-    const itemSearch = $('input[data-line-field="itemSearch"]', lineEl);
-    const itemHidden = $('input[data-line-field="itemId"]', lineEl);
-    const qtyInput   = $('input[data-line-field="qty"]', lineEl);
 
-    itemSearch?.addEventListener('input', () => {
-      const val = itemSearch.value;
-      const match = availableItems.find((i) =>
-        `${i.name} (${i.nsn || 'no NSN'})` === val);
-      itemHidden.value = match ? match.id : '';
-      if (match) {
-        _issueState.lines[idx].itemId = match.id;
-        // Clamp qty to available.
-        if (Number(qtyInput.value) > match._avail) {
-          qtyInput.value = match._avail;
-          _issueState.lines[idx].qty = match._avail;
-        }
-        _render();    // re-render shows the available-stock hint
-      } else {
-        _issueState.lines[idx].itemId = '';
-      }
+    // Non-stock toggle.
+    const nonStockCb = $('input[data-line-field="nonStock"]', lineEl);
+    nonStockCb?.addEventListener('change', () => {
+      _issueState.lines[idx].nonStock      = nonStockCb.checked;
+      _issueState.lines[idx].itemId        = '';
+      _issueState.lines[idx].nonStockDesc  = '';
+      _issueState.lines[idx].nonStockNsn   = '';
+      _issueState.lines[idx].lineNotes     = '';
+      _render();
     });
 
-    qtyInput?.addEventListener('input', () => {
-      const n = Number(qtyInput.value);
+    if (_issueState.lines[idx]?.nonStock) {
+      // Non-stock fields.
+      $('input[data-line-field="nonStockDesc"]', lineEl)?.addEventListener('input', (e) => {
+        _issueState.lines[idx].nonStockDesc = e.target.value;
+      });
+      $('input[data-line-field="nonStockNsn"]', lineEl)?.addEventListener('input', (e) => {
+        _issueState.lines[idx].nonStockNsn = e.target.value;
+      });
+    } else {
+      // Standard stock-item fields.
+      const itemSearch = $('input[data-line-field="itemSearch"]', lineEl);
+      const itemHidden = $('input[data-line-field="itemId"]', lineEl);
+      const qtyInput   = $('input[data-line-field="qty"]', lineEl);
+
+      itemSearch?.addEventListener('input', () => {
+        const val   = itemSearch.value;
+        const match = allItems.find((i) => `${i.name} (${i.nsn || 'no NSN'})` === val);
+        itemHidden.value = match ? match.id : '';
+        if (match) {
+          _issueState.lines[idx].itemId = match.id;
+          // Warn if out of stock but don't clamp — QM can override with non-stock.
+          _render();
+        } else {
+          _issueState.lines[idx].itemId = '';
+        }
+      });
+
+      qtyInput?.addEventListener('input', () => {
+        const n = Number(qtyInput.value);
+        if (Number.isFinite(n) && n > 0) _issueState.lines[idx].qty = Math.floor(n);
+      });
+    }
+
+    // Notes field (both modes).
+    $('input[data-line-field="lineNotes"]', lineEl)?.addEventListener('input', (e) => {
+      _issueState.lines[idx].lineNotes = e.target.value;
+    });
+
+    // Qty field (both modes).
+    $('input[data-line-field="qty"]', lineEl)?.addEventListener('input', (e) => {
+      const n = Number(e.target.value);
       if (Number.isFinite(n) && n > 0) _issueState.lines[idx].qty = Math.floor(n);
     });
   });
 
-  // Field bindings for purpose/dueDate/remarks — read on submit, no need
-  // to mirror to state on every keystroke.
   body.addEventListener('click', async (e) => {
     const action = e.target.closest('[data-action]')?.dataset.action;
     if (!action) return;
     if (action === 'load-kit') {
-      await openKitPicker((kit, items) => _loadKitIntoIssue(kit, items, availableItems));
+      await openKitPicker((kit, items) => _loadKitIntoIssue(kit, items, allItems));
     } else if (action === 'issue-add-line') {
       _issueState.lines.push(_freshLine());
       await _render();
@@ -393,29 +535,32 @@ function _wireIssueTab(body, activeCadets, availableItems) {
   });
 }
 
-async function _loadKitIntoIssue(kit, allItems, availableItems) {
+async function _loadKitIntoIssue(kit, _unusedItems, allItems) {
   // Drop the single empty default line before merging.
-  const existing = _issueState.lines.filter((l) => l.itemId);
+  const existing = _issueState.lines.filter((l) => l.itemId || l.nonStock);
 
-  const skipped = [];
+  const outOfStock = [];
   for (const kitLine of (kit.lines || [])) {
-    const avail = availableItems.find((i) => i.id === kitLine.itemId);
-    if (!avail) {
-      const item = allItems.find((i) => i.id === kitLine.itemId);
-      skipped.push(item ? item.name : kitLine.itemId);
-      continue;
-    }
+    const stockItem = allItems.find((i) => i.id === kitLine.itemId);
+    if (!stockItem) continue;   // item deleted from IMS — skip silently
+
+    const avail = stockItem._avail;
     const existing_line = existing.find((l) => l.itemId === kitLine.itemId);
     if (existing_line) {
-      existing_line.qty = Math.min(existing_line.qty + kitLine.qty, avail._avail);
+      existing_line.qty = existing_line.qty + kitLine.qty;
     } else {
-      existing.push({ itemId: kitLine.itemId, qty: Math.min(kitLine.qty, avail._avail) });
+      existing.push({ ..._freshLine(), itemId: kitLine.itemId, qty: kitLine.qty });
     }
+    if (avail === 0) outOfStock.push(stockItem.name);
   }
 
   _issueState.lines = existing.length > 0 ? existing : [_freshLine()];
-  if (skipped.length > 0) {
-    showToast(`${skipped.length} kit item(s) skipped — no stock available: ${skipped.join(', ')}`, 'warn', 7000);
+  if (outOfStock.length > 0) {
+    showToast(
+      `⚠ ${outOfStock.length} kit item(s) out of stock: ${outOfStock.join(', ')}. ` +
+      `Use the non-stock checkbox to issue anyway, or substitute a different item.`,
+      'warn', 9000,
+    );
   }
   await _render();
 }
@@ -424,124 +569,168 @@ async function _submitIssue(body) {
   const errEl = $('[data-issue-error]', body);
   errEl.textContent = '';
 
-  // Re-read everything from the live DOM at submit time. The state object
-  // tracks the structure (which lines exist) but the values come from the
-  // form so we don't have to mirror every keystroke into state.
-  const purpose = $('select[data-issue-field="purpose"]', body)?.value || '';
-  const dueDate = $('input[data-issue-field="dueDate"]', body)?.value || '';
-  const remarks = $('textarea[data-issue-field="remarks"]', body)?.value || '';
+  const purpose      = $('select[data-issue-field="purpose"]', body)?.value || '';
+  const dueDate      = $('input[data-issue-field="dueDate"]', body)?.value || '';
+  const remarks      = $('textarea[data-issue-field="remarks"]', body)?.value || '';
+  const longTermLoan = _issueState.longTermLoan;
+  const unitLoan     = _issueState.unitLoan;
+  const activityName = ($('input[data-issue-field="activityName"]', body)?.value || _issueState.activityName).trim();
 
-  if (!_issueState.svcNo) {
-    errEl.textContent = 'Select a borrower first.';
-    return;
-  }
-  if (!purpose)  { errEl.textContent = 'Purpose is required.'; return; }
-  if (!dueDate)  { errEl.textContent = 'Due date is required.'; return; }
-  if (new Date(dueDate) < _todayLocalDateOnly()) {
-    errEl.textContent = 'Due date cannot be in the past.';
-    return;
+  if (!purpose) { errEl.textContent = 'Purpose is required.'; return; }
+
+  if (unitLoan) {
+    if (!activityName) { errEl.textContent = 'Enter an activity / description for the unit loan.'; return; }
+  } else {
+    if (!_issueState.svcNo) { errEl.textContent = 'Select a borrower first.'; return; }
   }
 
-  // Validate every line: must have an item and qty > 0 and qty <= avail.
-  const cadet = await Storage.cadets.get(_issueState.svcNo);
-  if (!cadet) { errEl.textContent = 'Selected borrower no longer exists.'; return; }
-
-  const lineErrors = [];
-  const resolvedLines = [];
-  for (let i = 0; i < _issueState.lines.length; i++) {
-    const ln = _issueState.lines[i];
-    if (!ln.itemId) {
-      lineErrors.push(`Line ${i + 1}: choose an item from the list.`);
-      continue;
-    }
-    const item = await Storage.items.get(ln.itemId);
-    if (!item) {
-      lineErrors.push(`Line ${i + 1}: item no longer exists.`);
-      continue;
-    }
-    const avail = Math.max(0, (Number(item.onHand) || 0) - (Number(item.onLoan) || 0));
-    const qty = Math.floor(Number(ln.qty) || 0);
-    if (qty < 1) {
-      lineErrors.push(`Line ${i + 1}: quantity must be at least 1.`);
-      continue;
-    }
-    if (qty > avail) {
-      lineErrors.push(`Line ${i + 1}: only ${avail} of ${item.name} available.`);
-      continue;
-    }
-    resolvedLines.push({ item, qty });
-  }
-  if (lineErrors.length > 0) {
-    errEl.textContent = lineErrors.join(' ');
-    return;
-  }
-  if (resolvedLines.length === 0) {
-    errEl.textContent = 'Add at least one item to issue.';
-    return;
-  }
-
-  // Detect double-issue of the same item across lines (would over-allocate).
-  const sumByItemId = new Map();
-  for (const { item, qty } of resolvedLines) {
-    sumByItemId.set(item.id, (sumByItemId.get(item.id) || 0) + qty);
-  }
-  for (const [itemId, totalQty] of sumByItemId) {
-    const item = resolvedLines.find((r) => r.item.id === itemId).item;
-    const avail = Math.max(0, (Number(item.onHand) || 0) - (Number(item.onLoan) || 0));
-    if (totalQty > avail) {
-      errEl.textContent = `Total quantity for ${item.name} (${totalQty}) exceeds available (${avail}). Combine the lines.`;
+  if (!longTermLoan) {
+    if (!dueDate)  { errEl.textContent = 'Due date is required (or tick Long-term loan).'; return; }
+    if (new Date(dueDate) < _todayLocalDateOnly()) {
+      errEl.textContent = 'Due date cannot be in the past.';
       return;
     }
   }
 
-  // Walk the batch and create one loan record per line. We do these
-  // sequentially — if one fails midway, prior ones stay (caller sees
-  // partial success in the audit log; this is acceptable since the
-  // failure is more likely to be quota/disk than logic).
-  const issueDate   = _todayLocalIsoDate();
-  const borrowerName = `${cadet.rank} ${cadet.surname}`;
-  const sessionUser  = AUTH.getSession()?.name || 'unknown';
+  // Resolve borrower — cadet or unit/activity.
+  let cadet = null;
+  let borrowerName, borrowerSvc;
+  if (unitLoan) {
+    borrowerName = activityName;
+    borrowerSvc  = 'UNIT-LOAN';
+  } else {
+    cadet = await Storage.cadets.get(_issueState.svcNo);
+    if (!cadet) { errEl.textContent = 'Selected borrower no longer exists.'; return; }
+    borrowerName = `${cadet.rank} ${cadet.surname}`;
+    borrowerSvc  = cadet.svcNo;
+  }
+
+  // Validate and resolve every line.
+  const lineErrors   = [];
+  const resolvedLines = [];
+
+  for (let i = 0; i < _issueState.lines.length; i++) {
+    const ln  = _issueState.lines[i];
+    const num = i + 1;
+    const qty = Math.floor(Number(ln.qty) || 0);
+    if (qty < 1) { lineErrors.push(`Line ${num}: quantity must be at least 1.`); continue; }
+
+    if (ln.nonStock) {
+      // Non-stock line — description required; NSN optional.
+      const desc = ln.nonStockDesc.trim();
+      if (!desc) { lineErrors.push(`Line ${num}: enter an item description.`); continue; }
+      resolvedLines.push({ nonStock: true, desc, nsn: ln.nonStockNsn.trim(), qty, lineNotes: ln.lineNotes || '' });
+    } else {
+      // Standard inventory line.
+      if (!ln.itemId) { lineErrors.push(`Line ${num}: choose an item from the list.`); continue; }
+      const item = await Storage.items.get(ln.itemId);
+      if (!item) { lineErrors.push(`Line ${num}: item no longer exists.`); continue; }
+      const avail = Math.max(0, (Number(item.onHand) || 0) - (Number(item.onLoan) || 0));
+      if (qty > avail) {
+        lineErrors.push(`Line ${num}: only ${avail} of "${item.name}" available. Use non-stock to override.`);
+        continue;
+      }
+      resolvedLines.push({ nonStock: false, item, qty, lineNotes: ln.lineNotes || '' });
+    }
+  }
+
+  if (lineErrors.length > 0) { errEl.textContent = lineErrors.join(' '); return; }
+  if (resolvedLines.length === 0) { errEl.textContent = 'Add at least one item.'; return; }
+
+  // Detect over-allocation across stock lines for the same item.
+  const sumByItemId = new Map();
+  for (const r of resolvedLines.filter((r) => !r.nonStock)) {
+    sumByItemId.set(r.item.id, (sumByItemId.get(r.item.id) || 0) + r.qty);
+  }
+  for (const [itemId, totalQty] of sumByItemId) {
+    const r     = resolvedLines.find((r) => !r.nonStock && r.item.id === itemId);
+    const avail = Math.max(0, (Number(r.item.onHand) || 0) - (Number(r.item.onLoan) || 0));
+    if (totalQty > avail) {
+      errEl.textContent = `Total qty for "${r.item.name}" (${totalQty}) exceeds available (${avail}). Combine the lines.`;
+      return;
+    }
+  }
+
+  // Walk the batch and create one loan record per line.
+  const issueDate  = _todayLocalIsoDate();
+  const sessionUser = AUTH.getSession()?.name || 'unknown';
 
   const created = [];
   try {
-    for (const { item, qty } of resolvedLines) {
+    for (const r of resolvedLines) {
       const ref = await _nextLoanRef();
-      const loan = {
-        ref,
-        itemId:       item.id,
-        itemName:     item.name,
-        nsn:          item.nsn || '',
-        qty,
-        borrowerSvc:  cadet.svcNo,
-        borrowerName,
-        purpose,
-        issueDate,
-        dueDate,
-        condition:    item.condition || 'serviceable',
-        remarks,
-        active:       true,
-        issuedBy:     sessionUser,
-      };
 
-      // Item update first — fail here means stock was already changing,
-      // do NOT create the loan record. After this succeeds, the loan
-      // and audit appends are best-effort recovery.
-      const fresh = await Storage.items.get(item.id);
-      if (!fresh) throw new Error(`Item ${item.name} was deleted during issue.`);
-      const freshAvail = Math.max(0, (Number(fresh.onHand) || 0) - (Number(fresh.onLoan) || 0));
-      if (qty > freshAvail) {
-        throw new Error(`Race: another tab took stock of ${item.name}; only ${freshAvail} now available.`);
+      if (r.nonStock) {
+        // Non-stock — no inventory touch.
+        const loan = {
+          ref,
+          itemId:       null,
+          itemName:     r.desc,
+          nsn:          r.nsn || '',
+          qty:          r.qty,
+          borrowerSvc,
+          borrowerName,
+          purpose,
+          issueDate,
+          dueDate:      longTermLoan ? '' : dueDate,
+          longTermLoan: longTermLoan || false,
+          unitLoan:     unitLoan     || false,
+          nonStock:     true,
+          condition:    'serviceable',
+          remarks,
+          notes:        r.lineNotes,
+          active:       true,
+          issuedBy:     sessionUser,
+        };
+        await Storage.loans.put(loan);
+        await Storage.audit.append({
+          action: 'issue',
+          user:   sessionUser,
+          desc:   `${ref}: [non-stock] ${r.desc} × ${r.qty} issued to ${borrowerName} for ${purpose}`,
+        });
+        created.push(loan);
+      } else {
+        // Standard stock item.
+        const { item, qty } = r;
+        const loan = {
+          ref,
+          itemId:       item.id,
+          itemName:     item.name,
+          nsn:          item.nsn || '',
+          qty,
+          borrowerSvc,
+          borrowerName,
+          purpose,
+          issueDate,
+          dueDate:      longTermLoan ? '' : dueDate,
+          longTermLoan: longTermLoan || false,
+          unitLoan:     unitLoan     || false,
+          nonStock:     false,
+          condition:    item.condition || 'serviceable',
+          remarks,
+          notes:        r.lineNotes,
+          active:       true,
+          issuedBy:     sessionUser,
+        };
+
+        // Atomic stock check + update (fail → abort this line).
+        const fresh = await Storage.items.get(item.id);
+        if (!fresh) throw new Error(`"${item.name}" was deleted during issue.`);
+        const freshAvail = Math.max(0, (Number(fresh.onHand) || 0) - (Number(fresh.onLoan) || 0));
+        if (qty > freshAvail) {
+          throw new Error(`Race: only ${freshAvail} of "${item.name}" now available.`);
+        }
+        fresh.onLoan = (Number(fresh.onLoan) || 0) + qty;
+        await Storage.items.put(fresh);
+
+        await Storage.loans.put(loan);
+        await Storage.audit.append({
+          action: 'issue',
+          user:   sessionUser,
+          desc:   `${ref}: ${item.name} × ${qty} issued to ${borrowerName} for ${purpose}`,
+        });
+        created.push(loan);
       }
-      fresh.onLoan = (Number(fresh.onLoan) || 0) + qty;
-      await Storage.items.put(fresh);
-
-      await Storage.loans.put(loan);
-      await Storage.audit.append({
-        action: 'issue',
-        user:   sessionUser,
-        desc:   `${ref}: ${item.name} × ${qty} issued to ${borrowerName} for ${purpose}`,
-      });
-      created.push(loan);
     }
   } catch (err) {
     errEl.textContent =
@@ -561,7 +750,7 @@ async function _submitIssue(body) {
     size:      'sm',
     bodyHtml: `
       <p class="modal__body">
-        Issued to <strong>${esc(borrowerName)}</strong> for ${esc(purpose)}, due ${esc(dueDate)}.
+        Issued to <strong>${esc(borrowerName)}</strong> for ${esc(purpose)}${longTermLoan ? ' — long-term loan' : `, due ${esc(dueDate)}`}.
       </p>
       <ul class="loan__confirm-list">
         ${created.map((l) =>
@@ -625,29 +814,37 @@ async function _renderReturnTab(body) {
   // Borrowers shown in the picker = cadets with at least one active loan.
   // Walking listForCadet for every cadet would be O(N) queries; faster
   // to fetch all loans once and group.
-  const allLoans = await Storage.loans.list();
+  const allLoans    = await Storage.loans.list();
   const activeLoans = allLoans.filter((l) => l.active === true);
   const svcsWithLoans = new Set(activeLoans.map((l) => l.borrowerSvc));
+
+  // Eligible cadets: those with at least one active loan.
   const eligibleCadets = cadets.filter((c) => svcsWithLoans.has(c.svcNo));
 
-  // The user might have selected a borrower who's since been fully returned
-  // (e.g. via another tab). In that case clear the selection silently.
+  // Virtual "borrower" entry for unit/activity loans (borrowerSvc = UNIT-LOAN).
+  const hasUnitLoans = activeLoans.some((l) => l.borrowerSvc === 'UNIT-LOAN');
+  const allEligible  = hasUnitLoans
+    ? [...eligibleCadets, { svcNo: 'UNIT-LOAN', rank: '', surname: 'Unit / Activity Loans', plt: '' }]
+    : eligibleCadets;
+
+  // Clear stale selection.
   if (_returnState.svcNo && !svcsWithLoans.has(_returnState.svcNo)) {
     _returnState.svcNo = '';
     _returnState.refsChecked.clear();
   }
 
-  const borrower = _returnState.svcNo
+  const isUnitLoanView = _returnState.svcNo === 'UNIT-LOAN';
+  const borrower = (!isUnitLoanView && _returnState.svcNo)
     ? cadets.find((c) => c.svcNo === _returnState.svcNo) || null
     : null;
-  const borrowerLoans = borrower
-    ? activeLoans.filter((l) => l.borrowerSvc === borrower.svcNo)
+  const borrowerLoans = _returnState.svcNo
+    ? activeLoans.filter((l) => l.borrowerSvc === _returnState.svcNo)
     : [];
 
   body.innerHTML = `
     <div class="loan__return">
       <h3 class="loan__heading">1. Borrower</h3>
-      ${_borrowerPickerHtml('return', _returnState.svcNo, eligibleCadets, borrower)}
+      ${_borrowerPickerHtml('return', _returnState.svcNo, allEligible, borrower || (isUnitLoanView ? { svcNo: 'UNIT-LOAN', rank: '', surname: 'Unit / Activity Loans' } : null))}
 
       ${borrower ? `
         <h3 class="loan__heading">2. Items to return</h3>
@@ -696,20 +893,29 @@ async function _renderReturnTab(body) {
     </div>
   `;
 
-  _wireReturnTab(body, eligibleCadets, borrowerLoans);
+  _wireReturnTab(body, allEligible, borrowerLoans);
 }
 
 function _returnLoanRowHtml(loan) {
   const checked = _returnState.refsChecked.has(loan.ref);
-  const overdue = loan.dueDate && loan.dueDate < _todayLocalIsoDate();
+  const overdue = !loan.longTermLoan && loan.dueDate && loan.dueDate < _todayLocalIsoDate();
+  const badges  = [
+    loan.nonStock     ? `<span class="loan__badge loan__badge--nonstock">Non-stock</span>` : '',
+    loan.longTermLoan ? `<span class="loan__badge loan__badge--longterm">Long-term</span>` : '',
+    loan.unitLoan     ? `<span class="loan__badge loan__badge--unitloan">Unit loan</span>` : '',
+  ].join('');
   return `
     <label class="loan__return-row ${overdue ? 'loan__return-row--overdue' : ''}">
       <input type="checkbox" data-return-ref="${esc(loan.ref)}"
              ${checked ? 'checked' : ''}>
       <span class="loan__return-ref">${esc(loan.ref)}</span>
-      <span class="loan__return-item">${esc(loan.itemName)} × ${loan.qty}</span>
+      <span class="loan__return-item">${esc(loan.itemName)} × ${loan.qty}${badges}</span>
       <span class="loan__return-due">
-        ${overdue ? 'OVERDUE — ' : 'due '}${esc(loan.dueDate)}
+        ${loan.longTermLoan
+          ? 'long-term'
+          : overdue
+            ? `OVERDUE — ${esc(loan.dueDate)}`
+            : `due ${esc(loan.dueDate)}`}
       </span>
     </label>
   `;
@@ -771,46 +977,71 @@ async function _submitReturn(body) {
   const sessionUser = AUTH.getSession()?.name || 'unknown';
   const returnDate  = _todayLocalIsoDate();
 
-  let returned = 0;
-  const errors  = [];
+  let returned    = 0;
+  let addedToIms  = 0;
+  const errors    = [];
+  const now       = new Date().toISOString();
+
   for (const ref of _returnState.refsChecked) {
     try {
       const loan = await Storage.loans.get(ref);
       if (!loan) { errors.push(`${ref}: no longer exists`); continue; }
       if (!loan.active) { errors.push(`${ref}: already returned`); continue; }
 
-      // Decrement onLoan, optionally bump unsvc.
-      const item = await Storage.items.get(loan.itemId);
-      if (item) {
-        item.onLoan = Math.max(0, (Number(item.onLoan) || 0) - loan.qty);
-        if (condition === 'unserviceable' || condition === 'write-off') {
-          item.unsvc = (Number(item.unsvc) || 0) + loan.qty;
+      if (loan.nonStock) {
+        // Non-stock return — attempt to find / create inventory item by NSN.
+        if (loan.nsn) {
+          const allItems = await Storage.items.list();
+          const match = allItems.find((i) => i.nsn === loan.nsn);
+          if (match) {
+            match.onHand = (Number(match.onHand) || 0) + loan.qty;
+            if (match.qtyServiceable != null) {
+              match.qtyServiceable = (Number(match.qtyServiceable) || 0) + loan.qty;
+            }
+            match.updatedAt = now;
+            await Storage.items.put(match);
+            addedToIms++;
+          }
+          // If NSN not found: no inventory change (item never existed in IMS).
+          // QM can add it manually to inventory later.
         }
-        if (condition === 'write-off') {
-          // Mirror v1: write-off also marks the item itself as unserviceable.
-          item.condition = 'unserviceable';
+        // No onLoan decrement needed — it was never incremented.
+      } else {
+        // Standard stock return — decrement onLoan, optionally bump unsvc.
+        const item = await Storage.items.get(loan.itemId);
+        if (item) {
+          item.onLoan = Math.max(0, (Number(item.onLoan) || 0) - loan.qty);
+          if (condition === 'unserviceable' || condition === 'write-off') {
+            item.unsvc = (Number(item.unsvc) || 0) + loan.qty;
+          }
+          if (condition === 'write-off') {
+            item.condition = 'unserviceable';
+          }
+          item.updatedAt = now;
+          await Storage.items.put(item);
         }
-        await Storage.items.put(item);
       }
-      // If item is missing we still close out the loan — the loan record
-      // is the historical truth, item missing is its own error elsewhere.
 
-      loan.active           = false;
-      loan.returnDate       = returnDate;
-      loan.returnCondition  = condition;
-      loan.returnRemarks    = remarks;
-      loan.returnedBy       = sessionUser;
+      loan.active          = false;
+      loan.returnDate      = returnDate;
+      loan.returnCondition = condition;
+      loan.returnRemarks   = remarks;
+      loan.returnedBy      = sessionUser;
       await Storage.loans.put(loan);
 
       await Storage.audit.append({
         action: 'return',
         user:   sessionUser,
-        desc:   `${ref}: ${loan.itemName} × ${loan.qty} returned by ${loan.borrowerName} — ${condition}`,
+        desc:   `${ref}: ${loan.itemName} × ${loan.qty} returned by ${loan.borrowerName} — ${condition}${loan.nonStock ? ' [non-stock]' : ''}`,
       });
       returned++;
     } catch (err) {
       errors.push(`${ref}: ${err.message}`);
     }
+  }
+
+  if (addedToIms > 0) {
+    showToast(`${addedToIms} non-stock item(s) matched by NSN and added to inventory.`, 'success', 6000);
   }
 
   Sync.notifyChanged();
@@ -861,6 +1092,8 @@ async function _renderAllTab(body) {
     : '';
 
   // Apply borrower → status filter → text search (most restrictive first).
+  const _isOverdue = (l) => !l.longTermLoan && l.active === true && l.dueDate && l.dueDate < today;
+
   let filtered = all;
   if (_allBorrower) {
     filtered = filtered.filter((l) => l.borrowerSvc === _allBorrower);
@@ -870,7 +1103,7 @@ async function _renderAllTab(body) {
   } else if (_allFilter === 'returned') {
     filtered = filtered.filter((l) => l.active === false);
   } else if (_allFilter === 'overdue') {
-    filtered = filtered.filter((l) => l.active === true && l.dueDate && l.dueDate < today);
+    filtered = filtered.filter(_isOverdue);
   }
   if (_allSearch) {
     const q = _allSearch.toLowerCase();
@@ -893,7 +1126,7 @@ async function _renderAllTab(body) {
     all:      scope.length,
     active:   scope.filter((l) => l.active === true).length,
     returned: scope.filter((l) => l.active === false).length,
-    overdue:  scope.filter((l) => l.active === true && l.dueDate && l.dueDate < today).length,
+    overdue:  scope.filter(_isOverdue).length,
   };
 
   const datalistId = 'loan-all-borrower-list';
@@ -999,15 +1232,21 @@ function _allTableHtml(loans, today, canReturn) {
 }
 
 function _allRowHtml(loan, today, canReturn) {
-  const overdue = loan.active === true && loan.dueDate && loan.dueDate < today;
+  const overdue = !loan.longTermLoan && loan.active === true && loan.dueDate && loan.dueDate < today;
   let statusBadge;
   if (loan.active === false) {
     statusBadge = `<span class="loan__badge loan__badge--returned">Returned ${esc(loan.returnDate || '')}</span>`;
+  } else if (loan.longTermLoan) {
+    statusBadge = `<span class="loan__badge loan__badge--longterm">Long-term</span>`;
   } else if (overdue) {
     statusBadge = `<span class="loan__badge loan__badge--overdue">Overdue</span>`;
   } else {
     statusBadge = `<span class="loan__badge loan__badge--active">Active</span>`;
   }
+  const typeBadges = [
+    loan.nonStock ? `<span class="loan__badge loan__badge--nonstock" title="Not from IMS stock">NS</span>` : '',
+    loan.unitLoan ? `<span class="loan__badge loan__badge--unitloan" title="Unit/Activity loan">Unit</span>` : '',
+  ].join('');
 
   return `
     <tr class="loan__row ${overdue ? 'loan__row--overdue' : ''}
@@ -1015,16 +1254,16 @@ function _allRowHtml(loan, today, canReturn) {
       <td class="loan__ref">${esc(loan.ref)}</td>
       <td class="loan__date">${esc(loan.issueDate || '')}</td>
       <td>
-        <div>${esc(loan.itemName || '')}</div>
+        <div>${esc(loan.itemName || '')}${typeBadges}</div>
         ${loan.nsn ? `<div class="loan__nsn">${esc(loan.nsn)}</div>` : ''}
       </td>
       <td class="loan__qty">${loan.qty}</td>
       <td>
         <div>${esc(loan.borrowerName || '')}</div>
-        <div class="loan__nsn">${esc(loan.borrowerSvc || '')}</div>
+        ${loan.borrowerSvc && loan.borrowerSvc !== 'UNIT-LOAN' ? `<div class="loan__nsn">${esc(loan.borrowerSvc)}</div>` : ''}
       </td>
       <td>${esc(loan.purpose || '')}</td>
-      <td class="loan__date">${esc(loan.dueDate || '')}</td>
+      <td class="loan__date">${loan.longTermLoan ? '<em>Long-term</em>' : esc(loan.dueDate || '')}</td>
       <td>${statusBadge}</td>
       <td class="loan__col-actions">
         <button type="button" class="btn btn--sm btn--ghost"

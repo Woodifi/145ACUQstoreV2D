@@ -492,7 +492,7 @@ async function _updateOverdueBadge() {
 
   const today = new Date().toISOString().slice(0, 10);
   const active = await Storage.loans.listActive();
-  const overdueCount = active.filter(l => l.dueDate && l.dueDate < today).length;
+  const overdueCount = active.filter(l => !l.longTermLoan && l.dueDate && l.dueDate < today).length;
 
   // The label is always "Loans"; we replace it to add/remove the badge.
   if (overdueCount > 0) {

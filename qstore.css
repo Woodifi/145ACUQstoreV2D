@@ -5357,6 +5357,170 @@ details[open] > .help__section-summary::after {
 .settings__idle-select { width: auto; min-width: 140px; }
 
 /* ==========================================================================
+   Loans — extended issue form (v2.3.1)
+   ========================================================================== */
+
+/* Unit-loan toggle row */
+.loan__unit-loan-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+.loan__unit-loan-toggle input[type="checkbox"] { margin-top: 3px; flex-shrink: 0; }
+.loan__unit-loan-toggle .form__hint { display: block; margin-top: 2px; }
+
+/* Long-term loan toggle row */
+.loan__longterm-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 12px;
+  margin-top: 6px;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+.loan__longterm-toggle input[type="checkbox"] { margin-top: 3px; flex-shrink: 0; }
+.loan__longterm-toggle .form__hint { display: block; margin-top: 2px; }
+
+/* Issue line layout — two rows (main inputs + opts strip) */
+.loan__line-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.loan__line-opts {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.loan__line-nonstock-lbl {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.loan__line-nonstock-lbl--on {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.loan__line-nonstock-hint {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.loan__line-notes-field {
+  flex: 1;
+  min-width: 160px;
+}
+
+.loan__line-notes-field input {
+  font-size: 0.8rem;
+  padding: 5px 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  width: 100%;
+}
+
+/* Non-stock line highlight */
+.loan__line--nonstock {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+
+/* Stock availability hint on item lines */
+.loan__stock-badge { display: inline; }
+.loan__stock-badge--nil {
+  color: var(--gold);
+  font-weight: 500;
+}
+
+/* New loan type badges */
+.loan__badge--nonstock {
+  background: #6b21a8;
+  color: #fff;
+}
+.loan__badge--longterm {
+  background: #0369a1;
+  color: #fff;
+}
+.loan__badge--unitloan {
+  background: #15803d;
+  color: #fff;
+}
+
+/* Kit picker — per-line stock pills */
+.kit__picker-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 4px;
+  font-size: 0.78rem;
+}
+
+.kit__picker-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+}
+
+.kit__picker-line--nil {
+  color: var(--gold);
+}
+
+.kit__stock-pill {
+  font-size: 0.7rem;
+  padding: 1px 5px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.kit__stock-ok { color: var(--success, #16a34a); }
+.kit__stock-nil { color: var(--gold); }
+
+.kit__picker-warn {
+  font-size: 0.85rem;
+  color: var(--gold);
+  margin-left: 4px;
+}
+
+.kit__picker-hint-stock {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.kit__picker-more {
+  font-size: 0.75rem;
+  color: var(--text-tertiary, var(--text-secondary));
+}
+
+/* Orders — receive qty inputs */
+.ord__approve-note {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+}
+
+/* ==========================================================================
    Reference page
    ========================================================================== */
 

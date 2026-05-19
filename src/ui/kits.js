@@ -328,29 +328,45 @@ export async function openKitPicker(onSelect) {
     return;
   }
 
+  // Pre-compute availability for every item.
+  const availMap = new Map(items.map((i) => [
+    i.id,
+    Math.max(0, (Number(i.onHand) || 0) - (Number(i.onLoan) || 0)),
+  ]));
+
   openModal({
     titleHtml: 'Load kit',
     size: 'md',
     bodyHtml: `
-      <p class="kit__picker-hint">Select a kit to pre-fill the items list. You can adjust quantities before issuing.</p>
+      <p class="kit__picker-hint">Select a kit to pre-fill the items list. You can adjust quantities before issuing.
+        <span class="kit__picker-hint-stock">Stock shown: <span class="kit__stock-ok">available</span> / <span class="kit__stock-nil">out of stock</span></span>
+      </p>
       <ul class="kit__picker-list">
         ${kits.map((k) => {
-          const lineCount = (k.lines || []).length;
-          const preview = (k.lines || [])
-            .slice(0, 4)
-            .map((l) => {
-              const item = items.find((i) => i.id === l.itemId);
-              return item ? `${esc(item.name)} ×${l.qty}` : null;
-            })
-            .filter(Boolean)
-            .join(', ');
-          const more = lineCount > 4 ? ` +${lineCount - 4} more` : '';
+          const lines = k.lines || [];
+          const lineRows = lines.map((l) => {
+            const item  = items.find((i) => i.id === l.itemId);
+            if (!item) return null;
+            const avail = availMap.get(l.itemId) ?? 0;
+            const ok    = avail >= l.qty;
+            return `<span class="kit__picker-line ${ok ? '' : 'kit__picker-line--nil'}">
+              ${esc(item.name)} ×${l.qty}
+              <span class="kit__stock-pill ${ok ? 'kit__stock-ok' : 'kit__stock-nil'}">
+                ${avail} avail
+              </span>
+            </span>`;
+          }).filter(Boolean);
+          const shown = lineRows.slice(0, 5).join('');
+          const more  = lineRows.length > 5 ? `<span class="kit__picker-more">+${lineRows.length - 5} more</span>` : '';
+          const anyOut = lines.some((l) => (availMap.get(l.itemId) ?? 0) < l.qty);
           return `
             <li>
               <button type="button" class="kit__picker-btn" data-action="kit-pick" data-kit-id="${esc(k.id)}">
-                <span class="kit__picker-name">${esc(k.name)}</span>
+                <span class="kit__picker-name">${esc(k.name)}
+                  ${anyOut ? '<span class="kit__picker-warn" title="Some items are out of stock">⚠</span>' : ''}
+                </span>
                 ${k.description ? `<span class="kit__picker-desc">${esc(k.description)}</span>` : ''}
-                <span class="kit__picker-items">${preview}${more}</span>
+                <span class="kit__picker-lines">${shown}${more}</span>
               </button>
             </li>
           `;
