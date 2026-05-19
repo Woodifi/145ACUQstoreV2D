@@ -35,6 +35,7 @@ import * as CsvUi      from './csv-import.js';
 import { showToast }   from './toast.js';
 import * as Structure  from '../structure.js';
 import { CATEGORIES as DEFAULT_CATEGORIES } from './inventory.js';
+import { INITIAL_ISSUE } from './loans.js';
 
 let _root = null;
 let _statusListener = null;
@@ -460,6 +461,12 @@ async function _onManageCategories() {
           }
           refresh();
         } else if (catAction === 'remove' && idx >= 0) {
+          // "Initial Issue" is a protected loan purpose — prevent accidental removal
+          // even if it somehow appears in the custom category list.
+          if (draft[idx]?.toLowerCase() === INITIAL_ISSUE.toLowerCase()) {
+            showToast(`"${INITIAL_ISSUE}" is a protected loan purpose and cannot be removed.`, 'warn');
+            return;
+          }
           draft.splice(idx, 1);
           refresh();
         } else if (catAction === 'add') {

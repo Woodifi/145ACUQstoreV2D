@@ -780,6 +780,10 @@ async function _saveEdit(svcNo, data) {
     throw new Error('This cadet has been deleted in another tab. Close the modal and refresh.');
   }
 
+  // Detect discharge: cadet was previously active (or active not set) and is
+  // now being set to inactive. We'll recall their loans after the save.
+  const beingDeactivated = existing.active !== false && data.active === false;
+
   // svcNo is the PK and read-only in edit mode — the form posts the
   // existing value but we ignore data.svcNo and use the original.
   await Storage.cadets.put({
@@ -796,6 +800,88 @@ async function _saveEdit(svcNo, data) {
   });
 
   Sync.notifyChanged();
+
+  // If the cadet was just discharged, recall all outstanding loans immediately.
+  if (beingDeactivated) {
+    await _handleCadetDischarge(svcNo, data);
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Cadet discharge — recall outstanding loans
+// -----------------------------------------------------------------------------
+// Called whenever a cadet's active flag transitions true → false. All active
+// loans are marked immediately due (dueDate set to today, longTermLoan
+// cleared). A summary modal is shown so the QM knows what to chase up.
+
+async function _handleCadetDischarge(svcNo, cadetData) {
+  const allLoans    = await Storage.loans.listForCadet(svcNo).catch(() => []);
+  const activeLoans = allLoans.filter((l) => l.active === true);
+
+  if (activeLoans.length === 0) return; // nothing outstanding — no action needed
+
+  const today = new Date();
+  const todayIso = [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, '0'),
+    String(today.getDate()).padStart(2, '0'),
+  ].join('-');
+
+  // Set every active loan to immediately due.
+  for (const loan of activeLoans) {
+    await Storage.loans.put({ ...loan, dueDate: todayIso, longTermLoan: false });
+  }
+
+  await Storage.audit.append({
+    action: 'cadet_discharge',
+    user:   AUTH.getSession()?.name || 'unknown',
+    desc:   `Cadet ${cadetData.rank} ${cadetData.surname} (${svcNo}) marked inactive — ` +
+            `${activeLoans.length} active loan${activeLoans.length === 1 ? '' : 's'} recalled immediately. ` +
+            `Refs: ${activeLoans.map((l) => l.ref).join(', ')}`,
+  });
+
+  Sync.notifyChanged();
+
+  // Build a summary table of outstanding items.
+  const rows = activeLoans.map((l) => `
+    <tr>
+      <td>${esc(l.ref)}</td>
+      <td>${esc(l.itemName || '—')}</td>
+      <td style="text-align:center">${l.qty}</td>
+      <td>${esc(l.purpose || '—')}</td>
+    </tr>
+  `).join('');
+
+  openModal({
+    titleHtml: '⚠ Outstanding kit — immediate recall',
+    size:      'md',
+    bodyHtml: `
+      <p class="modal__body">
+        <strong>${esc(cadetData.rank)} ${esc(cadetData.surname)} (${esc(svcNo)})</strong>
+        has been marked inactive. The following
+        ${activeLoans.length} item${activeLoans.length === 1 ? '' : 's'} are
+        still on issue and are now immediately due for return:
+      </p>
+      <table class="cad__discharge-table">
+        <thead>
+          <tr>
+            <th>Ref</th><th>Item</th><th>Qty</th><th>Purpose</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <p class="modal__body" style="margin-top:12px">
+        All due dates have been set to <strong>today</strong>.
+        These loans will appear as <strong>Overdue</strong> in All Loans
+        until each item is returned.
+      </p>
+      <div class="form__actions">
+        <button type="button" class="btn btn--primary" data-action="modal-close">
+          Understood — I will chase the return
+        </button>
+      </div>
+    `,
+  });
 }
 
 // -----------------------------------------------------------------------------

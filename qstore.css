@@ -1972,6 +1972,39 @@ input {
 .cad__badge--staff    { background: rgba(196, 169, 107, 0.15); color: var(--gold);   }
 .cad__badge--inactive { background: rgba(136, 147, 160, 0.15); color: var(--text-muted); }
 
+/* Discharge summary table (shown in the recall modal when a cadet is deactivated) */
+.cad__discharge-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin: 8px 0;
+}
+
+.cad__discharge-table th,
+.cad__discharge-table td {
+  padding: 5px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.cad__discharge-table th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+}
+
+.cad__discharge-table tbody tr:last-child td { border-bottom: none; }
+
+/* Initial Issue hint inside the due-date label */
+.loan__ii-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--gold);
+  font-style: italic;
+}
+
 .cad__empty {
   padding: 32px 16px;
   text-align: center;
@@ -2459,7 +2492,9 @@ input {
 .loan__row[data-detail-target] { cursor: pointer; }
 .loan__row:hover td { background: rgba(255, 255, 255, 0.02); }
 
-.loan__row--returned td { opacity: 0.55; }
+.loan__row--returned td   { opacity: 0.55; }
+/* Discharged row — deep red left-border to visually flag urgency */
+.loan__row--discharged td { border-left: 3px solid #c0392b; background: rgba(192, 57, 43, 0.04); }
 
 /* Expandable detail row (visible when toggled) */
 .loan__row-detail td {
@@ -2517,9 +2552,12 @@ input {
   white-space: nowrap;
 }
 
-.loan__badge--active   { background: rgba(106, 224, 122, 0.15); color: var(--good);   }
-.loan__badge--overdue  { background: rgba(255, 107, 107, 0.15); color: var(--danger); }
-.loan__badge--returned { background: rgba(136, 147, 160, 0.15); color: var(--text-muted); }
+.loan__badge--active      { background: rgba(106, 224, 122, 0.15); color: var(--good);      }
+.loan__badge--overdue     { background: rgba(255, 107, 107, 0.15); color: var(--danger);    }
+.loan__badge--returned    { background: rgba(136, 147, 160, 0.15); color: var(--text-muted);}
+/* Discharged — cadet made inactive but still holding kit */
+.loan__badge--discharged  { background: rgba(180, 30,  30,  0.18); color: #e06060;
+                             font-weight: 700; letter-spacing: 0.4px; }
 
 .loan__empty {
   padding: 32px 16px;

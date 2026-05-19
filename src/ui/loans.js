@@ -58,10 +58,15 @@ import { esc, $, $$, render, fmtDateOnly } from './util.js';
 // Constants
 // -----------------------------------------------------------------------------
 
+// The Initial Issue purpose is special: it auto-sets a 6-year return date
+// (matching the cadet engagement period) and is protected from deletion in
+// the settings category manager.
+export const INITIAL_ISSUE = 'Initial Issue';
+
 // Same set v1 used. If a unit needs others, they pick 'Other' and put a
 // note in remarks. Future settings page could make these editable per-unit.
 const PURPOSES = [
-  'Initial Issue',
+  INITIAL_ISSUE,
   'Annual Camp',
   'Training Activity',
   'Parade Night',
@@ -124,7 +129,7 @@ export async function mount(rootEl) {
 }
 
 function _freshIssueState()  {
-  return { svcNo: '', lines: [_freshLine()], longTermLoan: false, unitLoan: false, activityName: '' };
+  return { svcNo: '', lines: [_freshLine()], longTermLoan: false, unitLoan: false, activityName: '', purpose: '' };
 }
 function _freshReturnState() { return { svcNo: '', refsChecked: new Set() }; }
 function _freshLine()        {
@@ -240,27 +245,40 @@ async function _renderIssueTab(body) {
         ${_issueLinesHtml(_issueState.lines, allItemsWithAvail)}
 
         <h3 class="loan__heading">3. Issue details</h3>
-        <div class="form__row">
-          <label class="form__field form__field--grow">
-            <span class="form__label">Purpose *</span>
-            <select name="purpose" data-issue-field="purpose">
-              ${PURPOSES.map((p) => `<option value="${esc(p)}">${esc(p)}</option>`).join('')}
-            </select>
-          </label>
-          <label class="form__field loan__due-date-field"
-                 style="${_issueState.longTermLoan ? 'opacity:0.4;pointer-events:none' : ''}">
-            <span class="form__label">Due date${_issueState.longTermLoan ? '' : ' *'}</span>
-            <input type="date" name="dueDate" data-issue-field="dueDate"
-                   value="${esc(_issueState.longTermLoan ? '' : _defaultDueDate())}"
-                   ${_issueState.longTermLoan ? 'disabled' : 'required'}>
-          </label>
-        </div>
-        <label class="loan__longterm-toggle">
-          <input type="checkbox" data-issue-field="longTermLoan"
-                 ${_issueState.longTermLoan ? 'checked' : ''}>
-          <span>Long-term loan (no return date)</span>
-          <span class="form__hint">Use for initial uniform / equipment issue for the period of engagement. Loan will not show as overdue.</span>
-        </label>
+        ${(() => {
+          const isInitIssue = _issueState.purpose === INITIAL_ISSUE;
+          // Initial Issue forces a 6-year return date; long-term toggle is irrelevant.
+          const ltlActive   = _issueState.longTermLoan && !isInitIssue;
+          const dueDefault  = isInitIssue ? _sixYearsFromToday() : _defaultDueDate();
+          return `
+          <div class="form__row">
+            <label class="form__field form__field--grow">
+              <span class="form__label">Purpose *</span>
+              <select name="purpose" data-issue-field="purpose">
+                ${PURPOSES.map((p) => `<option value="${esc(p)}"${p === _issueState.purpose ? ' selected' : ''}>${esc(p)}</option>`).join('')}
+              </select>
+            </label>
+            <label class="form__field loan__due-date-field"
+                   style="${ltlActive ? 'opacity:0.4;pointer-events:none' : ''}">
+              <span class="form__label">Due date${ltlActive ? '' : ' *'}</span>
+              <input type="date" name="dueDate" data-issue-field="dueDate"
+                     value="${esc(ltlActive ? '' : dueDefault)}"
+                     ${ltlActive ? 'disabled' : 'required'}
+                     ${isInitIssue ? 'readonly' : ''}>
+              ${isInitIssue
+                ? `<span class="form__hint loan__ii-hint">6-year engagement period — auto-calculated</span>`
+                : ''}
+            </label>
+          </div>
+          <label class="loan__longterm-toggle"
+                 style="${isInitIssue ? 'opacity:0.4;pointer-events:none' : ''}">
+            <input type="checkbox" data-issue-field="longTermLoan"
+                   ${ltlActive ? 'checked' : ''}
+                   ${isInitIssue ? 'disabled' : ''}>
+            <span>Long-term loan (no return date)</span>
+            <span class="form__hint">For indefinite loans with no fixed return date.</span>
+          </label>`;
+        })()}
         <label class="form__field">
           <span class="form__label">Notes</span>
           <textarea name="remarks" rows="2" maxlength="400"
@@ -417,11 +435,42 @@ function _wireIssueTab(body, activeCadets, allItems) {
     _render();
   });
 
-  // Long-term loan toggle — disables due-date field.
+  // Long-term loan toggle — disables due-date field (blocked when Initial Issue selected).
   const ltlCb = $('input[data-issue-field="longTermLoan"]', body);
   ltlCb?.addEventListener('change', () => {
     _issueState.longTermLoan = ltlCb.checked;
     _render();
+  });
+
+  // Purpose select — when Initial Issue is chosen, auto-set 6-year due date.
+  const purposeSelect = $('select[data-issue-field="purpose"]', body);
+  const dueDateInput  = $('input[data-issue-field="dueDate"]', body);
+  purposeSelect?.addEventListener('change', () => {
+    const prev    = _issueState.purpose;
+    const next    = purposeSelect.value;
+    _issueState.purpose = next;
+
+    if (next === INITIAL_ISSUE) {
+      // Force long-term off (re-render handles the UI state)
+      if (_issueState.longTermLoan) {
+        _issueState.longTermLoan = false;
+        _render();
+        return; // _render re-creates the form and re-runs _wireIssueTab
+      }
+      // Directly update the date input — no re-render needed (avoids losing item lines)
+      if (dueDateInput) {
+        dueDateInput.value    = _sixYearsFromToday();
+        dueDateInput.readOnly = true;
+        dueDateInput.removeAttribute('disabled');
+      }
+    } else if (prev === INITIAL_ISSUE) {
+      // Leaving Initial Issue — restore editable date
+      if (dueDateInput) {
+        dueDateInput.value    = _defaultDueDate();
+        dueDateInput.readOnly = false;
+      }
+      _render(); // re-render to re-enable long-term toggle, remove II hint
+    }
   });
 
   // Borrower picker (cadet mode).
@@ -1241,6 +1290,12 @@ async function _renderAllTab(body) {
     }
   });
 
+  // Discharged cadets — inactive but still holding active loans. We flag those
+  // rows in the All Loans view so the QM can see what needs chasing.
+  const dischargedSvcs = new Set(
+    cadets.filter((c) => c.active === false).map((c) => c.svcNo),
+  );
+
   // Detect phantom borrowers — in loan records but absent from the cadet list
   // and not a UNIT-LOAN entry. These are typically v1 sample-data remnants.
   const phantomBorrowers = [...borrowerMap.entries()]
@@ -1379,7 +1434,7 @@ async function _renderAllTab(body) {
           ? `<div class="loan__empty">
                <p>No loans match the current filters.</p>
              </div>`
-          : _allTableHtml(filtered, today, canReturn)}
+          : _allTableHtml(filtered, today, canReturn, dischargedSvcs)}
       </div>
     </div>
   `;
@@ -1387,7 +1442,7 @@ async function _renderAllTab(body) {
   _wireAllTab(body, borrowerOptions, phantomBorrowers);
 }
 
-function _allTableHtml(loans, today, canReturn) {
+function _allTableHtml(loans, today, canReturn, dischargedSvcs = new Set()) {
   return `
     <table class="loan__table">
       <thead>
@@ -1404,17 +1459,26 @@ function _allTableHtml(loans, today, canReturn) {
         </tr>
       </thead>
       <tbody>
-        ${loans.map((l) => _allRowHtml(l, today, canReturn)).join('')}
+        ${loans.map((l) => _allRowHtml(l, today, canReturn, dischargedSvcs)).join('')}
       </tbody>
     </table>
   `;
 }
 
-function _allRowHtml(loan, today, canReturn) {
-  const overdue = !loan.longTermLoan && loan.active === true && loan.dueDate && loan.dueDate < today;
+function _allRowHtml(loan, today, canReturn, dischargedSvcs = new Set()) {
+  const overdue     = !loan.longTermLoan && loan.active === true && loan.dueDate && loan.dueDate < today;
+  // Discharged: borrower has been made inactive but still holds this loan.
+  const discharged  = loan.active === true
+    && loan.borrowerSvc
+    && loan.borrowerSvc !== 'UNIT-LOAN'
+    && dischargedSvcs.has(loan.borrowerSvc);
+
   let statusBadge;
   if (loan.active === false) {
     statusBadge = `<span class="loan__badge loan__badge--returned">Returned ${esc(loan.returnDate || '')}</span>`;
+  } else if (discharged) {
+    // Discharged takes priority over overdue — it's the more urgent state.
+    statusBadge = `<span class="loan__badge loan__badge--discharged" title="Cadet is inactive — kit must be returned">⚠ Discharged</span>`;
   } else if (loan.longTermLoan) {
     statusBadge = `<span class="loan__badge loan__badge--longterm">Long-term</span>`;
   } else if (overdue) {
@@ -1429,7 +1493,7 @@ function _allRowHtml(loan, today, canReturn) {
 
   const detailId = `loan-detail-${esc(loan.ref).replace(/\W/g, '-')}`;
   return `
-    <tr class="loan__row ${overdue ? 'loan__row--overdue' : ''}
+    <tr class="loan__row ${discharged ? 'loan__row--discharged' : overdue ? 'loan__row--overdue' : ''}
                        ${loan.active === false ? 'loan__row--returned' : ''}"
         data-detail-target="${detailId}" role="button" tabindex="0"
         title="Tap to expand details" aria-expanded="false">
@@ -1730,6 +1794,17 @@ function _todayLocalDateOnly() {
 function _defaultDueDate() {
   const d = new Date();
   d.setDate(d.getDate() + 14);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/** Return date for Initial Issue loans: 6 years from today.
+ *  Matches the standard cadet engagement period. */
+function _sixYearsFromToday() {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() + 6);
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
