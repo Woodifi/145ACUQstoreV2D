@@ -328,3 +328,26 @@ END OF LOG — append new entries above this line
   Fix: changed to `${(borrower || isUnitLoanView) ? ...` so both cadet and unit-loan
   returns render the checklist and form. Empty-state message now context-aware.
   Build: 20260519-B86F1602  Commit: 0605e58  -> master
+
+[2026-05-19T04:14:54Z] GIT COMMIT + PUSH — feat: order PDF parser + IMS enrichment + usability audit (commit da3139a)
+  Parser (order-parser.js):
+    - _isPlainQty(): qty columns reject non-integer strings (size codes stay in description)
+    - _normalizeNsn(): OCR artefact cleanup (dashes, spaces, O→0)
+    - HEADER_PATTERNS: disambiguated Qty Required vs Qty Req'd (no more column collision)
+    - _parseQty(): strict — returns null for "10R" etc instead of stripping letters
+    - Continuation rows: guard against bare numbers/dashes bleeding into description
+    - Fallback regex: qty limited to 1-4 digits
+  Orders UI (orders.js):
+    - IMS NSN lookup after parse → replace description with IMS name if matched
+    - Summary banner shows match count (X of Y items matched)
+    - IMS status column in edit table (✓ IMS / New / No NSN)
+    - Replaced descriptions highlighted blue with original PDF text as hint
+    - Approve & Receive note → prominent left-border banner with "0 = skip" warning
+    - Detail view IMS badge shows ⚠ on description mismatch
+    - Import errors → plain English (password-protected, corrupt, wrong type)
+  Shell (shell.js): page mount failure hides raw stack behind <details> toggle
+  CSS: ord__edit-col-ims, ord__ims-pill, ord__edit-row--desc-replaced, ord__edit-pdf-desc,
+       ord__approve-note redesigned, fatal__details-toggle
+  MANUAL.md: Section 8 Orders fully rewritten; troubleshooting updated
+  README.md: non-technical quick-start added
+  Build: 20260519-CF8F6C8A  Commit: da3139a  -> master
