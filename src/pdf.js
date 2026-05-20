@@ -1386,6 +1386,92 @@ function _drawAB189ApprovalBlocks(doc, y, unit) {
 }
 
 // =============================================================================
+// PENDING REQUEST AB189 (pre-filled from a submitted request record)
+// =============================================================================
+
+/**
+ * Generate a pre-filled AB189 Equipment Request PDF from a pending request.
+ *
+ * The request record shape (from Storage.requests):
+ *   { id, requestorName, requestorSvc, purpose, requiredBy, notes, lines[] }
+ * where lines[] = [{ nsn, description, qty }]
+ *
+ * @param {Object} req   The request record.
+ * @param {Object} opts
+ * @param {Object} [opts.unit]   Unit settings (unitName, unitCode, qmName…).
+ * @param {Object} [opts.cadet] Cadet record for the requestor (optional).
+ */
+export async function generateRequestAB189(req, opts = {}) {
+  if (!req || !req.id) {
+    throw new Error('generateRequestAB189: a valid request record is required.');
+  }
+
+  const unit  = opts.unit  || {};
+  const cadet = opts.cadet || null;
+  const doc   = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+  let y = PAGE.MARGIN;
+  y = _drawAB189Header(doc, y, unit);
+
+  // --- Request meta block (adapted for request — no loan.ref yet) ---
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(...COL.txtMuted);
+  const submittedDate = req.submittedAt
+    ? _fmtDateAU(req.submittedAt.slice(0, 10))
+    : _fmtDateAU(_todayIsoDate());
+  doc.text(`Request date: ${submittedDate}`, PAGE.MARGIN, y);
+  if (unit.unitCode) doc.text(`Unit code: ${unit.unitCode}`, PAGE.MARGIN + 90, y);
+  doc.setFontSize(8);
+  doc.setTextColor(...COL.txtSub);
+  doc.text(`Request ref: ${req.id}`, PAGE.MARGIN, y + 5);
+  doc.text(`Generated: ${_nowFmt()}`, PAGE.MARGIN + 90, y + 5);
+  doc.setDrawColor(...COL.tan);
+  doc.setLineWidth(0.5);
+  doc.line(PAGE.MARGIN, y + 8, PAGE.MARGIN + PAGE.CW, y + 8);
+  y += 14;
+
+  // --- Requestor section — adapt req fields to the shape _drawAB189RequestorSection expects ---
+  const fakeLoan = {
+    borrowerName: req.requestorName || '—',
+    borrowerSvc:  req.requestorSvc  || '—',
+  };
+  // Cadet sub-unit (company/platoon/section) for the requestor section.
+  const cadetWithPlt = cadet
+    ? { ...cadet, plt: cadet.platoon || cadet.plt || cadet.section || '' }
+    : null;
+  y = _drawAB189RequestorSection(doc, y, fakeLoan, cadetWithPlt);
+
+  // --- Items section — map request lines to the shape _drawAB189ItemsSection expects ---
+  const fakeLoans = (req.lines || []).map((l) => ({
+    nsn:      l.nsn        || '',
+    itemName: l.description || '—',
+    qty:      l.qty         || 1,
+  }));
+  if (fakeLoans.length === 0) {
+    fakeLoans.push({ nsn: '', itemName: '(no items listed)', qty: 0 });
+  }
+  y = _drawAB189ItemsSection(doc, y, fakeLoans);
+
+  // --- Purpose section — adapt req fields ---
+  const fakePurposeLoan = {
+    purpose: req.purpose    || '—',
+    dueDate: req.requiredBy || '',
+    remarks: req.notes      || '',
+  };
+  y = _drawAB189PurposeSection(doc, y, fakePurposeLoan, [fakePurposeLoan]);
+
+  // --- QM / OC approval blocks ---
+  _drawAB189ApprovalBlocks(doc, y, unit);
+  _drawFooter(doc);
+
+  const safeId   = String(req.id).replace(/[^a-zA-Z0-9_-]/g, '_');
+  const today    = _todayIsoDate();
+  const filename = `AB189_Request_${safeId}_${today}.pdf`;
+  return _packageResult(doc, filename);
+}
+
+// =============================================================================
 // QR CODE SHEET
 // =============================================================================
 // Generates a printable A4 sheet of QR code labels — one per item — for

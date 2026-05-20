@@ -42,7 +42,7 @@ import { esc, $, $$, render, fmtDate } from './util.js';
 import { showToast }                   from './toast.js';
 import { openModal }                   from './modal.js';
 import { INITIAL_ISSUE }               from './loans.js';
-import { generateBlankAB189, downloadPdf } from '../pdf.js';
+import { generateBlankAB189, generateRequestAB189, downloadPdf } from '../pdf.js';
 
 // pdfjs for AB189 import (same FakeWorker setup as order-parser.js).
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
@@ -239,6 +239,7 @@ async function _mountPending(body) {
     if (action === 'approve-issue') await _handleApproveAndIssue(req, body);
     if (action === 'approve-only')  await _handleApproveOnly(req, body);
     if (action === 'deny')          await _handleDeny(req, body);
+    if (action === 'print-ab189')   await _printRequestAB189(req, e.target);
   });
 }
 
@@ -279,14 +280,19 @@ function _requestCardHtml(req, showActions) {
         ? `<p class="req__card-loans">Loan refs: ${req.loanRefs.map(r => `<span class="req__card-loan-ref">${esc(r)}</span>`).join(' ')}</p>`
         : ''}
 
-      ${showActions && req.status === 'pending' && canManage ? `
+      ${showActions && req.status === 'pending' ? `
         <div class="req__card-actions">
+          ${canManage ? `
           <button type="button" class="btn btn--primary btn--sm"
                   data-action="approve-issue">Approve &amp; Issue</button>
           <button type="button" class="btn btn--ghost btn--sm"
                   data-action="approve-only">Approve (issue later)</button>
           <button type="button" class="btn btn--danger btn--sm"
                   data-action="deny">Deny</button>
+          ` : ''}
+          <button type="button" class="btn btn--ghost btn--sm"
+                  data-action="print-ab189"
+                  title="Print pre-filled AB189 for this request">⎙ Print AB189</button>
         </div>` : ''}
     </div>`;
 }
@@ -924,6 +930,33 @@ function _withdrawButtonHtml(req) {
         Withdraw
       </button>
     </div>`;
+}
+
+// ---------------------------------------------------------------------------
+// Print AB189 for a pending request
+// ---------------------------------------------------------------------------
+
+async function _printRequestAB189(req, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '⎙ Generating…'; }
+  try {
+    const unit  = await Storage.settings.getAll().catch(() => ({}));
+    let cadet = null;
+    if (req.requestorSvc) {
+      try { cadet = await Storage.cadets.get(req.requestorSvc); } catch { /* ok */ }
+    }
+    const result = await generateRequestAB189(req, { unit, cadet });
+    downloadPdf(result);
+    await Storage.audit.append({
+      action:  'pdf_ab189',
+      desc:    `AB189 printed for request ${req.id} (${req.requestorName})`,
+      user:    AUTH.getSession()?.name || 'unknown',
+    });
+    showToast('AB189 downloaded.', 'success');
+  } catch (err) {
+    showToast(`Failed to generate AB189: ${err.message}`, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '⎙ Print AB189'; }
+  }
 }
 
 // ---------------------------------------------------------------------------

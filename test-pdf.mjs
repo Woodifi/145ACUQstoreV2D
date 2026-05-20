@@ -299,5 +299,44 @@ console.log('\n[21] generateStocktakeWorksheet — no-branding fallback');
 const ws4 = await Pdf.generateStocktakeWorksheet(worksheetItems, {});
 expect(ws4.bytes > 1000, `no-unit worksheet generated (${ws4.bytes} bytes)`);
 
+console.log('\n[22] generateRequestAB189 — pending request produces valid PDF');
+const sampleRequest = {
+  id: 'REQ-0001',
+  requestorName: 'CPL Smith',
+  requestorSvc:  'Q123456',
+  purpose:       'Exercise BUSHMASTER',
+  requiredBy:    '2026-06-15',
+  notes:         'Need by Friday parade night.',
+  submittedAt:   '2026-05-21T09:00:00.000Z',
+  lines: [
+    { nsn: '8465-00-001-6487', description: 'Webbing, Combat', qty: 2 },
+    { nsn: '',                  description: 'Map case, waterproof',   qty: 1 },
+    { nsn: '8415-00-028-8465', description: 'Jacket, Field, DPCU',    qty: 1 },
+  ],
+};
+const reqPdf = await Pdf.generateRequestAB189(sampleRequest, { unit: sampleUnit });
+expect(reqPdf.bytes > 3000, `request AB189 generated (${reqPdf.bytes} bytes)`);
+expect(reqPdf.filename.startsWith('AB189_Request_REQ'), `filename prefix correct (got ${reqPdf.filename})`);
+const reqText = Buffer.from(await reqPdf.blob.arrayBuffer()).toString('latin1');
+expect(reqText.startsWith('%PDF-'), 'request AB189 is valid PDF stream');
+expect(reqText.includes('REQ-0001'), 'request ref present in PDF');
+expect(reqText.includes('CPL Smith'),       'requestor name present');
+expect(reqText.includes('Q123456'),         'service number present');
+expect(reqText.includes('BUSHMASTER'),      'purpose present');
+expect(reqText.includes('Webbing'),         'item description present');
+
+console.log('\n[23] generateRequestAB189 — throws on missing request');
+try {
+  await Pdf.generateRequestAB189(null, {});
+  bad('should have thrown on null request');
+} catch (e) {
+  ok(`null request throws: ${e.message}`);
+}
+
+console.log('\n[24] generateRequestAB189 — empty lines handled gracefully');
+const emptyLinesReq = { ...sampleRequest, id: 'REQ-0002', lines: [] };
+const emptyPdf = await Pdf.generateRequestAB189(emptyLinesReq, { unit: sampleUnit });
+expect(emptyPdf.bytes > 1000, `empty-lines request AB189 generated (${emptyPdf.bytes} bytes)`);
+
 console.log(`\nResults: ${pass} passed, ${fail} failed.`);
 process.exit(fail === 0 ? 0 : 1);
