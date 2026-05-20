@@ -41,6 +41,7 @@ import * as Reference from './reference.js';
 import { openModal }  from './modal.js';
 import { esc, $, render } from './util.js';
 import { applyStoredTheme, applyTheme } from '../theme.js';
+import * as Shortcuts from './shortcuts.js';
 
 const PAGES = {
   dashboard: { label: 'Home',      perm: 'view',     mount: Dashboard.mount },
@@ -383,6 +384,9 @@ async function _renderShell() {
   // stays bound for the session lifetime).
   Sync.addStatusListener(_onSyncStatus);
 
+  // Start global keyboard shortcuts for this session.
+  Shortcuts.mount();
+
   await _mountPage(initialPage);
 }
 
@@ -717,6 +721,7 @@ function _openRecoveryCodeModal(formattedCode, { reason } = {}) {
 async function _onLogout() {
   _stopIdleWatcher();
   _hideLockOverlay();
+  Shortcuts.unmount();
   document.removeEventListener('qstore:idle-timeout-changed', _startIdleWatcher);
   await _teardownCurrentPage();
   Sync.removeStatusListener(_onSyncStatus);
