@@ -298,9 +298,11 @@ export const items = {
     if (search) {
       const q = search.toLowerCase();
       rows = rows.filter(i =>
-        (i.name || '').toLowerCase().includes(q)
+        (i.name  || '').toLowerCase().includes(q)
         || (i.nsn  || '').toLowerCase().includes(q)
-        || (i.cat  || '').toLowerCase().includes(q));
+        || (i.cat  || '').toLowerCase().includes(q)
+        || (i.loc  || '').toLowerCase().includes(q)
+        || (i.notes || '').toLowerCase().includes(q));
     }
     return rows;
   },

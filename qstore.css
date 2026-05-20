@@ -7000,3 +7000,11 @@ details[open] > .help__section-summary::after {
   font-size: 13px;
   padding: 8px 0;
 }
+
+.cad__eq-actions {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+}

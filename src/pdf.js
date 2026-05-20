@@ -1659,6 +1659,166 @@ function _drawReportFooter(doc, pageNum, totalPages) {
 // Result packaging — common to all generators.
 // -----------------------------------------------------------------------------
 
+/**
+ * Generate a printable kit checklist for a single cadet.
+ *
+ * Lists all active loans for the given person — NSN, item name, qty, issue
+ * date, due date — with a ✓ tick-box column for physical inspection.
+ * Includes signature blocks for cadet and QM.
+ *
+ * @param {object[]} loans   Active loan records for this cadet (all should share borrowerSvc).
+ * @param {object}   opts    { cadet, unit }
+ */
+export async function generateCadetKitChecklist(loans, opts = {}) {
+  if (!Array.isArray(loans)) loans = [];
+  const unit   = opts.unit   || {};
+  const cadet  = opts.cadet  || {};
+  const name   = [cadet.rank || '', cadet.surname || '', cadet.given || ''].filter(Boolean).join(' ');
+  const svcNo  = cadet.svcNo || '—';
+  const today  = _todayIsoDate();
+
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  let y = PAGE.MARGIN;
+
+  // ── Army-green header ──
+  y = _drawHeader(doc, y, unit);
+
+  // ── Title band ──
+  doc.setFillColor(...COL.bandFill);
+  doc.rect(PAGE.MARGIN, y, PAGE.CW, 8, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(...COL.armyGreen);
+  doc.text('KIT INSPECTION CHECKLIST', PAGE.MARGIN + 2, y + 5.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...COL.txtMuted);
+  doc.text(`Generated: ${today}`, PAGE.MARGIN + PAGE.CW, y + 5.5, { align: 'right' });
+  y += 11;
+
+  // ── Cadet info block ──
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(...COL.txtDark);
+  doc.text('Name:', PAGE.MARGIN, y);
+  doc.setFont('helvetica', 'normal');
+  doc.text(name, PAGE.MARGIN + 20, y);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Svc No:', PAGE.MARGIN + PAGE.CW / 2, y);
+  doc.setFont('helvetica', 'normal');
+  doc.text(svcNo, PAGE.MARGIN + PAGE.CW / 2 + 20, y);
+  y += 5;
+
+  doc.setDrawColor(...COL.tan);
+  doc.setLineWidth(0.4);
+  doc.line(PAGE.MARGIN, y, PAGE.MARGIN + PAGE.CW, y);
+  y += 5;
+
+  // ── Items table ──
+  const COL_CHK  = { x: PAGE.MARGIN,       w: 10 };
+  const COL_NSN  = { x: PAGE.MARGIN + 10,  w: 38 };
+  const COL_NAME = { x: PAGE.MARGIN + 48,  w: 75 };
+  const COL_QTY  = { x: PAGE.MARGIN + 123, w: 12 };
+  const COL_ISS  = { x: PAGE.MARGIN + 135, w: 22 };
+  const COL_DUE  = { x: PAGE.MARGIN + 157, w: 23 };
+
+  // Table header
+  doc.setFillColor(...COL.armyGreen);
+  doc.rect(PAGE.MARGIN, y, PAGE.CW, 6, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  doc.setTextColor(255, 255, 255);
+  doc.text('✓',         COL_CHK.x + 3,  y + 4);
+  doc.text('NSN',       COL_NSN.x + 1,  y + 4);
+  doc.text('Item',      COL_NAME.x + 1, y + 4);
+  doc.text('Qty',       COL_QTY.x + 1,  y + 4);
+  doc.text('Issued',    COL_ISS.x + 1,  y + 4);
+  doc.text('Due',       COL_DUE.x + 1,  y + 4);
+  y += 7;
+
+  if (loans.length === 0) {
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(9);
+    doc.setTextColor(...COL.txtMuted);
+    doc.text('No active loans recorded for this person.', PAGE.MARGIN + 2, y + 5);
+    y += 12;
+  } else {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    const ROW_H = 6.5;
+    for (let i = 0; i < loans.length; i++) {
+      const l = loans[i];
+      const fill = i % 2 === 0 ? [248, 246, 240] : [255, 255, 255];
+      doc.setFillColor(...fill);
+      doc.rect(PAGE.MARGIN, y, PAGE.CW, ROW_H, 'F');
+
+      doc.setTextColor(...COL.txtDark);
+      // Tick box
+      doc.setDrawColor(...COL.tan);
+      doc.setLineWidth(0.4);
+      doc.rect(COL_CHK.x + 2, y + 1.5, 4, 4);
+      // Data
+      doc.text(String(l.nsn || '—').slice(0, 18),  COL_NSN.x + 1,  y + 4.5);
+      const itemTrunc = String(l.itemName || '—').slice(0, 40);
+      doc.text(itemTrunc, COL_NAME.x + 1, y + 4.5);
+      doc.text(String(l.qty || 1),         COL_QTY.x + 1,  y + 4.5);
+      doc.text(String(l.issueDate || '—'), COL_ISS.x + 1,  y + 4.5);
+      const dueLabel = l.longTermLoan ? 'Long-term' : (l.dueDate || '—');
+      doc.text(dueLabel,                   COL_DUE.x + 1,  y + 4.5);
+
+      // Row bottom border
+      doc.setLineWidth(0.2);
+      doc.line(PAGE.MARGIN, y + ROW_H, PAGE.MARGIN + PAGE.CW, y + ROW_H);
+      y += ROW_H;
+    }
+    y += 3;
+  }
+
+  // ── Summary line ──
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(...COL.txtDark);
+  doc.text(`Total items on loan: ${loans.length}`, PAGE.MARGIN, y);
+  y += 8;
+
+  // ── Signature blocks ──
+  const SIG_W = (PAGE.CW - 10) / 2;
+  const SIG_Y = y;
+  // Left block — cadet
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(...COL.txtDark);
+  doc.text('CADET SIGNATURE', PAGE.MARGIN, SIG_Y);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setDrawColor(...COL.tan);
+  doc.setLineWidth(0.5);
+  doc.line(PAGE.MARGIN, SIG_Y + 15, PAGE.MARGIN + SIG_W, SIG_Y + 15);
+  doc.setFontSize(7);
+  doc.setTextColor(...COL.txtMuted);
+  doc.text('Signature / Date', PAGE.MARGIN, SIG_Y + 19);
+  // Right block — QM
+  const SIG_RX = PAGE.MARGIN + SIG_W + 10;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(...COL.txtDark);
+  doc.text('QM SIGNATURE', SIG_RX, SIG_Y);
+  doc.setFont('helvetica', 'normal');
+  doc.setLineWidth(0.5);
+  doc.line(SIG_RX, SIG_Y + 15, SIG_RX + SIG_W, SIG_Y + 15);
+  doc.setFontSize(7);
+  doc.setTextColor(...COL.txtMuted);
+  doc.text('Signature / Date', SIG_RX, SIG_Y + 19);
+
+  _drawFooter(doc);
+
+  const safeName = String(cadet.surname || 'cadet').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = `KitChecklist_${safeName}_${svcNo}_${today}.pdf`;
+  return _packageResult(doc, filename);
+}
+
+// -----------------------------------------------------------------------------
+
 function _packageResult(doc, filename) {
   const buf = doc.output('arraybuffer');
   const blob = new Blob([buf], { type: 'application/pdf' });

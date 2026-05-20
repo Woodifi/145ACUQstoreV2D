@@ -203,7 +203,7 @@ async function _render() {
         <div class="inv__filters">
           <input type="search"
                  class="inv__search"
-                 placeholder="Search NSN, name, or category…"
+                 placeholder="Search NSN, name, category, or location…"
                  aria-label="Search inventory"
                  value="${esc(_searchTerm)}">
           <select class="inv__cat-filter" aria-label="Filter by category">

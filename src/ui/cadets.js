@@ -60,7 +60,7 @@ import {
   inferPersonType,
   compareRanks,
 } from '../ranks.js';
-import { generateNominalRoll, downloadPdf }  from '../pdf.js';
+import { generateNominalRoll, generateCadetKitChecklist, downloadPdf }  from '../pdf.js';
 import { openCadetsCsvImport }              from './csv-import.js';
 import { openModal }                        from './modal.js';
 import { esc, $, $$, render, fmtDateOnly }  from './util.js';
@@ -1067,7 +1067,33 @@ async function _openEquipmentProfile(svcNo) {
         ${allLoans.length === 0
           ? `<p class="cad__eq-none">No loans recorded for this person.</p>`
           : ''}
+
+        ${active.length > 0 ? `
+          <div class="cad__eq-actions">
+            <button type="button" class="btn btn--ghost btn--sm" data-action="print-checklist">
+              ⎙ Print kit checklist
+            </button>
+          </div>
+        ` : ''}
       </div>
     `,
+    async onMount(panel) {
+      panel.querySelector('[data-action="print-checklist"]')?.addEventListener('click', async (e) => {
+        const btn = e.target.closest('button');
+        btn.disabled = true;
+        const orig = btn.textContent;
+        btn.textContent = 'Building PDF…';
+        try {
+          const settings = await Storage.settings.getAll();
+          const result = await generateCadetKitChecklist(active, { cadet, unit: settings });
+          downloadPdf(result);
+        } catch (err) {
+          showToast('Checklist failed: ' + (err.message || err), 'error');
+        } finally {
+          btn.disabled = false;
+          btn.textContent = orig;
+        }
+      });
+    },
   });
 }
