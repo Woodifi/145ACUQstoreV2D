@@ -75,6 +75,90 @@ let _lines     = [];   // new-request form lines
 let _unmounted = false;
 
 // ---------------------------------------------------------------------------
+// One-time migration: reverse requests auto-issued by the old bulk-copy code.
+//
+// The previous implementation of _handleCopyToCadets called _issueLinesToCadet
+// inside the modal, automatically creating loan records and marking each
+// cloned request as 'issued' without any QM confirmation per cadet.
+//
+// This function finds those requests (identified by decisionNote containing
+// "Bulk copy from" or "bulk copy"), reverses their loans (decrement onLoan,
+// remove loan record), and resets each request to 'pending' so the QM can
+// process them manually.
+//
+// Safe to re-run: requests already at 'pending' with no loanRefs are skipped.
+// Runs once per mount; after all affected records are cleaned the function
+// becomes a no-op.
+// ---------------------------------------------------------------------------
+
+async function _revertAutoIssuedRequests() {
+  const AUTO_MARKERS = ['bulk copy from', 'issued via bulk copy', 'bulk issued via'];
+
+  const isAutoIssued = (req) => {
+    if (req.status !== 'issued' && req.status !== 'approved') return false;
+    const note = (req.decisionNote || '').toLowerCase();
+    return AUTO_MARKERS.some(m => note.includes(m));
+  };
+
+  let allReqs;
+  try { allReqs = await Storage.requests.list(); } catch { return; }
+
+  const targets = allReqs.filter(isAutoIssued);
+  if (targets.length === 0) return;
+
+  const sessionUser = AUTH.getSession()?.name || 'system';
+  let reversedLoans = 0;
+
+  for (const req of targets) {
+    // Reverse each loan record.
+    for (const ref of (req.loanRefs || [])) {
+      try {
+        const loan = await Storage.loans.get(ref);
+        if (!loan) continue;
+
+        // Restore onLoan on the inventory item.
+        if (loan.itemId && !loan.nonStock) {
+          try {
+            const item = await Storage.items.get(loan.itemId);
+            if (item) {
+              item.onLoan = Math.max(0, (Number(item.onLoan) || 0) - (Number(loan.qty) || 0));
+              await Storage.items.put(item);
+            }
+          } catch { /* item may have been deleted — skip */ }
+        }
+
+        // Remove the loan record.
+        await Storage.loans.remove(ref);
+        reversedLoans++;
+      } catch { /* non-fatal — move on */ }
+    }
+
+    // Reset request to pending.
+    await Storage.requests.put({
+      ...req,
+      status:       'pending',
+      decidedBy:    null,
+      decidedAt:    null,
+      decisionNote: null,
+      loanRefs:     [],
+    });
+  }
+
+  // Single audit entry covering the whole cleanup.
+  await Storage.audit.append({
+    action: 'loans_cleanup',
+    user:   sessionUser,
+    desc:   `Auto-issue rollback: ${targets.length} request${targets.length !== 1 ? 's' : ''} reset to pending; ${reversedLoans} loan record${reversedLoans !== 1 ? 's' : ''} removed. Requests were incorrectly auto-issued by the bulk copy function without QM confirmation.`,
+  }).catch(() => {});
+
+  Sync.notifyChanged();
+  showToast(
+    `${targets.length} request${targets.length !== 1 ? 's' : ''} reset to pending — please process each one manually.`,
+    'warn', 8000
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -86,6 +170,10 @@ export async function mount(rootEl) {
 
   const canManage = AUTH.can('issue') || AUTH.isCO();
   _tab = canManage ? 'pending' : 'submit';
+
+  // One-time cleanup: reverse any requests that were auto-marked as issued
+  // by the previous bulk-copy implementation without user confirmation.
+  await _revertAutoIssuedRequests();
 
   await _render();
 
@@ -607,7 +695,7 @@ async function _handleCopyToCadets(req, body) {
       <div class="ctc__footer">
         <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
         <button type="button" class="btn btn--ghost" data-action="ctc-print" disabled>⎙ Print AB189s</button>
-        <button type="button" class="btn btn--primary" data-action="ctc-issue" disabled>↗ Issue to cadets</button>
+        <button type="button" class="btn btn--primary" data-action="ctc-issue" disabled>📋 Create pending requests</button>
       </div>`,
 
     async onMount(panel, close) {
@@ -629,7 +717,7 @@ async function _handleCopyToCadets(req, body) {
         const printBtn = panel.querySelector('[data-action="ctc-print"]');
         if (issueBtn) {
           issueBtn.disabled = n === 0;
-          issueBtn.textContent = n === 0 ? '↗ Issue to cadets' : `↗ Issue to ${n} cadet${n !== 1 ? 's' : ''}`;
+          issueBtn.textContent = n === 0 ? '📋 Create pending requests' : `📋 Create requests for ${n} cadet${n !== 1 ? 's' : ''}`;
         }
         if (printBtn) {
           printBtn.disabled = n === 0;
@@ -686,68 +774,57 @@ async function _handleCopyToCadets(req, body) {
 
           const btn = e.target;
           btn.disabled = true;
-          btn.textContent = 'Issuing…';
+          btn.textContent = 'Creating…';
 
-          const results = [];
           const now = new Date().toISOString();
+          let created = 0;
+          const errors = [];
+
           for (const cb of selected) {
             const svc  = cb.value;
             const name = cb.dataset.name;
+            const rank = allCadets.find(c => c.svcNo === svc)?.rank || '';
             try {
-              const { loanRefs, errors } = await _issueLinesToCadet(req, {
-                borrowerSvc:  svc,
-                borrowerName: name,
-                dueDate,
-                sessionUser,
-              });
-
-              // Create an individual request record for this cadet so it
-              // appears in the Requests view and can have its AB189 printed.
+              // Create a PENDING request record only — no loans, no auto-issue.
+              // The QM must manually approve and issue each request.
               const reqN  = await Storage.counters.next('request', 1000);
-              const reqId = `REQ-${String(reqN).padStart(4, '0')}`;
+              const reqId = 'REQ-' + String(reqN).padStart(4, '0');
               await Storage.requests.put({
-                id:          reqId,
+                id:           reqId,
                 requestorSvc:  svc,
                 requestorName: name,
-                requestorRank: allCadets.find(c => c.svcNo === svc)?.rank || '',
+                requestorRank: rank,
                 purpose:      req.purpose,
                 requiredBy:   dueDate,
                 submittedAt:  now,
-                status:       loanRefs.length > 0 ? 'issued' : 'pending',
+                status:       'pending',
                 lines:        req.lines,
-                notes:        `Bulk copy from ${req.id}`,
-                decidedBy:    sessionUser,
-                decidedAt:    now,
-                decisionNote: loanRefs.length > 0
-                  ? `Issued via bulk copy from request ${req.id}`
-                  : (errors.length > 0 ? `Partial issue errors: ${errors.join('; ')}` : null),
-                loanRefs,
+                notes:        'Copied from request ' + req.id,
+                decidedBy:    null,
+                decidedAt:    null,
+                decisionNote: null,
+                loanRefs:     [],
               });
-
-              results.push({ svc, name, reqId, loanRefs, errors });
+              created++;
             } catch (err) {
-              results.push({ svc, name, reqId: null, loanRefs: [], errors: [err.message] });
+              errors.push(name + ': ' + err.message);
             }
           }
 
-          // Summary audit entry.
-          const totalLoans = results.reduce((s, r) => s + r.loanRefs.length, 0);
-          const failNames  = results.filter(r => r.errors.length > 0).map(r => r.name);
           await Storage.audit.append({
-            action: 'request_approved',
+            action: 'request_submitted',
             user:   sessionUser,
-            desc:   `Bulk copy of request ${req.id}: ${totalLoans} loans + ${results.length} request records created` +
-                    (failNames.length ? `; errors for: ${failNames.join(', ')}` : ''),
+            desc:   'Bulk copy from ' + req.id + ': ' + created + ' pending request' + (created !== 1 ? 's' : '') + ' created' +
+                    (errors.length ? '; errors: ' + errors.join('; ') : ''),
           });
           Sync.notifyChanged();
 
-          const failCount = results.filter(r => r.errors.length > 0).length;
-          const msg = failCount > 0
-            ? `Issued to ${results.length - failCount}/${results.length} cadets. ${failCount} had errors.`
-            : `Issued to ${results.length} cadet${results.length !== 1 ? 's' : ''} — ${totalLoans} loans created.`;
-          showToast(msg, failCount > 0 ? 'warn' : 'success', 7000);
+          const msg = errors.length
+            ? created + ' of ' + selected.length + ' requests created. Errors: ' + errors.join('; ')
+            : created + ' pending request' + (created !== 1 ? 's' : '') + ' created — process each one in the Pending tab.';
+          showToast(msg, errors.length ? 'warn' : 'success', 7000);
 
-              close();
+          close();
           await _mountPending(body);
           await _refreshPendingBadge();
         }
