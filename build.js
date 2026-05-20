@@ -38,6 +38,7 @@ import { readFile, writeFile, mkdir, stat } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execSync } from 'node:child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -312,12 +313,87 @@ async function preflight() {
   }
 }
 
+/**
+ * Distribution pre-flight — verifies the working tree is on master, clean,
+ * and fully in sync with origin/master before allowing a dist build.
+ *
+ * A dist build from a dirty or unsynced tree would mean the distributed file
+ * doesn't match the tracked codebase, breaking the build-ID traceability
+ * guarantee. Abort early with a clear message rather than silently shipping
+ * the wrong version.
+ */
+function preflightDist() {
+  const git = (cmd) => execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+
+  // 1 — Must be on master.
+  let branch;
+  try {
+    branch = git('git rev-parse --abbrev-ref HEAD');
+  } catch {
+    throw new Error(
+      '--dist aborted: unable to determine git branch.\n' +
+      'Ensure this is a git repository before building a distribution.'
+    );
+  }
+  if (branch !== 'master') {
+    throw new Error(
+      `--dist aborted: working tree is on branch '${branch}', not 'master'.\n` +
+      'Switch to master (git checkout master) before building a distribution.'
+    );
+  }
+
+  // 2 — No uncommitted changes (staged or unstaged).
+  let status;
+  try {
+    status = git('git status --porcelain');
+  } catch {
+    throw new Error('--dist aborted: unable to check git status.');
+  }
+  if (status) {
+    throw new Error(
+      '--dist aborted: working tree has uncommitted changes.\n' +
+      'Commit or stash all changes before building a distribution:\n' +
+      status
+    );
+  }
+
+  // 3 — Local HEAD must match origin/master (no unpushed or unpulled commits).
+  let localHead, remoteHead;
+  try {
+    localHead  = git('git rev-parse HEAD');
+    remoteHead = git('git rev-parse origin/master');
+  } catch {
+    console.warn('  ⚠  Could not read origin/master ref — skipping remote sync check.');
+    return;
+  }
+  if (localHead !== remoteHead) {
+    // Determine direction so the error message is actionable.
+    let direction = 'out of sync';
+    try {
+      const aheadCount  = Number(git(`git rev-list origin/master..HEAD --count`));
+      const behindCount = Number(git(`git rev-list HEAD..origin/master --count`));
+      if (aheadCount > 0 && behindCount === 0) direction = `${aheadCount} commit(s) ahead of origin/master — push before distributing`;
+      else if (behindCount > 0 && aheadCount === 0) direction = `${behindCount} commit(s) behind origin/master — pull before distributing`;
+      else direction = 'diverged from origin/master — resolve the conflict before distributing';
+    } catch { /* use generic message */ }
+    throw new Error(
+      `--dist aborted: local master is ${direction}.\n` +
+      `  local:  ${localHead.slice(0, 7)}\n` +
+      `  remote: ${remoteHead.slice(0, 7)}\n` +
+      'Ensure git push/pull is complete so the distributed file matches the repository.'
+    );
+  }
+
+  console.log(`  ✓ master @ ${localHead.slice(0, 7)} — in sync with origin/master`);
+}
+
 // -----------------------------------------------------------------------------
 // Main
 // -----------------------------------------------------------------------------
 
 try {
   await preflight();
+  if (isDist) preflightDist();
   if (isWatch) {
     await watch();
   } else {
