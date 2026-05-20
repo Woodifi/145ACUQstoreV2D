@@ -36,7 +36,7 @@
 import * as esbuild from 'esbuild';
 import { readFile, writeFile, mkdir, stat } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 
@@ -140,6 +140,7 @@ async function buildOnce() {
     await writeFile(distFile, html);
     await _appendDistLog(distFile, slug);
     console.log(`✓ ${distFile}`);
+    console.log(`  full path: ${resolve(distFile)}`);
     console.log(`  build ID: ${BUILD_ID}  (${BUILD_TS})`);
     if (RECIPIENT) console.log(`  recipient: ${RECIPIENT}`);
     console.log('  GitHub Pages copy: NOT updated (--dist mode)');
