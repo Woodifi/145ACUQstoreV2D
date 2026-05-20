@@ -447,41 +447,32 @@ input {
 }
 
 .shell__brand {
-  flex: 0 0 auto;   /* never shrink into the nav — keep its natural width */
+  flex: 0 0 auto;
+}
+
+/* Column container: logo on top, unit code centred beneath */
+.shell__brand-mark {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 10px;
-  min-width: 0;
-  max-width: 300px; /* cap so it doesn't crowd the nav on narrow windows */
+  gap: 4px;
 }
 
 .shell__brand-logo {
-  height: 80px;
+  height: 72px;
   width: auto;
-  max-width: 120px;
+  max-width: 110px;
   object-fit: contain;
-  flex-shrink: 0;
-}
-
-.shell__brand-text {
-  min-width: 0;
-}
-
-.shell__brand-name {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--gold);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .shell__brand-code {
-  font-size: 11px;
+  font-size: 10px;
+  font-weight: 600;
   color: var(--text-muted);
-  letter-spacing: 0.5px;
+  letter-spacing: 0.8px;
   text-transform: uppercase;
-  margin-top: 2px;
+  white-space: nowrap;
+  text-align: center;
 }
 
 .shell__session {
@@ -5247,11 +5238,10 @@ details[open] > .help__section-summary::after {
 
   /* Smaller logo on mobile */
   .shell__brand-logo {
-    height: 44px;
-    max-width: 72px;
+    height: 40px;
+    max-width: 60px;
   }
-  .shell__brand-name { font-size: 15px; }
-  .shell__brand-code { font-size: 10px; }
+  .shell__brand-code { font-size: 9px; }
 
   /* Hide desktop-only header elements on mobile */
   .shell__session  { display: none; }

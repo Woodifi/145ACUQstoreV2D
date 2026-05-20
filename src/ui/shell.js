@@ -285,9 +285,8 @@ async function _renderShell() {
     <div class="shell">
       <header class="shell__header">
         <div class="shell__brand">
-          ${unitLogo ? `<img class="shell__brand-logo" src="${esc(unitLogo)}" alt="">` : ''}
-          <div class="shell__brand-text">
-            <div class="shell__brand-name">${esc(unitName)}</div>
+          <div class="shell__brand-mark">
+            ${unitLogo ? `<img class="shell__brand-logo" src="${esc(unitLogo)}" alt="${esc(unitName)}">` : ''}
             ${unitCode ? `<div class="shell__brand-code">${esc(unitCode)}</div>` : ''}
           </div>
         </div>
