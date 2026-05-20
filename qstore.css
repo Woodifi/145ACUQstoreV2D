@@ -1,15 +1,17 @@
 /* =============================================================================
  * QStore IMS v2 — Global stylesheet
  * =============================================================================
- * Defence-aesthetic dark theme. Single file, imported once by index.html.
+ * Defence-aesthetic dark theme (default). Light theme available via
+ * [data-theme="light"] on <html>. System preference respected when
+ * ui.theme = 'system' via @media prefers-color-scheme.
  *
  * Palette:
- *   --bg-deep      Background (charcoal, near-black)
- *   --bg-panel     Card/panel surface (slightly lighter)
+ *   --bg-deep      Background (charcoal, near-black in dark / near-white in light)
+ *   --bg-panel     Card/panel surface
  *   --bg-input     Input/key surface
  *   --border       Subtle border lines
- *   --text-primary Main text (off-white)
- *   --text-muted   Secondary text (grey)
+ *   --text-primary Main text
+ *   --text-muted   Secondary text
  *   --gold         AAC accent (rank tab gold)
  *   --danger       Errors / warnings
  *   --warn         Banner warnings
@@ -42,6 +44,55 @@
 
   --shadow-card:   0 8px 24px rgba(0, 0, 0, 0.4);
   --shadow-modal:  0 16px 48px rgba(0, 0, 0, 0.6);
+}
+
+/* Light theme overrides — applied when data-theme="light" on <html> */
+[data-theme="light"] {
+  --bg-deep:       #eef0f3;
+  --bg-panel:      #ffffff;
+  --bg-input:      #f3f5f8;
+  --bg-input-hi:   #e8ecf0;
+  --border:        #d0d5dc;
+  --border-hi:     #b0b8c4;
+  --text-primary:  #1a1d21;
+  --text-muted:    #5a6472;
+  --text-dim:      #8896a4;
+  --gold:          #9a7c42;
+  --gold-hi:       #7a5e2a;
+  --danger:        #d63030;
+  --warn:          #b86800;
+  --good:          #1e8a30;
+  --info:          #1a60c0;
+
+  --shadow-card:   0 4px 16px rgba(0, 0, 0, 0.10);
+  --shadow-modal:  0 8px 32px rgba(0, 0, 0, 0.18);
+}
+
+/* System preference: only applies when data-theme="system" (JS adds this class) */
+[data-theme="system"] {
+  /* default = dark (matches :root above) */
+}
+@media (prefers-color-scheme: light) {
+  [data-theme="system"] {
+    --bg-deep:       #eef0f3;
+    --bg-panel:      #ffffff;
+    --bg-input:      #f3f5f8;
+    --bg-input-hi:   #e8ecf0;
+    --border:        #d0d5dc;
+    --border-hi:     #b0b8c4;
+    --text-primary:  #1a1d21;
+    --text-muted:    #5a6472;
+    --text-dim:      #8896a4;
+    --gold:          #9a7c42;
+    --gold-hi:       #7a5e2a;
+    --danger:        #d63030;
+    --warn:          #b86800;
+    --good:          #1e8a30;
+    --info:          #1a60c0;
+
+    --shadow-card:   0 4px 16px rgba(0, 0, 0, 0.10);
+    --shadow-modal:  0 8px 32px rgba(0, 0, 0, 0.18);
+  }
 }
 
 * { box-sizing: border-box; }

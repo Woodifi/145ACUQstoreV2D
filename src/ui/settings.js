@@ -36,6 +36,7 @@ import { showToast }   from './toast.js';
 import * as Structure  from '../structure.js';
 import { CATEGORIES as DEFAULT_CATEGORIES } from './inventory.js';
 import { INITIAL_ISSUE } from './loans.js';
+import { applyTheme }   from '../theme.js';
 
 let _root = null;
 let _statusListener = null;
@@ -89,6 +90,7 @@ async function _render() {
         ${_structureSectionHtml(unitStructure)}
         ${_categoriesSectionHtml(activeCats)}
         ${_loanSettingsSectionHtml(settings)}
+        ${_appearanceSectionHtml(settings)}
         ${_recoverySectionHtml(recoveryStatus)}
         ${_securitySectionHtml(settings)}
         ${_cloudSectionHtml(settings, status)}
@@ -1006,6 +1008,41 @@ function _loanSettingsSectionHtml(settings) {
 // Security section — auto-lock idle timeout
 // -----------------------------------------------------------------------------
 
+// -----------------------------------------------------------------------------
+// Appearance — theme toggle (dark / light / system)
+// -----------------------------------------------------------------------------
+
+function _appearanceSectionHtml(settings) {
+  const current = settings['ui.theme'] || 'dark';
+  const opts = [
+    { value: 'dark',   label: 'Dark (default)' },
+    { value: 'light',  label: 'Light' },
+    { value: 'system', label: 'Follow system preference' },
+  ].map(({ value, label }) =>
+    `<option value="${value}"${value === current ? ' selected' : ''}>${esc(label)}</option>`
+  ).join('');
+
+  return `
+    <section class="settings__section" data-section="appearance">
+      <header class="settings__section-header">
+        <h2 class="settings__section-title">Appearance</h2>
+        <p class="settings__section-hint">
+          Choose a colour theme. "Follow system preference" switches automatically
+          with your device's light/dark mode setting.
+        </p>
+      </header>
+
+      <div class="form__row form__row--align-center">
+        <label class="form__label" for="theme-select">Colour theme</label>
+        <select id="theme-select" class="form__select settings__theme-select"
+                data-action="save-theme">
+          ${opts}
+        </select>
+      </div>
+    </section>
+  `;
+}
+
 function _securitySectionHtml(settings) {
   const stored = parseInt(settings['security.idleTimeoutMinutes'], 10);
   const current = isNaN(stored) ? 15 : stored;   // default 15 min
@@ -1288,6 +1325,9 @@ function _wireEventListeners() {
 
   const dueDaysSelect = $('[data-action="save-default-due-days"]', _root);
   if (dueDaysSelect) dueDaysSelect.addEventListener('change', _onDefaultDueDaysChange);
+
+  const themeSelect = $('[data-action="save-theme"]', _root);
+  if (themeSelect) themeSelect.addEventListener('change', _onThemeChange);
 }
 
 async function _onDefaultDueDaysChange(e) {
@@ -1305,6 +1345,27 @@ async function _onDefaultDueDaysChange(e) {
     await _render();   // refresh hint text
   } catch (err) {
     showToast('Failed to save loan default.', 'error');
+  } finally {
+    select.disabled = false;
+  }
+}
+
+async function _onThemeChange(e) {
+  const select = e.target;
+  const theme  = select.value;
+  select.disabled = true;
+  try {
+    await Storage.settings.set('ui.theme', theme);
+    // Apply immediately — save to localStorage for fast next-boot application.
+    applyTheme(theme);
+    showToast(
+      theme === 'dark'   ? 'Theme set to dark.'  :
+      theme === 'light'  ? 'Theme set to light.' :
+                           'Theme will follow your system preference.',
+      'success'
+    );
+  } catch (err) {
+    showToast('Failed to save theme setting.', 'error');
   } finally {
     select.disabled = false;
   }

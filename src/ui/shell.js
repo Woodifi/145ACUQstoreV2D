@@ -40,6 +40,7 @@ import * as Requests  from './requests.js';
 import * as Reference from './reference.js';
 import { openModal }  from './modal.js';
 import { esc, $, render } from './util.js';
+import { applyStoredTheme, applyTheme } from '../theme.js';
 
 const PAGES = {
   dashboard: { label: 'Home',      perm: 'view',     mount: Dashboard.mount },
@@ -192,6 +193,8 @@ function _hideLockOverlay() {
 
 export async function boot(rootEl) {
   _root = rootEl;
+  // Apply stored theme immediately — before any async ops — to avoid flash.
+  applyStoredTheme();
   logBanner();
   checkOrigin();
   // Integrity check deferred briefly so the DOM is fully parsed first.
@@ -219,9 +222,11 @@ export async function boot(rootEl) {
     } catch (_) { /* non-fatal */ }
 
     // Push logo / unit name into the splash as soon as storage is ready.
+    // Also sync the theme from IndexedDB (authoritative) into localStorage.
     try {
       const s = await Storage.settings.getAll();
       splash.setContent({ logo: s.unitLogo || null, name: s.unitName || '', code: s.unitCode || '' });
+      if (s['ui.theme']) applyTheme(s['ui.theme']);
     } catch (_) { /* non-fatal — splash continues without logo */ }
 
     _session = await AUTH.init();
