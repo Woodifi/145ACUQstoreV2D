@@ -261,7 +261,7 @@ function _requestCardHtml(req, showActions) {
       </div>
 
       <ul class="req__card-lines">
-        ${req.lines.map(l => `
+        ${(req.lines || []).map(l => `
           <li class="req__card-line">
             ${l.nsn ? `<span class="req__card-nsn">${esc(l.nsn)}</span>` : ''}
             <span class="req__card-desc">${esc(l.description)}</span>

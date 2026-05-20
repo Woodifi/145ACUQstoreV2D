@@ -500,6 +500,7 @@ export const requests = {
 
   async put(req) {
     if (!req?.id) throw new Error('Request.id required');
+    if (!Array.isArray(req.lines)) throw new Error('Request.lines must be an array');
     const tx = _db.transaction(STORES.REQUESTS, 'readwrite');
     tx.objectStore(STORES.REQUESTS).put(req);
     await _txDone(tx);
