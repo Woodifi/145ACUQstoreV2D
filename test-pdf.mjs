@@ -324,6 +324,7 @@ expect(reqText.includes('CPL Smith'),       'requestor name present');
 expect(reqText.includes('Q123456'),         'service number present');
 expect(reqText.includes('BUSHMASTER'),      'purpose present');
 expect(reqText.includes('Webbing'),         'item description present');
+expect(reqText.includes('Issue No'),        'Issue No. write-in column header present');
 
 console.log('\n[23] generateRequestAB189 — throws on missing request');
 try {

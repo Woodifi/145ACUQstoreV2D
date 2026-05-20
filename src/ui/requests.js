@@ -689,6 +689,7 @@ async function _handleCopyToCadets(req, body) {
           btn.textContent = 'Issuing…';
 
           const results = [];
+          const now = new Date().toISOString();
           for (const cb of selected) {
             const svc  = cb.value;
             const name = cb.dataset.name;
@@ -699,9 +700,33 @@ async function _handleCopyToCadets(req, body) {
                 dueDate,
                 sessionUser,
               });
-              results.push({ svc, name, loanRefs, errors });
+
+              // Create an individual request record for this cadet so it
+              // appears in the Requests view and can have its AB189 printed.
+              const reqN  = await Storage.counters.next('request', 1000);
+              const reqId = `REQ-${String(reqN).padStart(4, '0')}`;
+              await Storage.requests.put({
+                id:          reqId,
+                requestorSvc:  svc,
+                requestorName: name,
+                requestorRank: allCadets.find(c => c.svcNo === svc)?.rank || '',
+                purpose:      req.purpose,
+                requiredBy:   dueDate,
+                submittedAt:  now,
+                status:       loanRefs.length > 0 ? 'issued' : 'pending',
+                lines:        req.lines,
+                notes:        `Bulk copy from ${req.id}`,
+                decidedBy:    sessionUser,
+                decidedAt:    now,
+                decisionNote: loanRefs.length > 0
+                  ? `Issued via bulk copy from request ${req.id}`
+                  : (errors.length > 0 ? `Partial issue errors: ${errors.join('; ')}` : null),
+                loanRefs,
+              });
+
+              results.push({ svc, name, reqId, loanRefs, errors });
             } catch (err) {
-              results.push({ svc, name, loanRefs: [], errors: [err.message] });
+              results.push({ svc, name, reqId: null, loanRefs: [], errors: [err.message] });
             }
           }
 
@@ -711,7 +736,7 @@ async function _handleCopyToCadets(req, body) {
           await Storage.audit.append({
             action: 'request_approved',
             user:   sessionUser,
-            desc:   `Bulk copy of request ${req.id}: ${totalLoans} loans created for ${results.length} cadets` +
+            desc:   `Bulk copy of request ${req.id}: ${totalLoans} loans + ${results.length} request records created` +
                     (failNames.length ? `; errors for: ${failNames.join(', ')}` : ''),
           });
           Sync.notifyChanged();

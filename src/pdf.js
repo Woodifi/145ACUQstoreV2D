@@ -1305,17 +1305,27 @@ function _drawAB189RequestorSection(doc, y, loan, cadet) {
   return y + 2;
 }
 
-function _drawAB189ItemsSection(doc, y, loans) {
+function _drawAB189ItemsSection(doc, y, loans, { showIssueNoCol = false } = {}) {
   y = _drawSectionBand(doc, y, 'Equipment requested');
 
-  // Four columns: # | NSN | Nomenclature | Qty.
-  // No Condition column (we're requesting, not recording receipt state).
-  const COLS = [
-    { x: PAGE.MARGIN + 2,   label: '#',            w: 8,  align: 'left'  },
-    { x: PAGE.MARGIN + 12,  label: 'NSN',          w: 42, align: 'left'  },
-    { x: PAGE.MARGIN + 56,  label: 'Nomenclature', w: 96, align: 'left'  },
-    { x: PAGE.MARGIN + 154, label: 'Qty',          w: 14, align: 'right' },
-  ];
+  // Column layouts — with or without the "Issue No." write-in column.
+  // Total content width = PAGE.CW (168 mm on A4 with 20 mm margins).
+  const COLS = showIssueNoCol
+    ? [
+        // Narrower NSN + Nomenclature to free ~30 mm for Issue No.
+        { x: PAGE.MARGIN + 2,   label: '#',            w: 8,  align: 'left'  },
+        { x: PAGE.MARGIN + 12,  label: 'NSN',          w: 34, align: 'left'  },
+        { x: PAGE.MARGIN + 48,  label: 'Nomenclature', w: 76, align: 'left'  },
+        { x: PAGE.MARGIN + 126, label: 'Qty',          w: 12, align: 'right' },
+        { x: PAGE.MARGIN + 140, label: 'Issue No.',    w: 28, align: 'left',
+          writeIn: true },  // blank write-in box for QM
+      ]
+    : [
+        { x: PAGE.MARGIN + 2,   label: '#',            w: 8,  align: 'left'  },
+        { x: PAGE.MARGIN + 12,  label: 'NSN',          w: 42, align: 'left'  },
+        { x: PAGE.MARGIN + 56,  label: 'Nomenclature', w: 96, align: 'left'  },
+        { x: PAGE.MARGIN + 154, label: 'Qty',          w: 14, align: 'right' },
+      ];
 
   doc.setFillColor(180, 175, 165);
   doc.rect(PAGE.MARGIN, y, PAGE.CW, 6, 'F');
@@ -1328,20 +1338,32 @@ function _drawAB189ItemsSection(doc, y, loans) {
   }
   y += 7;
 
+  const ROW_H = 7;   // taller rows when write-in column present (more writing room)
+  const dataRowH = showIssueNoCol ? ROW_H : 6;
+
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   for (let i = 0; i < loans.length; i++) {
     const l = loans[i];
     if (i % 2 === 1) {
       doc.setFillColor(...COL.rowFillEven);
-      doc.rect(PAGE.MARGIN, y - 1, PAGE.CW, 6, 'F');
+      doc.rect(PAGE.MARGIN, y - 1, PAGE.CW, dataRowH, 'F');
     }
     doc.setTextColor(...COL.txtDark);
-    doc.text(String(i + 1),                                  COLS[0].x, y + 3.5);
-    doc.text(_fitText(doc, l.nsn || '—',     COLS[1].w),    COLS[1].x, y + 3.5);
-    doc.text(_fitText(doc, l.itemName || '—', COLS[2].w),   COLS[2].x, y + 3.5);
-    doc.text(String(l.qty), COLS[3].x + COLS[3].w - 1, y + 3.5, { align: 'right' });
-    y += 6;
+    doc.text(String(i + 1),                                   COLS[0].x, y + dataRowH - 2);
+    doc.text(_fitText(doc, l.nsn || '—',      COLS[1].w),    COLS[1].x, y + dataRowH - 2);
+    doc.text(_fitText(doc, l.itemName || '—', COLS[2].w),    COLS[2].x, y + dataRowH - 2);
+    doc.text(String(l.qty), COLS[3].x + COLS[3].w - 1, y + dataRowH - 2, { align: 'right' });
+
+    if (showIssueNoCol) {
+      // Draw a light-bordered write-in box for the Issue No. column.
+      const ic = COLS[4];
+      doc.setDrawColor(160, 155, 145);
+      doc.setLineWidth(0.3);
+      doc.rect(ic.x - 1, y - 1, ic.w + 1, dataRowH);
+    }
+
+    y += dataRowH;
   }
 
   const totalQty = loans.reduce((s, l) => s + (Number(l.qty) || 0), 0);
@@ -1451,7 +1473,9 @@ export async function generateRequestAB189(req, opts = {}) {
   if (fakeLoans.length === 0) {
     fakeLoans.push({ nsn: '', itemName: '(no items listed)', qty: 0 });
   }
-  y = _drawAB189ItemsSection(doc, y, fakeLoans);
+  // showIssueNoCol: adds a blank write-in column so the QM can record
+  // the loan ref / serial number when issuing on paper without a device.
+  y = _drawAB189ItemsSection(doc, y, fakeLoans, { showIssueNoCol: true });
 
   // --- Purpose section — adapt req fields ---
   const fakePurposeLoan = {
