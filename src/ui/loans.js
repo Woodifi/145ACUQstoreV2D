@@ -133,7 +133,7 @@ function _freshIssueState()  {
 }
 function _freshReturnState() { return { svcNo: '', refsChecked: new Set() }; }
 function _freshLine()        {
-  return { itemId: '', qty: 1, nonStock: false, nonStockDesc: '', nonStockNsn: '', lineNotes: '' };
+  return { itemId: '', qty: 1, nonStock: false, nonStockDesc: '', nonStockNsn: '', lineNotes: '', existingLoan: false };
 }
 
 function _firstAllowedTab() {
@@ -336,7 +336,12 @@ function _issueLineHtml(line, index, allItems) {
   //   [main field (grow)] [qty (fixed)] [remove / spacer (fixed)]
   // This keeps all rows aligned regardless of mode.
   // The NSN input (non-stock) lives in the opts area, not the top row.
+  //
+  // existingLoan mode: item IS in IMS, onLoan increments on issue but
+  // onHand is NOT decreased (the item was already out before Q-Store).
+  // Returns restore onHand. Mutually exclusive with nonStock.
 
+  const isExisting = !line.nonStock && !!line.existingLoan;
   const item       = line.nonStock ? null : (line.itemId ? allItems.find((i) => i.id === line.itemId) : null);
   const avail      = item ? item._avail : 0;
   const outOfStock = item && avail === 0;
@@ -347,6 +352,20 @@ function _issueLineHtml(line, index, allItems) {
          <span class="loan__line-label-qty">Qty *</span>
        </div>`
     : '';
+
+  // Stock badge — suppressed in existingLoan mode (no stock deduction occurs)
+  let stockBadge = '';
+  if (!line.nonStock && item) {
+    if (isExisting) {
+      stockBadge = `<span class="form__hint loan__stock-badge loan__stock-badge--existing"
+                          title="This item was issued before Q-Store was set up. On Hand is unchanged — only On Loan increases.">↕ Existing issue — stock not deducted</span>`;
+    } else if (outOfStock) {
+      stockBadge = `<span class="form__hint loan__stock-badge loan__stock-badge--nil"
+                          title="No units currently on hand. Issuing will record the loan against this inventory item with qty shown as On Loan.">⚠ None on hand — will record as On Loan</span>`;
+    } else {
+      stockBadge = `<span class="form__hint loan__stock-badge">${avail} available</span>`;
+    }
+  }
 
   const mainInput = line.nonStock
     ? `<input type="text" data-line-field="nonStockDesc"
@@ -367,12 +386,7 @@ function _issueLineHtml(line, index, allItems) {
                     data-avail="${i._avail}">`).join('')}
        </datalist>
        <input type="hidden" data-line-field="itemId" value="${esc(line.itemId)}">
-       ${item
-         ? outOfStock
-           ? `<span class="form__hint loan__stock-badge loan__stock-badge--nil"
-                    title="No units currently on hand. Issuing will record the loan against this inventory item with qty shown as On Loan.">⚠ None on hand — will record as On Loan</span>`
-           : `<span class="form__hint loan__stock-badge">${avail} available</span>`
-         : ''}`;
+       ${stockBadge}`;
 
   const optsNsn = line.nonStock
     ? `<label class="loan__line-nsn-field">
@@ -383,6 +397,7 @@ function _issueLineHtml(line, index, allItems) {
        </label>`
     : '';
 
+  // Non-stock checkbox — disabled when existingLoan is active (mutually exclusive)
   const optsNonstockLabel = line.nonStock
     ? `<label class="loan__line-nonstock-lbl loan__line-nonstock-lbl--on">
          <input type="checkbox" data-line-field="nonStock" data-line-index="${index}" checked>
@@ -391,12 +406,25 @@ function _issueLineHtml(line, index, allItems) {
        <span class="loan__line-nonstock-hint">Not from IMS stock — inventory updated on return if NSN matches.</span>`
     : `<label class="loan__line-nonstock-lbl"
               title="Use this for items not recorded in the inventory — e.g. items on order, unit-sourced equipment">
-         <input type="checkbox" data-line-field="nonStock" data-line-index="${index}">
+         <input type="checkbox" data-line-field="nonStock" data-line-index="${index}"
+                ${isExisting ? 'disabled' : ''}>
          Non-stock item
        </label>`;
 
+  // Existing-loan checkbox — only shown for IMS lines (not non-stock).
+  // Disabled when nonStock is checked; mutually exclusive.
+  const optsExistingLoan = !line.nonStock
+    ? `<label class="loan__line-existing-lbl"
+             title="Tick if this item was already issued before Q-Store was set up. Records the loan and increases On Loan — but does NOT deduct On Hand.">
+         <input type="checkbox" data-line-field="existingLoan" data-line-index="${index}"
+                ${isExisting ? 'checked' : ''}>
+         Record existing issue (no stock deduction)
+       </label>
+       ${isExisting ? `<span class="loan__line-existing-hint">On Hand is unchanged. On Loan increases to maintain accountability. Stock is restored when returned.</span>` : ''}`
+    : '';
+
   return `
-    <div class="loan__line ${line.nonStock ? 'loan__line--nonstock' : ''}" data-line-index="${index}">
+    <div class="loan__line ${line.nonStock ? 'loan__line--nonstock' : ''} ${isExisting ? 'loan__line--existing' : ''}" data-line-index="${index}">
       ${labelRow}
       <div class="loan__line-row">
         <div class="loan__line-main">
@@ -414,6 +442,7 @@ function _issueLineHtml(line, index, allItems) {
       </div>
       <div class="loan__line-opts">
         ${optsNonstockLabel}
+        ${optsExistingLoan}
         ${optsNsn}
         <label class="form__field loan__line-notes-field">
           <input type="text" data-line-field="lineNotes"
@@ -500,11 +529,31 @@ function _wireIssueTab(body, activeCadets, allItems) {
     // Non-stock toggle.
     const nonStockCb = $('input[data-line-field="nonStock"]', lineEl);
     nonStockCb?.addEventListener('change', () => {
-      _issueState.lines[idx].nonStock      = nonStockCb.checked;
-      _issueState.lines[idx].itemId        = '';
-      _issueState.lines[idx].nonStockDesc  = '';
-      _issueState.lines[idx].nonStockNsn   = '';
-      _issueState.lines[idx].lineNotes     = '';
+      const line       = _issueState.lines[idx];
+      const turningOn  = nonStockCb.checked;
+      line.nonStock    = turningOn;
+      if (turningOn) {
+        // Pre-populate description from the currently selected IMS item so
+        // the user doesn't have to retype a name they've already picked.
+        if (!line.nonStockDesc && line.itemId) {
+          const currentItem = allItems.find((i) => i.id === line.itemId);
+          if (currentItem) line.nonStockDesc = currentItem.name;
+        }
+        line.itemId       = '';
+        line.existingLoan = false;   // mutually exclusive
+      }
+      line.nonStockNsn = '';
+      // Intentionally preserve lineNotes across the toggle.
+      _render();
+    });
+
+    // Existing-loan toggle — IMS item linked but stock NOT deducted on issue.
+    const existingLoanCb = $('input[data-line-field="existingLoan"]', lineEl);
+    existingLoanCb?.addEventListener('change', () => {
+      _issueState.lines[idx].existingLoan = existingLoanCb.checked;
+      if (existingLoanCb.checked) {
+        _issueState.lines[idx].nonStock = false;   // mutually exclusive
+      }
       _render();
     });
 
@@ -659,16 +708,15 @@ async function _submitIssue(body) {
       // Non-stock line — description required; NSN optional.
       const desc = ln.nonStockDesc.trim();
       if (!desc) { lineErrors.push(`Line ${num}: enter an item description.`); continue; }
-      resolvedLines.push({ nonStock: true, desc, nsn: ln.nonStockNsn.trim(), qty, lineNotes: ln.lineNotes || '' });
+      resolvedLines.push({ nonStock: true, existingLoan: false, desc, nsn: ln.nonStockNsn.trim(), qty, lineNotes: ln.lineNotes || '' });
     } else {
-      // Standard inventory line.
+      // Standard inventory line (may be an existing-loan recording).
       if (!ln.itemId) { lineErrors.push(`Line ${num}: choose an item from the list.`); continue; }
       const item = await Storage.items.get(ln.itemId);
       if (!item) { lineErrors.push(`Line ${num}: item no longer exists.`); continue; }
-      // Zero-stock inventory issuing is allowed — the item remains linked to the IMS
-      // entry and onLoan is incremented regardless of onHand. This supports initial
-      // setup / reconciliation of previously hand-issued equipment.
-      resolvedLines.push({ nonStock: false, item, qty, lineNotes: ln.lineNotes || '' });
+      // existingLoan = true → item was issued before Q-Store; onLoan increments
+      // but onHand is NOT decreased (stock was already out at implementation time).
+      resolvedLines.push({ nonStock: false, existingLoan: !!ln.existingLoan, item, qty, lineNotes: ln.lineNotes || '' });
     }
   }
 
@@ -677,13 +725,14 @@ async function _submitIssue(body) {
 
   // Detect over-allocation across stock lines for the same item.
   // Only hard-error when the item has actual on-hand stock and we're drawing
-  // more than is available — zero-stock items are allowed (reconciliation mode).
+  // more than is available — zero-stock items and existingLoan lines are exempt
+  // (existingLoan lines do not deduct stock, so there is nothing to over-allocate).
   const sumByItemId = new Map();
-  for (const r of resolvedLines.filter((r) => !r.nonStock)) {
+  for (const r of resolvedLines.filter((r) => !r.nonStock && !r.existingLoan)) {
     sumByItemId.set(r.item.id, (sumByItemId.get(r.item.id) || 0) + r.qty);
   }
   for (const [itemId, totalQty] of sumByItemId) {
-    const r      = resolvedLines.find((r) => !r.nonStock && r.item.id === itemId);
+    const r      = resolvedLines.find((r) => !r.nonStock && !r.existingLoan && r.item.id === itemId);
     const onHand = Number(r.item.onHand) || 0;
     const avail  = Math.max(0, onHand - (Number(r.item.onLoan) || 0));
     if (onHand > 0 && totalQty > avail) {
@@ -717,6 +766,7 @@ async function _submitIssue(body) {
           longTermLoan: longTermLoan || false,
           unitLoan:     unitLoan     || false,
           nonStock:     true,
+          existingLoan: false,
           condition:    'serviceable',
           remarks,
           notes:        r.lineNotes,
@@ -728,6 +778,44 @@ async function _submitIssue(body) {
           action: 'issue',
           user:   sessionUser,
           desc:   `${ref}: [non-stock] ${r.desc} × ${r.qty} issued to ${borrowerName} for ${purpose}`,
+        });
+        created.push(loan);
+      } else if (r.existingLoan) {
+        // Existing issue — item IS in IMS but was physically out before Q-Store.
+        // onLoan increments (accountability) but onHand is NOT decreased.
+        // Return will restore onHand.
+        const { item, qty } = r;
+        const loan = {
+          ref,
+          itemId:       item.id,
+          itemName:     item.name,
+          nsn:          item.nsn || '',
+          qty,
+          borrowerSvc,
+          borrowerName,
+          purpose,
+          issueDate,
+          dueDate:      longTermLoan ? '' : dueDate,
+          longTermLoan: longTermLoan || false,
+          unitLoan:     unitLoan     || false,
+          nonStock:     false,
+          existingLoan: true,
+          condition:    item.condition || 'serviceable',
+          remarks,
+          notes:        r.lineNotes,
+          active:       true,
+          issuedBy:     sessionUser,
+        };
+        const fresh = await Storage.items.get(item.id);
+        if (!fresh) throw new Error(`"${item.name}" was deleted during issue.`);
+        // Increment onLoan only — onHand is unchanged.
+        fresh.onLoan = (Number(fresh.onLoan) || 0) + qty;
+        await Storage.items.put(fresh);
+        await Storage.loans.put(loan);
+        await Storage.audit.append({
+          action: 'issue',
+          user:   sessionUser,
+          desc:   `${ref}: [existing issue] ${item.name} × ${qty} recorded for ${borrowerName} — no stock deduction`,
         });
         created.push(loan);
       } else {
@@ -747,6 +835,7 @@ async function _submitIssue(body) {
           longTermLoan: longTermLoan || false,
           unitLoan:     unitLoan     || false,
           nonStock:     false,
+          existingLoan: false,
           condition:    item.condition || 'serviceable',
           remarks,
           notes:        r.lineNotes,
@@ -950,6 +1039,7 @@ function _returnLoanRowHtml(loan) {
     loan.nonStock     ? `<span class="loan__badge loan__badge--nonstock">Non-stock</span>` : '',
     loan.longTermLoan ? `<span class="loan__badge loan__badge--longterm">Long-term</span>` : '',
     loan.unitLoan     ? `<span class="loan__badge loan__badge--unitloan">Unit loan</span>` : '',
+    loan.existingLoan ? `<span class="loan__badge loan__badge--existing" title="Recorded as existing issue — stock not deducted at issue time">Existing</span>` : '',
   ].join('');
   return `
     <label class="loan__return-row ${overdue ? 'loan__return-row--overdue' : ''}">
@@ -1024,11 +1114,12 @@ async function _submitReturn(body) {
   const sessionUser = AUTH.getSession()?.name || 'unknown';
   const returnDate  = _todayLocalIsoDate();
 
-  let returned       = 0;
-  let addedToIms     = 0;
-  const errors       = [];
-  const needsPrompt  = [];   // non-stock items with no IMS match → prompt to add
-  const now          = new Date().toISOString();
+  let returned         = 0;
+  let addedToIms       = 0;
+  let stockRestored    = 0;
+  const errors         = [];
+  const needsPrompt    = [];   // non-stock items with no IMS match → prompt to add
+  const now            = new Date().toISOString();
 
   // Fetch item list once so each nonStock loan doesn't repeat the query.
   const imsItemsList = await Storage.items.list();
@@ -1064,6 +1155,31 @@ async function _submitReturn(body) {
           needsPrompt.push({ name: loan.itemName, nsn: loan.nsn || '', qty: loan.qty });
         }
         // No onLoan decrement — was never incremented on issue.
+      } else if (loan.existingLoan) {
+        // Existing-loan return — this item was recorded as already out before
+        // Q-Store; onHand was NOT decremented on issue. On return: decrement
+        // onLoan AND increment onHand so stock figures are correct going forward.
+        const item = await Storage.items.get(loan.itemId);
+        if (item) {
+          item.onLoan = Math.max(0, (Number(item.onLoan) || 0) - loan.qty);
+          item.onHand = (Number(item.onHand) || 0) + loan.qty;
+          // Condition tracking.
+          if (condition === 'serviceable' && item.qtyServiceable != null) {
+            item.qtyServiceable = (Number(item.qtyServiceable) || 0) + loan.qty;
+          }
+          if (condition === 'unserviceable' || condition === 'write-off') {
+            item.unsvc = (Number(item.unsvc) || 0) + loan.qty;
+            if (item.qtyUnserviceable != null) {
+              item.qtyUnserviceable = (Number(item.qtyUnserviceable) || 0) + loan.qty;
+            }
+          }
+          if (condition === 'write-off') {
+            item.condition = 'unserviceable';
+          }
+          item.updatedAt = now;
+          await Storage.items.put(item);
+          stockRestored++;
+        }
       } else {
         // Standard stock return — decrement onLoan, optionally bump unsvc.
         const item = await Storage.items.get(loan.itemId);
@@ -1100,6 +1216,12 @@ async function _submitReturn(body) {
 
   if (addedToIms > 0) {
     showToast(`${addedToIms} non-stock item(s) matched by NSN and added to inventory.`, 'success', 6000);
+  }
+  if (stockRestored > 0) {
+    showToast(
+      `${stockRestored} existing-loan item${stockRestored === 1 ? '' : 's'} returned — On Hand restored in inventory.`,
+      'success', 6000,
+    );
   }
 
   Sync.notifyChanged();
@@ -1487,8 +1609,9 @@ function _allRowHtml(loan, today, canReturn, dischargedSvcs = new Set()) {
     statusBadge = `<span class="loan__badge loan__badge--active">Active</span>`;
   }
   const typeBadges = [
-    loan.nonStock ? `<span class="loan__badge loan__badge--nonstock" title="Not from IMS stock">NS</span>` : '',
-    loan.unitLoan ? `<span class="loan__badge loan__badge--unitloan" title="Unit/Activity loan">Unit</span>` : '',
+    loan.nonStock    ? `<span class="loan__badge loan__badge--nonstock"  title="Not from IMS stock">NS</span>` : '',
+    loan.unitLoan    ? `<span class="loan__badge loan__badge--unitloan"  title="Unit/Activity loan">Unit</span>` : '',
+    loan.existingLoan ? `<span class="loan__badge loan__badge--existing" title="Existing issue — stock not deducted">Exist</span>` : '',
   ].join('');
 
   const detailId = `loan-detail-${esc(loan.ref).replace(/\W/g, '-')}`;

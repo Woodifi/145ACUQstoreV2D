@@ -5940,6 +5940,35 @@ details[open] > .help__section-summary::after {
   color: var(--text-secondary);
 }
 
+/* Existing-loan checkbox + hint */
+.loan__line-existing-lbl {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: #d97706;
+  cursor: pointer;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.loan__line-existing-lbl input[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.loan__line-existing-hint {
+  font-size: 0.75rem;
+  color: #92400e;
+}
+
+/* Existing-loan line highlight */
+.loan__line--existing {
+  background: color-mix(in srgb, #d97706 8%, transparent);
+  border: 1px solid color-mix(in srgb, #d97706 25%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  margin-top: 2px;
+}
+
 .loan__line-notes-field {
   flex: 1;
   min-width: 140px;
@@ -5970,6 +5999,10 @@ details[open] > .help__section-summary::after {
   color: var(--gold);
   font-weight: 500;
 }
+.loan__stock-badge--existing {
+  color: #d97706;
+  font-weight: 500;
+}
 
 /* New loan type badges */
 .loan__badge--nonstock {
@@ -5983,6 +6016,10 @@ details[open] > .help__section-summary::after {
 .loan__badge--unitloan {
   background: #15803d;
   color: #fff;
+}
+.loan__badge--existing {
+  background: #92400e;
+  color: #fef3c7;
 }
 
 /* Kit picker — per-line stock pills */
