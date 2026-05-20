@@ -7105,3 +7105,138 @@ kbd {
   font-size: 13px;
   color: var(--text-muted);
 }
+
+/* =============================================================================
+ * Copy-to-cadets modal (.ctc__*)
+ * ============================================================================= */
+
+.ctc__intro {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.ctc__kit-summary {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  font-size: 13px;
+}
+
+.ctc__kit-lines {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.ctc__kit-lines li {
+  padding: 2px 0;
+}
+
+.ctc__nsn {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: 6px;
+}
+
+.ctc__due-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.ctc__due-input {
+  max-width: 180px;
+}
+
+.ctc__controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.ctc__search {
+  flex: 1;
+  min-width: 160px;
+}
+
+.ctc__select-all-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ctc__selected-count {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gold);
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+.ctc__list {
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 12px;
+}
+
+.ctc__cadet-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  transition: background 0.1s;
+}
+
+.ctc__cadet-row:last-child { border-bottom: none; }
+
+.ctc__cadet-row:hover { background: var(--bg-input); }
+
+.ctc__cadet-row input[type="checkbox"] {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--gold);
+  cursor: pointer;
+}
+
+.ctc__cadet-name {
+  font-weight: 500;
+  flex: 1;
+  min-width: 0;
+}
+
+.ctc__cadet-svc {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.ctc__cadet-sub {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.ctc__footer {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}

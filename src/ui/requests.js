@@ -236,10 +236,11 @@ async function _mountPending(body) {
     const req = requests.find(r => r.id === id);
     if (!req) return;
 
-    if (action === 'approve-issue') await _handleApproveAndIssue(req, body);
-    if (action === 'approve-only')  await _handleApproveOnly(req, body);
-    if (action === 'deny')          await _handleDeny(req, body);
-    if (action === 'print-ab189')   await _printRequestAB189(req, e.target);
+    if (action === 'approve-issue')  await _handleApproveAndIssue(req, body);
+    if (action === 'approve-only')   await _handleApproveOnly(req, body);
+    if (action === 'deny')           await _handleDeny(req, body);
+    if (action === 'print-ab189')    await _printRequestAB189(req, e.target);
+    if (action === 'copy-to-cadets') await _handleCopyToCadets(req, body);
   });
 }
 
@@ -287,6 +288,9 @@ function _requestCardHtml(req, showActions) {
                   data-action="approve-issue">Approve &amp; Issue</button>
           <button type="button" class="btn btn--ghost btn--sm"
                   data-action="approve-only">Approve (issue later)</button>
+          <button type="button" class="btn btn--ghost btn--sm"
+                  data-action="copy-to-cadets"
+                  title="Issue this kit list to multiple cadets">↗ Copy to cadets</button>
           <button type="button" class="btn btn--danger btn--sm"
                   data-action="deny">Deny</button>
           ` : ''}
@@ -311,102 +315,12 @@ async function _handleApproveAndIssue(req, body) {
     ? `${cadet.rank} ${cadet.surname}`
     : req.requestorName;
 
-  const issueDate = _todayLocalIsoDate();
-  const dueDate   = req.requiredBy || _defaultDueDate();
-
-  const loanRefs = [];
-  const errors   = [];
-
-  for (const line of req.lines) {
-    const qty = Math.max(1, Math.floor(Number(line.qty) || 1));
-    let ref;
-
-    // Try to find a matching inventory item (by NSN first, then name).
-    let matchedItem = null;
-    if (line.nsn) {
-      const allItems = await Storage.items.list();
-      matchedItem = allItems.find(
-        it => it.nsn && it.nsn.trim() === line.nsn.trim()
-      ) || null;
-    }
-    if (!matchedItem && line.description) {
-      const allItems = await Storage.items.list();
-      const desc = line.description.trim().toLowerCase();
-      matchedItem = allItems.find(
-        it => it.name && it.name.trim().toLowerCase() === desc
-      ) || null;
-    }
-
-    try {
-      ref = await _nextRequestLoanRef();
-
-      if (matchedItem) {
-        // Standard stock issue.
-        const fresh = await Storage.items.get(matchedItem.id);
-        if (!fresh) throw new Error(`"${matchedItem.name}" no longer exists.`);
-        fresh.onLoan = (Number(fresh.onLoan) || 0) + qty;
-        await Storage.items.put(fresh);
-
-        const loan = {
-          ref,
-          itemId:       matchedItem.id,
-          itemName:     matchedItem.name,
-          nsn:          matchedItem.nsn || '',
-          qty,
-          borrowerSvc,
-          borrowerName,
-          purpose:      req.purpose,
-          issueDate,
-          dueDate,
-          longTermLoan: false,
-          unitLoan:     false,
-          nonStock:     false,
-          condition:    matchedItem.condition || 'serviceable',
-          remarks:      `Approved from request ${req.id}`,
-          notes:        '',
-          active:       true,
-          issuedBy:     sessionUser,
-        };
-        await Storage.loans.put(loan);
-        await Storage.audit.append({
-          action: 'issue',
-          user:   sessionUser,
-          desc:   `${ref}: ${matchedItem.name} × ${qty} issued to ${borrowerName} for ${req.purpose} (from request ${req.id})`,
-        });
-      } else {
-        // Non-stock issue — description from request.
-        const loan = {
-          ref,
-          itemId:       null,
-          itemName:     line.description,
-          nsn:          line.nsn || '',
-          qty,
-          borrowerSvc,
-          borrowerName,
-          purpose:      req.purpose,
-          issueDate,
-          dueDate,
-          longTermLoan: false,
-          unitLoan:     false,
-          nonStock:     true,
-          condition:    'serviceable',
-          remarks:      `Approved from request ${req.id}`,
-          notes:        '',
-          active:       true,
-          issuedBy:     sessionUser,
-        };
-        await Storage.loans.put(loan);
-        await Storage.audit.append({
-          action: 'issue',
-          user:   sessionUser,
-          desc:   `${ref}: [non-stock] ${line.description} × ${qty} issued to ${borrowerName} for ${req.purpose} (from request ${req.id})`,
-        });
-      }
-      loanRefs.push(ref);
-    } catch (err) {
-      errors.push(`${line.description}: ${err.message}`);
-    }
-  }
+  const { loanRefs, errors } = await _issueLinesToCadet(req, {
+    borrowerSvc,
+    borrowerName,
+    dueDate:     req.requiredBy || _defaultDueDate(),
+    sessionUser,
+  });
 
   // Update request record.
   const updated = {
@@ -436,6 +350,104 @@ async function _handleApproveAndIssue(req, body) {
   // Refresh pending tab.
   await _mountPending(body);
   await _refreshPendingBadge();
+}
+
+// ---------------------------------------------------------------------------
+// Issue all lines from a request to a single cadet — reusable core.
+// Returns { loanRefs: string[], errors: string[] }.
+// ---------------------------------------------------------------------------
+
+async function _issueLinesToCadet(req, { borrowerSvc, borrowerName, dueDate, sessionUser }) {
+  const issueDate = _todayLocalIsoDate();
+  const loanRefs  = [];
+  const errors    = [];
+
+  // Pre-load item list once for this cadet's issue batch.
+  const allItems = await Storage.items.list();
+
+  for (const line of req.lines) {
+    const qty = Math.max(1, Math.floor(Number(line.qty) || 1));
+
+    // Try to find a matching inventory item (by NSN first, then name).
+    let matchedItem = null;
+    if (line.nsn) {
+      matchedItem = allItems.find(it => it.nsn && it.nsn.trim() === line.nsn.trim()) || null;
+    }
+    if (!matchedItem && line.description) {
+      const desc = line.description.trim().toLowerCase();
+      matchedItem = allItems.find(it => it.name && it.name.trim().toLowerCase() === desc) || null;
+    }
+
+    try {
+      const ref = await _nextRequestLoanRef();
+
+      if (matchedItem) {
+        // Standard stock issue.
+        const fresh = await Storage.items.get(matchedItem.id);
+        if (!fresh) throw new Error(`"${matchedItem.name}" no longer exists.`);
+        fresh.onLoan = (Number(fresh.onLoan) || 0) + qty;
+        await Storage.items.put(fresh);
+
+        await Storage.loans.put({
+          ref,
+          itemId:      matchedItem.id,
+          itemName:    matchedItem.name,
+          nsn:         matchedItem.nsn || '',
+          qty,
+          borrowerSvc,
+          borrowerName,
+          purpose:     req.purpose,
+          issueDate,
+          dueDate,
+          longTermLoan: false,
+          unitLoan:    false,
+          nonStock:    false,
+          condition:   matchedItem.condition || 'serviceable',
+          remarks:     `Issued from request ${req.id}`,
+          notes:       '',
+          active:      true,
+          issuedBy:    sessionUser,
+        });
+        await Storage.audit.append({
+          action: 'issue',
+          user:   sessionUser,
+          desc:   `${ref}: ${matchedItem.name} × ${qty} issued to ${borrowerName} (from request ${req.id})`,
+        });
+      } else {
+        // Non-stock issue — description from request.
+        await Storage.loans.put({
+          ref,
+          itemId:      null,
+          itemName:    line.description,
+          nsn:         line.nsn || '',
+          qty,
+          borrowerSvc,
+          borrowerName,
+          purpose:     req.purpose,
+          issueDate,
+          dueDate,
+          longTermLoan: false,
+          unitLoan:    false,
+          nonStock:    true,
+          condition:   'serviceable',
+          remarks:     `Issued from request ${req.id}`,
+          notes:       '',
+          active:      true,
+          issuedBy:    sessionUser,
+        });
+        await Storage.audit.append({
+          action: 'issue',
+          user:   sessionUser,
+          desc:   `${ref}: [non-stock] ${line.description} × ${qty} issued to ${borrowerName} (from request ${req.id})`,
+        });
+      }
+      loanRefs.push(ref);
+    } catch (err) {
+      errors.push(`${line.description}: ${err.message}`);
+    }
+  }
+
+  return { loanRefs, errors };
 }
 
 async function _handleApproveOnly(req, body) {
@@ -512,6 +524,250 @@ async function _handleDeny(req, body) {
         close();
         await _mountPending(body);
         await _refreshPendingBadge();
+      });
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Copy to cadets — bulk individual issue from a request template
+// ---------------------------------------------------------------------------
+
+async function _handleCopyToCadets(req, body) {
+  // Load all active cadets for the picker.
+  let allCadets = [];
+  try {
+    allCadets = (await Storage.cadets.list()).filter(c => c.active !== false);
+  } catch { /* ok — empty list */ }
+
+  const unit = await Storage.settings.getAll().catch(() => ({}));
+  const sessionUser = AUTH.getSession()?.name || 'unknown';
+  const defaultDue  = req.requiredBy || _defaultDueDate();
+
+  // Sort: staff first, then rank, then surname.
+  allCadets.sort((a, b) => {
+    const ta = a.personType === 'staff' ? 0 : 1;
+    const tb = b.personType === 'staff' ? 0 : 1;
+    return (ta - tb) || (a.surname || '').localeCompare(b.surname || '');
+  });
+
+  /** Build the cadet list rows HTML (re-used for filter updates). */
+  const _cadetRowsHtml = (cadets) => cadets.map(c => {
+    const sub = [c.company, c.platoon || c.plt, c.section].filter(Boolean).join(' / ');
+    return `
+      <label class="ctc__cadet-row" data-svc="${esc(c.svcNo)}">
+        <input type="checkbox" class="ctc__cadet-chk" value="${esc(c.svcNo)}"
+               data-name="${esc(`${c.rank} ${c.surname}`)}"
+               data-rank="${esc(c.rank)}" data-surname="${esc(c.surname)}">
+        <span class="ctc__cadet-name">${esc(c.rank)} ${esc(c.surname)}</span>
+        <span class="ctc__cadet-svc">${esc(c.svcNo)}</span>
+        ${sub ? `<span class="ctc__cadet-sub">${esc(sub)}</span>` : ''}
+      </label>`;
+  }).join('');
+
+  const itemsSummary = (req.lines || [])
+    .map(l => `<li>${esc(l.description)}${l.nsn ? ` <span class="ctc__nsn">${esc(l.nsn)}</span>` : ''} × ${l.qty}</li>`)
+    .join('');
+
+  openModal({
+    titleHtml: `Copy to cadets — ${esc(req.id)}`,
+    size: 'lg',
+    bodyHtml: `
+      <p class="ctc__intro">
+        Issue the same kit list to multiple cadets individually.
+        Each selected cadet gets their own set of loan records and AB189.
+      </p>
+
+      <div class="ctc__kit-summary">
+        <strong>Kit list (per cadet):</strong>
+        <ul class="ctc__kit-lines">${itemsSummary}</ul>
+      </div>
+
+      <div class="ctc__due-row">
+        <label class="form__label" for="ctc-due-date">Due date</label>
+        <input type="date" id="ctc-due-date" class="form__input ctc__due-input"
+               value="${esc(defaultDue)}" min="${esc(_todayLocalIsoDate())}">
+      </div>
+
+      <div class="ctc__controls">
+        <input type="text" class="ctc__search form__input" placeholder="Search cadets…"
+               id="ctc-search" autocomplete="off">
+        <label class="ctc__select-all-label">
+          <input type="checkbox" id="ctc-select-all"> Select all
+        </label>
+        <span class="ctc__selected-count" id="ctc-count">0 selected</span>
+      </div>
+
+      <div class="ctc__list" id="ctc-cadet-list">
+        ${_cadetRowsHtml(allCadets)}
+      </div>
+
+      <div class="form__error" id="ctc-error" role="alert"></div>
+
+      <div class="ctc__footer">
+        <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
+        <button type="button" class="btn btn--ghost" data-action="ctc-print" disabled>⎙ Print AB189s</button>
+        <button type="button" class="btn btn--primary" data-action="ctc-issue" disabled>↗ Issue to cadets</button>
+      </div>`,
+
+    async onMount(panel, close) {
+      const searchEl    = $('#ctc-search',      panel);
+      const listEl      = $('#ctc-cadet-list',  panel);
+      const selectAll   = $('#ctc-select-all',  panel);
+      const countEl     = $('#ctc-count',        panel);
+      const dueInput    = $('#ctc-due-date',     panel);
+      const errEl       = $('#ctc-error',        panel);
+
+      // --- Helpers ---
+      const getChecked = () =>
+        Array.from(panel.querySelectorAll('.ctc__cadet-chk:checked'));
+
+      const updateCount = () => {
+        const n = getChecked().length;
+        countEl.textContent = `${n} selected`;
+        const issueBtn = panel.querySelector('[data-action="ctc-issue"]');
+        const printBtn = panel.querySelector('[data-action="ctc-print"]');
+        if (issueBtn) {
+          issueBtn.disabled = n === 0;
+          issueBtn.textContent = n === 0 ? '↗ Issue to cadets' : `↗ Issue to ${n} cadet${n !== 1 ? 's' : ''}`;
+        }
+        if (printBtn) {
+          printBtn.disabled = n === 0;
+          printBtn.textContent = n === 0 ? '⎙ Print AB189s' : `⎙ Print AB189s (${n})`;
+        }
+        // Sync select-all state.
+        const visible = Array.from(panel.querySelectorAll('.ctc__cadet-chk'));
+        selectAll.checked = visible.length > 0 && visible.every(cb => cb.checked);
+        selectAll.indeterminate = n > 0 && !selectAll.checked;
+      };
+
+      // Filter list by search term.
+      searchEl.addEventListener('input', () => {
+        const q = searchEl.value.toLowerCase();
+        const filtered = q
+          ? allCadets.filter(c =>
+              `${c.rank} ${c.surname} ${c.svcNo} ${c.company || ''} ${c.platoon || c.plt || ''} ${c.section || ''}`
+              .toLowerCase().includes(q))
+          : allCadets;
+        listEl.innerHTML = _cadetRowsHtml(filtered);
+        // Re-wire checkboxes; preserve selections.
+        const prevSelected = new Set(getChecked().map(cb => cb.value));
+        listEl.querySelectorAll('.ctc__cadet-chk').forEach(cb => {
+          if (prevSelected.has(cb.value)) cb.checked = true;
+          cb.addEventListener('change', updateCount);
+        });
+        updateCount();
+      });
+
+      // Select-all toggle.
+      selectAll.addEventListener('change', () => {
+        panel.querySelectorAll('.ctc__cadet-chk').forEach(cb => {
+          cb.checked = selectAll.checked;
+        });
+        updateCount();
+      });
+
+      // Wire individual checkboxes.
+      listEl.querySelectorAll('.ctc__cadet-chk').forEach(cb => {
+        cb.addEventListener('change', updateCount);
+      });
+      updateCount();
+
+      // Footer buttons wired via panel click delegation.
+      panel.addEventListener('click', async (e) => {
+        const action = e.target.closest('[data-action]')?.dataset.action;
+        if (!action) return;
+
+        if (action === 'ctc-issue') {
+          const selected = getChecked();
+          if (selected.length === 0) return;
+          const dueDate = dueInput.value || defaultDue;
+          errEl.textContent = '';
+
+          const btn = e.target;
+          btn.disabled = true;
+          btn.textContent = 'Issuing…';
+
+          const results = [];
+          for (const cb of selected) {
+            const svc  = cb.value;
+            const name = cb.dataset.name;
+            try {
+              const { loanRefs, errors } = await _issueLinesToCadet(req, {
+                borrowerSvc:  svc,
+                borrowerName: name,
+                dueDate,
+                sessionUser,
+              });
+              results.push({ svc, name, loanRefs, errors });
+            } catch (err) {
+              results.push({ svc, name, loanRefs: [], errors: [err.message] });
+            }
+          }
+
+          // Summary audit entry.
+          const totalLoans = results.reduce((s, r) => s + r.loanRefs.length, 0);
+          const failNames  = results.filter(r => r.errors.length > 0).map(r => r.name);
+          await Storage.audit.append({
+            action: 'request_approved',
+            user:   sessionUser,
+            desc:   `Bulk copy of request ${req.id}: ${totalLoans} loans created for ${results.length} cadets` +
+                    (failNames.length ? `; errors for: ${failNames.join(', ')}` : ''),
+          });
+          Sync.notifyChanged();
+
+          const failCount = results.filter(r => r.errors.length > 0).length;
+          const msg = failCount > 0
+            ? `Issued to ${results.length - failCount}/${results.length} cadets. ${failCount} had errors.`
+            : `Issued to ${results.length} cadet${results.length !== 1 ? 's' : ''} — ${totalLoans} loans created.`;
+          showToast(msg, failCount > 0 ? 'warn' : 'success', 7000);
+
+              close();
+          await _mountPending(body);
+          await _refreshPendingBadge();
+        }
+
+        if (action === 'ctc-print') {
+          const selected = getChecked();
+          if (selected.length === 0) return;
+
+          const btn = e.target;
+          btn.disabled = true;
+          btn.textContent = 'Generating…';
+
+          let generated = 0;
+          for (const cb of selected) {
+            const svc  = cb.value;
+            const name = cb.dataset.name;
+            let cadet = null;
+            try { cadet = await Storage.cadets.get(svc); } catch { /* ok */ }
+
+            // Build a request-shaped record with this cadet's details.
+            const cadetReq = {
+              ...req,
+              requestorName: name,
+              requestorSvc:  svc,
+            };
+            try {
+              const result = await generateRequestAB189(cadetReq, { unit, cadet });
+              downloadPdf(result);
+              generated++;
+              // Brief pause between downloads so the browser doesn't block them.
+              await new Promise(r => setTimeout(r, 350));
+            } catch (err) {
+              console.warn(`AB189 failed for ${name}:`, err);
+            }
+          }
+
+          await Storage.audit.append({
+            action: 'pdf_ab189',
+            user:   sessionUser,
+            desc:   `Bulk AB189 printed for ${generated} cadets from request ${req.id}`,
+          });
+          showToast(`${generated} AB189 PDF${generated !== 1 ? 's' : ''} downloaded.`, 'success');
+          btn.disabled = false;
+          updateCount();
+        }
       });
     },
   });
