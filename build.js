@@ -34,7 +34,7 @@
 // =============================================================================
 
 import * as esbuild from 'esbuild';
-import { readFile, writeFile, mkdir, stat } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, stat, readdir, unlink } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -136,6 +136,17 @@ async function buildOnce() {
     const slug = RECIPIENT
       ? RECIPIENT.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
       : 'unit';
+
+    // Remove any previous dist builds for this recipient before writing the new one.
+    try {
+      const existing = (await readdir(DIST_DIR))
+        .filter(f => f.startsWith(`qstore-${slug}-`) && f.endsWith('.html'));
+      for (const f of existing) {
+        await unlink(join(DIST_DIR, f));
+        console.log(`  removed old: ${f}`);
+      }
+    } catch { /* dist dir may not exist yet — mkdir below handles it */ }
+
     const distFile = join(DIST_DIR, `qstore-${slug}-${BUILD_ID}.html`);
     await writeFile(distFile, html);
     await _appendDistLog(distFile, slug);
