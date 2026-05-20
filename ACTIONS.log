@@ -260,6 +260,36 @@ Format: [TIMESTAMP UTC] ACTION — details
   491/491 tests passing.
 
 -------------------------------------------------------------------------------
+
+[2026-05-20T12:21:00Z] GIT COMMIT + PUSH — item maintenance/notes log (022e633)
+  MODIFIED: src/ui/inventory.js
+    - 'Notes (N)' button added to every row (count shown when entries exist)
+    - _openMaintLogModal(): modal with scrollable log + add-note form
+    - maintenanceLogs stored on item record as [{ts, user, note}]
+    - _fmtDateTimeAU() helper extracted
+    - Audit entry 'item_note' written on each save
+    - _render() called after save to refresh button count
+  MODIFIED: src/ui/audit.js
+    - item_note, loans_cleanup, stocktake_finalise added to ACTION_LABELS + ACTION_CATEGORY
+  MODIFIED: qstore.css
+    - .inv__mlog-* styles appended (~55 lines)
+  491/491 tests passing.
+
+[2026-05-20T12:27:00Z] GIT COMMIT + PUSH — location search, kit checklist PDF (36e4218)
+  MODIFIED: src/storage.js
+    - Storage.items.list({ search }): added loc and notes to OR filter
+  MODIFIED: src/pdf.js
+    - generateCadetKitChecklist(loans, opts): new export; A4 portrait; army-green header,
+      cadet info block, items table with tick-boxes, signature blocks
+  MODIFIED: src/ui/cadets.js
+    - Import generateCadetKitChecklist + downloadPdf from pdf.js
+    - Equipment profile modal: '⎙ Print kit checklist' button when active.length > 0
+    - onMount handler: downloads PDF on click
+  MODIFIED: qstore.css
+    - .cad__eq-actions styles added
+  491/491 tests passing.
+
+-------------------------------------------------------------------------------
 END OF LOG — append new entries above this line
 
 [2026-05-13T06:00:00Z] GIT COMMIT + PUSH — per-user PIN lockout (f53d9cc)
