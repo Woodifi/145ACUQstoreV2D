@@ -1943,7 +1943,7 @@ input {
 .cad__col-company { width: 90px; }
 .cad__col-section { width: 70px; }
 .cad__col-status  { width: 90px; }
-.cad__col-actions { width: 120px; text-align: right; }
+.cad__col-actions { width: 200px; text-align: right; }
 
 /* Group-header row injected between company/platoon/section groups. */
 .cad__group-header td {
@@ -6840,4 +6840,66 @@ details[open] > .help__section-summary::after {
 @media (max-width: 600px) {
   .dash__overdue-table th:nth-child(1),
   .dash__overdue-row td:nth-child(1) { display: none; }
+}
+
+/* ── Cadet equipment profile modal ── */
+.cad__eq-profile {
+  overflow-x: auto;
+}
+
+.cad__eq-heading {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0 0 8px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--border);
+}
+
+.cad__eq-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.cad__eq-table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.cad__eq-row td {
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.cad__eq-row:last-child td { border-bottom: none; }
+
+.cad__eq-ref {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.cad__eq-qty,
+.cad__eq-date,
+.cad__eq-ret {
+  white-space: nowrap;
+}
+
+.cad__eq-none {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 13px;
+  padding: 8px 0;
 }

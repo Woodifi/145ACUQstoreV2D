@@ -296,7 +296,7 @@ function _tableHtml(cadets, { canManage, useStruct }) {
                <th class="cad__col-section">Section</th>`
             : `<th class="cad__col-plt">Plt</th>`}
           <th class="cad__col-status">Status</th>
-          ${canManage ? `<th class="cad__col-actions">Actions</th>` : ''}
+          <th class="cad__col-actions">Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -328,16 +328,19 @@ function _cadetRowHtml(c, { canManage, useStruct }) {
             ? `<span class="cad__badge cad__badge--staff">${typeBadge}</span>`
             : ''}
       </td>
-      ${canManage ? `
-        <td class="cad__col-actions">
-          <div class="cad__row-actions">
+      <td class="cad__col-actions">
+        <div class="cad__row-actions">
+          <button type="button" class="btn btn--sm btn--ghost"
+                  data-action="equipment" data-svc="${esc(c.svcNo)}"
+                  title="View all equipment issued to this person">Equipment</button>
+          ${canManage ? `
             <button type="button" class="btn btn--sm btn--ghost"
                     data-action="edit" data-svc="${esc(c.svcNo)}">Edit</button>
             <button type="button" class="btn btn--sm btn--danger"
                     data-action="delete" data-svc="${esc(c.svcNo)}">Delete</button>
-          </div>
-        </td>
-      ` : ''}
+          ` : ''}
+        </div>
+      </td>
     </tr>`;
 }
 
@@ -397,9 +400,10 @@ async function _onRootClick(e) {
   if (!action) return;
   const svcNo = e.target.closest('[data-svc]')?.dataset.svc;
   switch (action) {
-    case 'add':         await _openAddModal();        break;
-    case 'edit':        await _openEditModal(svcNo);  break;
-    case 'delete':      await _openDeleteModal(svcNo); break;
+    case 'add':         await _openAddModal();                  break;
+    case 'edit':        await _openEditModal(svcNo);            break;
+    case 'delete':      await _openDeleteModal(svcNo);          break;
+    case 'equipment':   await _openEquipmentProfile(svcNo);     break;
     case 'import-csv':  openCadetsCsvImport();         break;
     case 'clear-filters':
       _searchTerm = ''; _pltFilter = '';
@@ -985,4 +989,85 @@ async function _doDelete(svcNo, label, reason) {
     desc:   `Deleted cadet: ${label} — reason: ${reason}`,
   });
   Sync.notifyChanged();
+}
+
+// -----------------------------------------------------------------------------
+// Equipment profile — shows all loans (active and historical) for one person
+// -----------------------------------------------------------------------------
+
+async function _openEquipmentProfile(svcNo) {
+  const cadet  = await Storage.cadets.get(svcNo);
+  if (!cadet) { showToast('Cadet not found.', 'error'); return; }
+
+  const allLoans  = await Storage.loans.listForCadet(svcNo);
+  const today     = new Date().toISOString().slice(0, 10);
+  const active    = allLoans.filter((l) => l.active !== false);
+  const history   = allLoans.filter((l) => l.active === false);
+
+  const displayName = `${cadet.rank || ''} ${cadet.surname || ''}, ${cadet.given || ''}`.trim();
+
+  const _loanRowHtml = (l, isActive) => {
+    const overdue = isActive && !l.longTermLoan && l.dueDate && l.dueDate < today;
+    const badge = isActive
+      ? (overdue
+          ? `<span class="loan__badge loan__badge--overdue">Overdue</span>`
+          : l.longTermLoan
+            ? `<span class="loan__badge loan__badge--longterm">Long-term</span>`
+            : `<span class="loan__badge loan__badge--active">Active</span>`)
+      : `<span class="loan__badge loan__badge--returned">Returned ${esc(l.returnDate || '')}</span>`;
+    return `
+      <tr class="cad__eq-row ${overdue ? 'loan__row--overdue' : ''}">
+        <td class="cad__eq-ref">${esc(l.ref)}</td>
+        <td>${esc(l.itemName || '—')}${l.nsn ? `<div class="loan__nsn">${esc(l.nsn)}</div>` : ''}</td>
+        <td class="cad__eq-qty">${l.qty}</td>
+        <td class="cad__eq-date">${esc(l.issueDate || '—')}</td>
+        <td class="cad__eq-date">${l.longTermLoan ? 'Long-term' : esc(l.dueDate || '—')}</td>
+        <td>${badge}</td>
+        ${!isActive ? `<td class="cad__eq-ret">${esc(l.returnCondition || '—')}</td>` : '<td></td>'}
+      </tr>`;
+  };
+
+  openModal({
+    titleHtml: `Equipment profile — ${esc(displayName)}`,
+    size: 'lg',
+    bodyHtml: `
+      <div class="cad__eq-profile">
+        ${active.length > 0 ? `
+          <h3 class="cad__eq-heading">Active loans (${active.length})</h3>
+          <table class="cad__eq-table">
+            <thead>
+              <tr>
+                <th>Ref</th><th>Item</th><th>Qty</th>
+                <th>Issued</th><th>Due</th><th>Status</th><th>Condition</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${active.map((l) => _loanRowHtml(l, true)).join('')}
+            </tbody>
+          </table>
+        ` : `<p class="cad__eq-none">No active loans.</p>`}
+
+        ${history.length > 0 ? `
+          <h3 class="cad__eq-heading" style="margin-top:20px">
+            Loan history (${history.length})
+          </h3>
+          <table class="cad__eq-table">
+            <thead>
+              <tr>
+                <th>Ref</th><th>Item</th><th>Qty</th>
+                <th>Issued</th><th>Due</th><th>Status</th><th>Return condition</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${history.slice().reverse().map((l) => _loanRowHtml(l, false)).join('')}
+            </tbody>
+          </table>
+        ` : `<p class="cad__eq-none" style="margin-top:12px">No loan history.</p>`}
+
+        ${allLoans.length === 0
+          ? `<p class="cad__eq-none">No loans recorded for this person.</p>`
+          : ''}
+      </div>
+    `,
+  });
 }
