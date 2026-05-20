@@ -2301,26 +2301,39 @@ function _borrowerPickerHtml(context, currentSvcNo, cadets, currentCadet) {
     ? `${currentCadet.rank} ${currentCadet.surname} (${currentCadet.svcNo})`
     : '';
   const listId = `loan-borrower-list-${context}`;
+
+  // Build option label: rank + surname + svcNo + company/platoon/section suffix.
+  // The svcNo must be present so the input handler can resolve the match.
+  // Adding company/plt/section means users can search by unit sub-structure.
+  const _groupSuffix = (c) => {
+    const parts = [];
+    if (c.company)  parts.push(c.company);
+    if (c.platoon || c.plt) parts.push(c.platoon || c.plt);
+    if (c.section)  parts.push(c.section);
+    return parts.length ? ` · ${parts.join(' / ')}` : '';
+  };
+
+  const sortedCadets = cadets.slice().sort((a, b) => {
+    const typeA = a.personType === 'staff' ? 0 : 1;
+    const typeB = b.personType === 'staff' ? 0 : 1;
+    return (typeA - typeB) || compareRanks(a.rank, b.rank) ||
+      (a.surname || '').localeCompare(b.surname || '');
+  });
+
   return `
     <label class="form__field">
-      <span class="form__label">Search by name or service number</span>
+      <span class="form__label">Search by name, service number, or sub-unit</span>
       <input type="text" class="loan__borrower-search"
              data-borrower-search="${esc(context)}"
              value="${esc(value)}"
              list="${listId}"
-             placeholder="Start typing…"
+             placeholder="Start typing name, svc no, or company…"
              autocomplete="off">
       <datalist id="${listId}">
-        ${cadets
-          .slice()
-          .sort((a, b) => {
-            const typeA = a.personType === 'staff' ? 0 : 1;
-            const typeB = b.personType === 'staff' ? 0 : 1;
-            return (typeA - typeB) || compareRanks(a.rank, b.rank) ||
-              (a.surname || '').localeCompare(b.surname || '');
-          })
+        ${sortedCadets
           .map((c) =>
-            `<option value="${esc(c.rank)} ${esc(c.surname)} (${esc(c.svcNo)})">`)
+            `<option value="${esc(c.rank)} ${esc(c.surname)} (${esc(c.svcNo)})">` +
+            `${esc(c.rank)} ${esc(c.surname)} (${esc(c.svcNo)})${esc(_groupSuffix(c))}</option>`)
           .join('')}
       </datalist>
       <input type="hidden" data-borrower-id="${esc(context)}"
