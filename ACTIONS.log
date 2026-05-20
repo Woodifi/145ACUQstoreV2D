@@ -212,6 +212,54 @@ Format: [TIMESTAMP UTC] ACTION — details
   491/491 tests passing.
 
 -------------------------------------------------------------------------------
+
+[2026-05-20T12:07:00Z] GIT COMMIT + PUSH — duplicate NSN, low-stock, audit date range (4e1bb2e)
+  MODIFIED: src/ui/inventory.js
+    - onMount now async; pre-loads item list for duplicate NSN check
+    - updateNsnHint: warns if NSN already used by another item (skips self on edit)
+    - _saveAdd: hard-blocks if NSN duplicates existing item
+    - _itemRowHtml: isZeroStock/isLowStock (<25% auth qty) computed; stockBadge added to name cell
+    - .inv__row gets inv__row--zero-stock / inv__row--low-stock class
+  MODIFIED: src/ui/audit.js
+    - _dateFrom/_dateTo module state; date range inputs in filter bar
+    - clear-date-range action removes both dates
+    - Date range filter applied after action/search filter in _render
+  MODIFIED: qstore.css
+    - .inv__row--zero-stock, .inv__row--low-stock row tints
+    - .inv__stock-badge--zero (red), .inv__stock-badge--low (amber) pill styles
+    - .aud__date-range, .aud__date-label, .aud__date-input, .aud__date-clear styles
+  491/491 tests passing.
+
+[2026-05-20T12:12:00Z] GIT COMMIT + PUSH — cadet equipment profile modal (30fb5a5)
+  MODIFIED: src/ui/cadets.js
+    - 'Equipment' button added to every cadet row (all roles)
+    - _onRootClick: case 'equipment' → _openEquipmentProfile(svcNo)
+    - _openEquipmentProfile: modal with active loans table + loan history table
+    - Actions <th> no longer conditional on canManage
+  MODIFIED: qstore.css
+    - .cad__col-actions widened 120→200px
+    - .cad__eq-* styles appended (~65 lines)
+  491/491 tests passing.
+
+[2026-05-20T12:17:00Z] GIT COMMIT + PUSH — bulk return from All Loans tab (bf6b0b3)
+  MODIFIED: src/ui/loans.js
+    - _allSelected Set added to module state
+    - _allTableHtml: select-all checkbox in <thead> when canReturn
+    - _allRowHtml: checkbox <td> per active loan; loan__row--selected CSS class
+    - Detail row colspan now 9 or 10 depending on canReturn
+    - Bulk bar (count + Return + Clear) inserted before loan__meta when count > 0
+    - _updateBulkBar(): refreshes bar in-place without full re-render
+    - _bulkReturnLoans(): modal with condition/remarks; loops all selected refs;
+      handles standard/nonStock/existingLoan; clears selection after
+    - _wireAllTab: wires select-row checkboxes, select-all-rows, bulk-return,
+      clear-selection; also prevents row expand on checkbox cell click
+    - filter-change clears _allSelected; mount() clears it too
+  MODIFIED: qstore.css
+    - .loan__col-chk, .loan__row-chk, .loan__bulk-bar, .loan__bulk-count,
+      .loan__row--selected styles added
+  491/491 tests passing.
+
+-------------------------------------------------------------------------------
 END OF LOG — append new entries above this line
 
 [2026-05-13T06:00:00Z] GIT COMMIT + PUSH — per-user PIN lockout (f53d9cc)
