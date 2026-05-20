@@ -102,6 +102,7 @@ let _activeTab   = null;          // 'issue' | 'return' | 'all'
 let _allFilter   = 'active';      // 'active' | 'returned' | 'overdue' | 'all'
 let _allSearch   = '';
 let _allBorrower = '';            // svcNo of selected borrower, '' = show all
+let _allSelected = new Set();     // refs of loans selected for bulk return
 let _defaultDueDays = 7;          // loaded from settings on each issue-tab render
 
 // Issue-tab transient state — the in-progress batch of lines, plus the
@@ -122,6 +123,7 @@ export async function mount(rootEl) {
   _allFilter   = 'active';
   _allSearch   = '';
   _allBorrower = '';
+  _allSelected.clear();
   _issueState  = _freshIssueState();
   _returnState = _freshReturnState();
   _activeTab   = _firstAllowedTab();
@@ -1552,6 +1554,18 @@ async function _renderAllTab(body) {
         </div>
       </header>
 
+      ${canReturn && _allSelected.size > 0 ? `
+        <div class="loan__bulk-bar" role="toolbar" aria-label="Bulk return actions">
+          <span class="loan__bulk-count">${_allSelected.size} loan${_allSelected.size === 1 ? '' : 's'} selected</span>
+          <button type="button" class="btn btn--primary btn--sm" data-action="bulk-return">
+            ↩ Return selected (${_allSelected.size})
+          </button>
+          <button type="button" class="btn btn--ghost btn--sm" data-action="clear-selection">
+            ✕ Clear selection
+          </button>
+        </div>
+      ` : ''}
+
       <div class="loan__meta">
         ${filtered.length} ${filtered.length === 1 ? 'loan' : 'loans'} shown
         ${(_allBorrower || _allSearch || _allFilter !== 'all') && all.length !== filtered.length
@@ -1576,6 +1590,7 @@ function _allTableHtml(loans, today, canReturn, dischargedSvcs = new Set()) {
     <table class="loan__table">
       <thead>
         <tr>
+          ${canReturn ? `<th class="loan__col-chk"><input type="checkbox" data-action="select-all-rows" title="Select all active loans" aria-label="Select all active loans"></th>` : ''}
           <th>Ref</th>
           <th>Issued</th>
           <th>Item</th>
@@ -1622,11 +1637,24 @@ function _allRowHtml(loan, today, canReturn, dischargedSvcs = new Set()) {
   ].join('');
 
   const detailId = `loan-detail-${esc(loan.ref).replace(/\W/g, '-')}`;
+  const isSelected = _allSelected.has(loan.ref);
   return `
     <tr class="loan__row ${discharged ? 'loan__row--discharged' : overdue ? 'loan__row--overdue' : ''}
-                       ${loan.active === false ? 'loan__row--returned' : ''}"
+                       ${loan.active === false ? 'loan__row--returned' : ''}
+                       ${isSelected ? 'loan__row--selected' : ''}"
         data-detail-target="${detailId}" role="button" tabindex="0"
-        title="Tap to expand details" aria-expanded="false">
+        title="Tap to expand details" aria-expanded="false"
+        data-loan-ref="${esc(loan.ref)}">
+      ${canReturn ? `
+        <td class="loan__col-chk" data-no-expand>
+          ${loan.active ? `
+            <input type="checkbox" class="loan__row-chk"
+                   data-action="select-row" data-loan-ref="${esc(loan.ref)}"
+                   ${isSelected ? 'checked' : ''}
+                   aria-label="Select ${esc(loan.ref)}">
+          ` : ''}
+        </td>
+      ` : ''}
       <td class="loan__ref">${esc(loan.ref)}</td>
       <td class="loan__date">${esc(loan.issueDate || '')}</td>
       <td>
@@ -1664,7 +1692,7 @@ function _allRowHtml(loan, today, canReturn, dischargedSvcs = new Set()) {
       </td>
     </tr>
     <tr class="loan__row-detail" id="${detailId}" hidden aria-hidden="true">
-      <td colspan="9">
+      <td colspan="${canReturn ? 10 : 9}">
         <dl class="loan__detail-dl">
           <div><dt>Issued</dt><dd>${esc(loan.issueDate || '—')}</dd></div>
           <div><dt>Purpose</dt><dd>${esc(loan.purpose || '—')}</dd></div>
@@ -1717,6 +1745,7 @@ function _wireAllTab(body, borrowerOptions = [], phantomBorrowers = []) {
   $$('[data-action="all-filter"]', body).forEach((btn) => {
     btn.addEventListener('click', () => {
       _allFilter = btn.dataset.filter;
+      _allSelected.clear();  // clear selection when filter changes
       _renderAllTab(body);
       _wireAllTab(body);
     });
@@ -1765,11 +1794,54 @@ function _wireAllTab(body, borrowerOptions = [], phantomBorrowers = []) {
     });
   });
 
+  // Row checkbox — select/deselect for bulk return.
+  body.querySelectorAll('[data-action="select-row"]').forEach((chk) => {
+    chk.addEventListener('change', () => {
+      const ref = chk.dataset.loanRef;
+      if (!ref) return;
+      if (chk.checked) _allSelected.add(ref);
+      else             _allSelected.delete(ref);
+      // Refresh just the bulk bar and the row highlight without full re-render.
+      _updateBulkBar(body);
+      const row = chk.closest('.loan__row');
+      if (row) row.classList.toggle('loan__row--selected', chk.checked);
+    });
+  });
+
+  // Select-all header checkbox.
+  $('[data-action="select-all-rows"]', body)?.addEventListener('change', (e) => {
+    const checked = e.target.checked;
+    // Only active loans are selectable.
+    body.querySelectorAll('[data-action="select-row"]').forEach((chk) => {
+      chk.checked = checked;
+      const ref = chk.dataset.loanRef;
+      if (ref) { if (checked) _allSelected.add(ref); else _allSelected.delete(ref); }
+      const row = chk.closest('.loan__row');
+      if (row) row.classList.toggle('loan__row--selected', checked);
+    });
+    _updateBulkBar(body);
+  });
+
+  // Bulk return button.
+  $('[data-action="bulk-return"]', body)?.addEventListener('click', async () => {
+    if (_allSelected.size === 0) return;
+    await _bulkReturnLoans([..._allSelected], body);
+  });
+
+  // Clear selection button.
+  $('[data-action="clear-selection"]', body)?.addEventListener('click', () => {
+    _allSelected.clear();
+    body.querySelectorAll('[data-action="select-row"]').forEach((chk) => { chk.checked = false; });
+    $('[data-action="select-all-rows"]', body)?.let?.((h) => { h.checked = false; });
+    _updateBulkBar(body);
+    body.querySelectorAll('.loan__row--selected').forEach((r) => r.classList.remove('loan__row--selected'));
+  });
+
   // Row expand/collapse for mobile — tapping a loan row reveals its detail row.
   body.querySelectorAll('[data-detail-target]').forEach((row) => {
     row.addEventListener('click', (e) => {
-      // Don't expand if the user clicked a button inside the row.
-      if (e.target.closest('button')) return;
+      // Don't expand if the user clicked a button inside the row, or the checkbox cell.
+      if (e.target.closest('button') || e.target.closest('[data-no-expand]')) return;
       const detailId = row.dataset.detailTarget;
       const detailRow = body.querySelector(`#${detailId}`);
       if (!detailRow) return;
@@ -1860,6 +1932,203 @@ function _wireAllTab(body, borrowerOptions = [], phantomBorrowers = []) {
       const ref = btn.dataset.loanRef;
       await _quickReturnLoan(ref, body);
     });
+  });
+}
+
+// =============================================================================
+// BULK RETURN
+// =============================================================================
+
+/**
+ * Refresh the bulk-return action bar in-place without a full re-render.
+ * Called whenever the selection set changes.
+ */
+function _updateBulkBar(body) {
+  let bar = $('.loan__bulk-bar', body);
+  const count = _allSelected.size;
+  if (count === 0) {
+    if (bar) bar.remove();
+    return;
+  }
+  const barHtml = `
+    <div class="loan__bulk-bar" role="toolbar" aria-label="Bulk return actions">
+      <span class="loan__bulk-count">${count} loan${count === 1 ? '' : 's'} selected</span>
+      <button type="button" class="btn btn--primary btn--sm" data-action="bulk-return">
+        ↩ Return selected (${count})
+      </button>
+      <button type="button" class="btn btn--ghost btn--sm" data-action="clear-selection">
+        ✕ Clear selection
+      </button>
+    </div>`;
+  if (bar) {
+    bar.outerHTML = barHtml;
+    // Re-wire the newly replaced bar's buttons.
+    bar = $('.loan__bulk-bar', body);
+  } else {
+    // Insert before the meta line.
+    const meta = $('.loan__meta', body);
+    if (meta) meta.insertAdjacentHTML('beforebegin', barHtml);
+    bar = $('.loan__bulk-bar', body);
+  }
+  bar?.querySelector('[data-action="bulk-return"]')?.addEventListener('click', async () => {
+    if (_allSelected.size === 0) return;
+    await _bulkReturnLoans([..._allSelected], body);
+  });
+  bar?.querySelector('[data-action="clear-selection"]')?.addEventListener('click', () => {
+    _allSelected.clear();
+    body.querySelectorAll('[data-action="select-row"]').forEach((chk) => { chk.checked = false; });
+    const allChk = $('[data-action="select-all-rows"]', body);
+    if (allChk) allChk.checked = false;
+    _updateBulkBar(body);
+    body.querySelectorAll('.loan__row--selected').forEach((r) => r.classList.remove('loan__row--selected'));
+  });
+}
+
+/**
+ * Opens a confirm modal for bulk-returning multiple loans in one action.
+ * The QM picks a single condition + remarks that apply to all selected loans.
+ */
+async function _bulkReturnLoans(refs, body) {
+  AUTH.requirePermission('return');
+  if (refs.length === 0) return;
+
+  openModal({
+    titleHtml: `Bulk Return — ${refs.length} loan${refs.length === 1 ? '' : 's'}`,
+    size: 'sm',
+    bodyHtml: `
+      <p style="margin:0 0 12px;color:var(--text-secondary);font-size:13px">
+        Return all ${refs.length} selected loan${refs.length === 1 ? '' : 's'} with the same condition and remarks.
+      </p>
+      <label class="form__field">
+        <span class="form__label">Condition on return *</span>
+        <select class="form__select" data-bulk-condition>
+          <option value="serviceable">Serviceable</option>
+          <option value="unserviceable">Unserviceable</option>
+          <option value="write-off">Write-off</option>
+        </select>
+      </label>
+      <label class="form__field" style="margin-top:10px">
+        <span class="form__label">Remarks (optional)</span>
+        <textarea class="form__input" rows="2" data-bulk-remarks placeholder="e.g. End of annual camp"></textarea>
+      </label>
+      <div class="form__error" data-bulk-error role="alert" style="margin-top:8px"></div>
+      <div class="form__actions" style="margin-top:16px">
+        <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
+        <button type="button" class="btn btn--primary" data-action="bulk-confirm">
+          ↩ Return ${refs.length} loan${refs.length === 1 ? '' : 's'}
+        </button>
+      </div>
+    `,
+    async onMount(panel, close) {
+      panel.querySelector('[data-action="bulk-confirm"]')?.addEventListener('click', async () => {
+        const errEl     = panel.querySelector('[data-bulk-error]');
+        const condition = panel.querySelector('[data-bulk-condition]')?.value || 'serviceable';
+        const remarks   = panel.querySelector('[data-bulk-remarks]')?.value   || '';
+
+        const confirmBtn = panel.querySelector('[data-action="bulk-confirm"]');
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Returning…';
+
+        const sessionUser = AUTH.getSession()?.name || 'unknown';
+        const returnDate  = _todayLocalIsoDate();
+        const now         = new Date().toISOString();
+        const needsPrompt = [];
+        let returned      = 0;
+        const errors      = [];
+
+        // Fetch item list once for non-stock NSN matching.
+        const imsItemsList = await Storage.items.list();
+
+        for (const ref of refs) {
+          try {
+            const current = await Storage.loans.get(ref);
+            if (!current) { errors.push(`${ref}: not found`); continue; }
+            if (!current.active) { errors.push(`${ref}: already returned`); continue; }
+
+            if (current.nonStock) {
+              let matched = false;
+              if (current.nsn) {
+                const match = imsItemsList.find((i) => i.nsn === current.nsn);
+                if (match) {
+                  match.onHand = (Number(match.onHand) || 0) + current.qty;
+                  if (match.qtyServiceable != null) {
+                    match.qtyServiceable = (Number(match.qtyServiceable) || 0) + current.qty;
+                  }
+                  match.updatedAt = now;
+                  await Storage.items.put(match);
+                  const idx = imsItemsList.findIndex((i) => i.id === match.id);
+                  if (idx >= 0) imsItemsList[idx] = match;
+                  matched = true;
+                }
+              }
+              if (!matched) needsPrompt.push({ name: current.itemName, nsn: current.nsn || '', qty: current.qty });
+            } else if (current.existingLoan) {
+              const item = await Storage.items.get(current.itemId);
+              if (item) {
+                item.onLoan = Math.max(0, (Number(item.onLoan) || 0) - current.qty);
+                item.onHand = (Number(item.onHand) || 0) + current.qty;
+                if (condition === 'serviceable' && item.qtyServiceable != null) {
+                  item.qtyServiceable = (Number(item.qtyServiceable) || 0) + current.qty;
+                }
+                if (condition === 'unserviceable' || condition === 'write-off') {
+                  item.unsvc = (Number(item.unsvc) || 0) + current.qty;
+                  if (item.qtyUnserviceable != null) {
+                    item.qtyUnserviceable = (Number(item.qtyUnserviceable) || 0) + current.qty;
+                  }
+                }
+                if (condition === 'write-off') item.condition = 'unserviceable';
+                item.updatedAt = now;
+                await Storage.items.put(item);
+              }
+            } else {
+              const item = await Storage.items.get(current.itemId);
+              if (item) {
+                item.onLoan = Math.max(0, (Number(item.onLoan) || 0) - current.qty);
+                if (condition === 'unserviceable' || condition === 'write-off') {
+                  item.unsvc = (Number(item.unsvc) || 0) + current.qty;
+                }
+                if (condition === 'write-off') item.condition = 'unserviceable';
+                item.updatedAt = now;
+                await Storage.items.put(item);
+              }
+            }
+
+            current.active          = false;
+            current.returnDate      = returnDate;
+            current.returnCondition = condition;
+            current.returnRemarks   = remarks;
+            current.returnedBy      = sessionUser;
+            await Storage.loans.put(current);
+
+            await Storage.audit.append({
+              action: 'return',
+              user:   sessionUser,
+              desc:   `${ref}: ${current.itemName} × ${current.qty} returned by ${current.borrowerName} — ${condition} [bulk]`,
+            });
+            returned++;
+          } catch (err) {
+            errors.push(`${ref}: ${err.message}`);
+          }
+        }
+
+        Sync.notifyChanged();
+        _allSelected.clear();
+        close();
+
+        if (errors.length > 0) {
+          showToast(`Returned ${returned}. Errors: ${errors.join('; ')}`, 'error', 8000);
+        } else {
+          showToast(`${returned} loan${returned === 1 ? '' : 's'} returned (${condition}).`, 'success');
+        }
+
+        if (needsPrompt.length > 0) {
+          await _promptAddNonStockToInventory(needsPrompt);
+        } else {
+          await _renderAllTab(body);
+          _wireAllTab(body);
+        }
+      });
+    },
   });
 }
 
