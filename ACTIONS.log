@@ -582,3 +582,50 @@ END OF LOG — append new entries above this line
     • qstore.css — loan__badge--existing, loan__stock-badge--existing,
         loan__line-existing-lbl/hint, loan__line--existing highlight
   Build: 20260520-37AE9E88  |  build clean (browser tests pending)
+
+[2026-05-20T12:44:00Z] GIT COMMIT + PUSH — de057ff -> origin/master
+  feat: AB174 Board of Survey PDF for written-off items
+  Changes:
+    • src/pdf.js — generateBoardOfSurvey(items, opts): A4 army-green header;
+        preamble referencing unit name/code; items table (NSN/nomenclature/qty W/O/
+        condition/reason from item.notes first 20 chars); survey findings block;
+        3 board-member signature blocks; CO approval block; uses _drawHeader/Footer
+        helpers. Filename: AB174_BoardOfSurvey_<unit>_<date>.pdf
+    • src/ui/inventory.js — '⎙ AB174' toolbar button (canEdit only); case 'print-ab174'
+        in _onRootClick; _doPrintAB174() filters items with writtenOff/qtyWrittenOff > 0;
+        toast if no written-off items found
+  Build: 20260520-D80245B4  |  491 tests, 0 failed
+
+[2026-05-20T12:54:00Z] GIT COMMIT + PUSH — 429a291 -> origin/master
+  feat: dark/light/system theme toggle in Settings → Appearance
+  Changes:
+    • src/theme.js (new): applyTheme(theme) sets data-theme on <html> + mirrors to
+        localStorage 'qstore2_theme' for zero-flash on next boot;
+        applyStoredTheme() reads LS synchronously
+    • qstore.css: [data-theme="light"] overrides all colour vars to light palette;
+        [data-theme="system"] + @media prefers-color-scheme: light block respects OS
+    • src/ui/settings.js: _appearanceSectionHtml() + _onThemeChange(); wired in
+        _wireEventListeners(); Appearance section inserted between Loan defaults + Security;
+        imports applyTheme from ../theme.js
+    • src/ui/shell.js: applyStoredTheme() called first in boot(); syncs from IndexedDB
+        after Storage.init(); imports applyTheme + applyStoredTheme from theme.js
+  Build: 20260520-4A3F7860  |  491 tests, 0 failed
+
+[2026-05-20T12:57:00Z] GIT COMMIT + PUSH — d3e86d9 -> origin/master
+  feat: keyboard shortcuts for power users
+  Changes:
+    • src/ui/shortcuts.js (new): global keydown handler; skips if modal open, input
+        focused, or modifier held; / = focus search; n = click add/new; ← → = switch
+        tabs; 1-6 = nav to page; ? = show shortcuts help modal
+    • qstore.css: .scut__table + kbd styles for help overlay
+    • src/ui/shell.js: Shortcuts.mount() after _renderShell; Shortcuts.unmount() on logout
+  Build: 20260520-9D3BFAA6  |  491 tests, 0 failed
+
+[2026-05-20T12:59:00Z] GIT COMMIT + PUSH — 3eadbbc -> origin/master
+  feat: borrower picker shows company/platoon/section in datalist
+  Changes:
+    • src/ui/loans.js — _borrowerPickerHtml: option text (shown in dropdown) gets
+        ' · Coy / Plt / Sec' suffix from cadet fields (company/platoon/section/plt);
+        option value stays 'Rank Surname (svcNo)' so svcNo match logic unchanged;
+        placeholder updated; label updated to mention sub-unit search
+  Build: 20260520-83C741DB  |  33 loans tests passed
