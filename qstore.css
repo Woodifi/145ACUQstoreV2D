@@ -447,11 +447,12 @@ input {
 }
 
 .shell__brand {
-  flex: 1;
+  flex: 0 0 auto;   /* never shrink into the nav — keep its natural width */
   display: flex;
   align-items: center;
   gap: 10px;
   min-width: 0;
+  max-width: 300px; /* cap so it doesn't crowd the nav on narrow windows */
 }
 
 .shell__brand-logo {
@@ -470,6 +471,9 @@ input {
   font-size: 18px;
   font-weight: 600;
   color: var(--gold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .shell__brand-code {
