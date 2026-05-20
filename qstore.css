@@ -2795,9 +2795,9 @@ input {
   font-weight: 400;
 }
 
-/* All-loans tab "Voucher" column — narrow, right-aligned action button. */
+/* All-loans tab action column — contains Quick Return + Voucher + AB189 buttons. */
 .loan__col-actions {
-  width: 90px;
+  width: 180px;
   text-align: right;
   white-space: nowrap;
 }
@@ -6696,4 +6696,81 @@ details[open] > .help__section-summary::after {
 .req__add-line {
   align-self: flex-start;
   font-size: 0.82rem;
+}
+
+/* ── Dashboard: overdue loans detail table ── */
+.dash__section--overdue {
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  background: rgba(220,53,53,0.04);
+}
+
+.dash__section--overdue .dash__section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--danger);
+  border-bottom-color: rgba(220,53,53,0.25);
+}
+
+.dash__overdue-count {
+  background: var(--danger);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 20px;
+  letter-spacing: 0;
+}
+
+.dash__overdue-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+
+.dash__overdue-table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 4px 6px 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.dash__overdue-row td {
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+.dash__overdue-row:last-child td {
+  border-bottom: none;
+}
+
+.dash__overdue-ref {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.dash__overdue-qty,
+.dash__overdue-date,
+.dash__overdue-days {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.dash__overdue-days {
+  font-weight: 600;
+  color: var(--danger);
+}
+
+@media (max-width: 600px) {
+  .dash__overdue-table th:nth-child(1),
+  .dash__overdue-row td:nth-child(1) { display: none; }
 }

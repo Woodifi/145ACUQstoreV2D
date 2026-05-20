@@ -102,6 +102,7 @@ let _activeTab   = null;          // 'issue' | 'return' | 'all'
 let _allFilter   = 'active';      // 'active' | 'returned' | 'overdue' | 'all'
 let _allSearch   = '';
 let _allBorrower = '';            // svcNo of selected borrower, '' = show all
+let _defaultDueDays = 7;          // loaded from settings on each issue-tab render
 
 // Issue-tab transient state — the in-progress batch of lines, plus the
 // borrower selection. Reset on submit or when the user switches away.
@@ -195,6 +196,12 @@ function _wireTopLevelEvents() {
 
 async function _renderIssueTab(body) {
   AUTH.requirePermission('issue');
+
+  // Load the configured default loan duration (days). Falls back to 7 if not set.
+  const dueDaysSetting = await Storage.settings.get('loans.defaultDueDays');
+  _defaultDueDays = (dueDaysSetting != null && !isNaN(parseInt(dueDaysSetting, 10)))
+    ? parseInt(dueDaysSetting, 10)
+    : 7;
 
   const cadets = await Storage.cadets.list();
   const items  = await Storage.items.list();
@@ -1635,6 +1642,13 @@ function _allRowHtml(loan, today, canReturn, dischargedSvcs = new Set()) {
       <td class="loan__date">${loan.longTermLoan ? '<em>Long-term</em>' : esc(loan.dueDate || '')}</td>
       <td>${statusBadge}</td>
       <td class="loan__col-actions">
+        ${canReturn && loan.active ? `
+        <button type="button" class="btn btn--sm btn--primary"
+                data-action="quick-return"
+                data-loan-ref="${esc(loan.ref)}"
+                title="Return this item without navigating to the Return tab">
+          ↩ Return
+        </button>` : ''}
         <button type="button" class="btn btn--sm btn--ghost"
                 data-action="print-row-voucher"
                 data-loan-ref="${esc(loan.ref)}"
@@ -1839,6 +1853,166 @@ function _wireAllTab(body, borrowerOptions = [], phantomBorrowers = []) {
       }
     });
   });
+  // Per-row "Quick Return" buttons — opens a compact return modal without
+  // navigating away from the All Loans tab.
+  $$('[data-action="quick-return"]', body).forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const ref = btn.dataset.loanRef;
+      await _quickReturnLoan(ref, body);
+    });
+  });
+}
+
+// =============================================================================
+// QUICK RETURN
+// =============================================================================
+
+/**
+ * Opens a compact modal that lets the QM return a single loan from the All
+ * Loans tab without navigating to the Return tab. Reuses the same item-update
+ * logic as _submitReturn so stock figures stay consistent.
+ */
+async function _quickReturnLoan(ref, body) {
+  AUTH.requirePermission('return');
+  const loan = await Storage.loans.get(ref);
+  if (!loan) { showToast('Loan not found.', 'error'); return; }
+  if (!loan.active) { showToast('This loan has already been returned.', 'error'); return; }
+
+  openModal({
+    titleHtml: `Quick Return — ${esc(loan.ref)}`,
+    size: 'sm',
+    bodyHtml: `
+      <dl class="loan__detail-dl" style="margin-bottom:16px">
+        <div><dt>Item</dt><dd>${esc(loan.itemName || '—')} × ${loan.qty}</dd></div>
+        <div><dt>Borrower</dt><dd>${esc(loan.borrowerName || '—')}</dd></div>
+        <div><dt>Issued</dt><dd>${esc(loan.issueDate || '—')}</dd></div>
+        ${loan.longTermLoan ? '<div><dt>Due</dt><dd>Long-term</dd></div>' : `<div><dt>Due</dt><dd>${esc(loan.dueDate || '—')}</dd></div>`}
+      </dl>
+      <label class="form__field">
+        <span class="form__label">Condition on return *</span>
+        <select class="form__select" data-qr-condition>
+          <option value="serviceable">Serviceable</option>
+          <option value="unserviceable">Unserviceable</option>
+          <option value="write-off">Write-off</option>
+        </select>
+      </label>
+      <label class="form__field" style="margin-top:10px">
+        <span class="form__label">Remarks</span>
+        <textarea class="form__input" rows="2" data-qr-remarks placeholder="Optional notes…"></textarea>
+      </label>
+      <div class="form__error" data-qr-error role="alert" style="margin-top:8px"></div>
+      <div class="form__actions" style="margin-top:16px">
+        <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
+        <button type="button" class="btn btn--primary" data-action="qr-confirm">↩ Confirm Return</button>
+      </div>
+    `,
+    async onMount(panel, close) {
+      panel.querySelector('[data-action="qr-confirm"]')?.addEventListener('click', async () => {
+        const errEl   = panel.querySelector('[data-qr-error]');
+        const condition = panel.querySelector('[data-qr-condition]')?.value || 'serviceable';
+        const remarks   = panel.querySelector('[data-qr-remarks]')?.value   || '';
+
+        const confirmBtn = panel.querySelector('[data-action="qr-confirm"]');
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Returning…';
+
+        try {
+          // Re-fetch the loan to ensure we have current state.
+          const current = await Storage.loans.get(ref);
+          if (!current || !current.active) {
+            errEl.textContent = 'This loan has already been returned.';
+            return;
+          }
+
+          const sessionUser = AUTH.getSession()?.name || 'unknown';
+          const returnDate  = _todayLocalIsoDate();
+          const now         = new Date().toISOString();
+          const needsPrompt = [];
+
+          if (current.nonStock) {
+            // Non-stock return — try NSN match.
+            let matched = false;
+            if (current.nsn) {
+              const imsItems = await Storage.items.list();
+              const match = imsItems.find((i) => i.nsn === current.nsn);
+              if (match) {
+                match.onHand = (Number(match.onHand) || 0) + current.qty;
+                if (match.qtyServiceable != null) {
+                  match.qtyServiceable = (Number(match.qtyServiceable) || 0) + current.qty;
+                }
+                match.updatedAt = now;
+                await Storage.items.put(match);
+                matched = true;
+                showToast('Non-stock item matched by NSN and added to inventory.', 'success', 5000);
+              }
+            }
+            if (!matched) {
+              needsPrompt.push({ name: current.itemName, nsn: current.nsn || '', qty: current.qty });
+            }
+          } else if (current.existingLoan) {
+            const item = await Storage.items.get(current.itemId);
+            if (item) {
+              item.onLoan = Math.max(0, (Number(item.onLoan) || 0) - current.qty);
+              item.onHand = (Number(item.onHand) || 0) + current.qty;
+              if (condition === 'serviceable' && item.qtyServiceable != null) {
+                item.qtyServiceable = (Number(item.qtyServiceable) || 0) + current.qty;
+              }
+              if (condition === 'unserviceable' || condition === 'write-off') {
+                item.unsvc = (Number(item.unsvc) || 0) + current.qty;
+                if (item.qtyUnserviceable != null) {
+                  item.qtyUnserviceable = (Number(item.qtyUnserviceable) || 0) + current.qty;
+                }
+              }
+              if (condition === 'write-off') item.condition = 'unserviceable';
+              item.updatedAt = now;
+              await Storage.items.put(item);
+              showToast('Existing-loan item returned — On Hand restored.', 'success', 5000);
+            }
+          } else {
+            // Standard return.
+            const item = await Storage.items.get(current.itemId);
+            if (item) {
+              item.onLoan = Math.max(0, (Number(item.onLoan) || 0) - current.qty);
+              if (condition === 'unserviceable' || condition === 'write-off') {
+                item.unsvc = (Number(item.unsvc) || 0) + current.qty;
+              }
+              if (condition === 'write-off') item.condition = 'unserviceable';
+              item.updatedAt = now;
+              await Storage.items.put(item);
+            }
+          }
+
+          current.active          = false;
+          current.returnDate      = returnDate;
+          current.returnCondition = condition;
+          current.returnRemarks   = remarks;
+          current.returnedBy      = sessionUser;
+          await Storage.loans.put(current);
+
+          await Storage.audit.append({
+            action: 'return',
+            user:   sessionUser,
+            desc:   `${ref}: ${current.itemName} × ${current.qty} returned by ${current.borrowerName} — ${condition}${current.nonStock ? ' [non-stock]' : ''}`,
+          });
+
+          Sync.notifyChanged();
+          close();
+
+          if (needsPrompt.length > 0) {
+            await _promptAddNonStockToInventory(needsPrompt);
+          } else {
+            showToast(`${ref} returned (${condition}).`, 'success');
+            await _renderAllTab(body);
+            _wireAllTab(body);
+          }
+        } catch (err) {
+          errEl.textContent = 'Return failed: ' + (err.message || err);
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = '↩ Confirm Return';
+        }
+      });
+    },
+  });
 }
 
 // =============================================================================
@@ -1915,8 +2089,10 @@ function _todayLocalDateOnly() {
 /** Default due date for the issue form: 14 days from today. Arbitrary but
  * sensible for parade-night loans which is the common case. */
 function _defaultDueDate() {
+  // Returns '' if the QM has configured "no default" (0 days).
+  if (_defaultDueDays === 0) return '';
   const d = new Date();
-  d.setDate(d.getDate() + 14);
+  d.setDate(d.getDate() + _defaultDueDays);
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');

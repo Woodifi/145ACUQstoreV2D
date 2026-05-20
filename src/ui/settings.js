@@ -88,6 +88,7 @@ async function _render() {
         ${_unitSectionHtml(settings)}
         ${_structureSectionHtml(unitStructure)}
         ${_categoriesSectionHtml(activeCats)}
+        ${_loanSettingsSectionHtml(settings)}
         ${_recoverySectionHtml(recoveryStatus)}
         ${_securitySectionHtml(settings)}
         ${_cloudSectionHtml(settings, status)}
@@ -953,6 +954,55 @@ function _cloudUnavailableFileProtocolHtml() {
 // Data backup section — manual export/import
 // -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------
+// Loan settings — default due date
+// -----------------------------------------------------------------------------
+
+function _loanSettingsSectionHtml(settings) {
+  const stored = parseInt(settings['loans.defaultDueDays'], 10);
+  // Default: 7 days. 0 means "leave due date blank".
+  const current = isNaN(stored) ? 7 : stored;
+
+  const opts = [
+    { value: 0,   label: 'No default (leave blank)' },
+    { value: 1,   label: 'Next day' },
+    { value: 3,   label: '3 days' },
+    { value: 7,   label: '1 week' },
+    { value: 14,  label: '2 weeks' },
+    { value: 30,  label: '1 month' },
+    { value: 90,  label: '3 months' },
+    { value: 180, label: '6 months' },
+  ].map(({ value, label }) =>
+    `<option value="${value}"${value === current ? ' selected' : ''}>${esc(label)}</option>`
+  ).join('');
+
+  return `
+    <section class="settings__section" data-section="loan-settings">
+      <header class="settings__section-header">
+        <h2 class="settings__section-title">Loan defaults</h2>
+        <p class="settings__section-hint">
+          Pre-fill the due date when issuing items. The QM can always change
+          the date on any individual issue. "Initial Issue" always uses
+          a 6-year return date regardless of this setting.
+        </p>
+      </header>
+
+      <div class="form__row form__row--align-center">
+        <label class="form__label" for="default-due-days-select">Default loan duration</label>
+        <select id="default-due-days-select" class="form__select"
+                data-action="save-default-due-days">
+          ${opts}
+        </select>
+      </div>
+      <p class="form__hint" data-loan-default-hint>
+        ${current === 0
+          ? 'Due date field will start blank — QM must enter it manually.'
+          : `New loans will default to <strong>${current} day${current === 1 ? '' : 's'}</strong> from today.`
+        }
+      </p>
+    </section>
+  `;
+}
+
 // Security section — auto-lock idle timeout
 // -----------------------------------------------------------------------------
 
@@ -1235,6 +1285,29 @@ function _wireEventListeners() {
 
   const idleSelect = $('[data-action="save-idle-timeout"]', _root);
   if (idleSelect) idleSelect.addEventListener('change', _onIdleTimeoutChange);
+
+  const dueDaysSelect = $('[data-action="save-default-due-days"]', _root);
+  if (dueDaysSelect) dueDaysSelect.addEventListener('change', _onDefaultDueDaysChange);
+}
+
+async function _onDefaultDueDaysChange(e) {
+  const select = e.target;
+  const days   = parseInt(select.value, 10);
+  select.disabled = true;
+  try {
+    await Storage.settings.set('loans.defaultDueDays', isNaN(days) ? 7 : days);
+    showToast(
+      days === 0
+        ? 'Default loan duration cleared — due date will start blank.'
+        : `Default loan duration set to ${days} day${days === 1 ? '' : 's'}.`,
+      'success'
+    );
+    await _render();   // refresh hint text
+  } catch (err) {
+    showToast('Failed to save loan default.', 'error');
+  } finally {
+    select.disabled = false;
+  }
 }
 
 async function _onIdleTimeoutChange(e) {

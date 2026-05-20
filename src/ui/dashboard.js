@@ -160,6 +160,49 @@ async function _render() {
         </div>
       </div>
 
+      <!-- ── Overdue loans detail (only when there are some) ── -->
+      ${totalOverdue > 0 ? `
+        <div class="dash__section dash__section--overdue">
+          <h2 class="dash__section-title">
+            Overdue loans
+            <span class="dash__overdue-count">${totalOverdue}</span>
+          </h2>
+          <table class="dash__overdue-table">
+            <thead>
+              <tr>
+                <th>Ref</th>
+                <th>Borrower</th>
+                <th>Item</th>
+                <th>Qty</th>
+                <th>Due</th>
+                <th>Days overdue</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${overdue
+                .sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''))
+                .map(l => {
+                  const dueDt   = new Date(l.dueDate);
+                  const todayDt = new Date(today);
+                  const daysOver = Math.floor((todayDt - dueDt) / 86400000);
+                  return `
+                    <tr class="dash__overdue-row">
+                      <td class="dash__overdue-ref">${esc(l.ref)}</td>
+                      <td>${esc(l.borrowerName || '—')}</td>
+                      <td>${esc(l.itemName || '—')}</td>
+                      <td class="dash__overdue-qty">${l.qty}</td>
+                      <td class="dash__overdue-date">${esc(l.dueDate)}</td>
+                      <td class="dash__overdue-days">${daysOver}d</td>
+                    </tr>`;
+                }).join('')}
+            </tbody>
+          </table>
+          <a href="#" class="dash__link dash__link--more" data-nav="loans">
+            View all loans →
+          </a>
+        </div>
+      ` : ''}
+
       <!-- ── Stocktake status ── -->
       <div class="dash__section">
         <h2 class="dash__section-title">Stocktake</h2>
