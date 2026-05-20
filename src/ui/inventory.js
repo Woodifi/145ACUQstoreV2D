@@ -34,7 +34,7 @@ import * as Storage    from '../storage.js';
 import * as AUTH       from '../auth.js';
 import * as Sync       from '../sync.js';
 import { processItemPhoto } from './photo.js';
-import { generateStockReport, generateQRSheet, downloadPdf } from '../pdf.js';
+import { generateStockReport, generateQRSheet, generateBoardOfSurvey, downloadPdf } from '../pdf.js';
 import { openQRScanModal } from './qr-scan.js';
 import { openKitManager } from './kits.js';
 import { openModal }   from './modal.js';
@@ -218,6 +218,7 @@ async function _render() {
           ${AUTH.can('qr') ? `<button type="button" class="btn btn--ghost" data-action="print-qr" title="Print QR code labels for the currently-shown items">⎙ QR codes</button>` : ''}
           ${AUTH.can('qr') ? `<button type="button" class="btn btn--ghost" data-action="scan-qr" title="Scan a QR code label to look up an item">⌖ Scan</button>` : ''}
           ${canEdit ? `<button type="button" class="btn btn--ghost" data-action="manage-kits" title="Create and manage issue kits">⊞ Kits</button>` : ''}
+          ${canEdit ? `<button type="button" class="btn btn--ghost" data-action="print-ab174" title="Generate AB174 Board of Survey form for all written-off items">⎙ AB174</button>` : ''}
           ${canAdd ? `<button type="button" class="btn btn--primary" data-action="add">+ Add item</button>` : ''}
         </div>
       </header>
@@ -443,6 +444,9 @@ async function _onRootClick(e) {
     case 'print-stock':
       await _doPrintStock(target);
       break;
+    case 'print-ab174':
+      await _doPrintAB174(target);
+      break;
     case 'print-qr':
       await _doPrintQR(target);
       break;
@@ -482,6 +486,26 @@ async function _doPrintStock(button) {
     showToast('Stock report generation failed: ' + (err.message || err), 'error');
   } finally {
     if (button) { button.disabled = false; button.textContent = '⎙ Print stock'; }
+  }
+}
+
+// Generate AB174 Board of Survey form for all items with writtenOff > 0.
+async function _doPrintAB174(button) {
+  if (button) { button.disabled = true; button.textContent = 'Building PDF…'; }
+  try {
+    const allItems = await Storage.items.list();
+    const writtenOffItems = allItems.filter((i) => (Number(i.writtenOff) || Number(i.qtyWrittenOff) || 0) > 0);
+    if (writtenOffItems.length === 0) {
+      showToast('No written-off items found in inventory.', 'info');
+      return;
+    }
+    const unit = await Storage.settings.getAll();
+    const result = await generateBoardOfSurvey(writtenOffItems, { unit });
+    downloadPdf(result);
+  } catch (err) {
+    showToast('AB174 generation failed: ' + (err.message || err), 'error');
+  } finally {
+    if (button) { button.disabled = false; button.textContent = '⎙ AB174'; }
   }
 }
 

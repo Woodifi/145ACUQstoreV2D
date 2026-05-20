@@ -1819,6 +1819,161 @@ export async function generateCadetKitChecklist(loans, opts = {}) {
 
 // -----------------------------------------------------------------------------
 
+/**
+ * Generate an AB174 Board of Survey form for written-off items.
+ *
+ * Lists all inventory items with qtyWrittenOff > 0 (or writtenOff > 0 for
+ * legacy records). Includes NSN, nomenclature, qty written off, condition
+ * at write-off, and free remarks/reason field per item. Signature blocks
+ * for Board members and CO authority.
+ *
+ * @param {object[]} items  Items with writtenOff or qtyWrittenOff > 0.
+ * @param {object}   opts   { unit }
+ */
+export async function generateBoardOfSurvey(items, opts = {}) {
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new Error('generateBoardOfSurvey: no items provided.');
+  }
+  const unit  = opts.unit || {};
+  const today = _todayIsoDate();
+
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  let y = PAGE.MARGIN;
+
+  // ── Army-green header ──
+  y = _drawHeader(doc, y, unit);
+
+  // ── Title band ──
+  doc.setFillColor(...COL.bandFill);
+  doc.rect(PAGE.MARGIN, y, PAGE.CW, 9, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(...COL.armyGreen);
+  doc.text('BOARD OF SURVEY — AB174', PAGE.MARGIN + 2, y + 6);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...COL.txtMuted);
+  doc.text(`Date: ${today}`, PAGE.MARGIN + PAGE.CW, y + 6, { align: 'right' });
+  y += 12;
+
+  // ── Preamble ──
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...COL.txtDark);
+  const preamble = `A Board of Survey was convened to examine the following items of ${unit.unitName || 'the unit'} ` +
+    `(${unit.unitCode || ''}) which have been assessed as beyond economic repair or otherwise requiring formal write-off action.`;
+  doc.text(preamble, PAGE.MARGIN, y, { maxWidth: PAGE.CW });
+  y += 10;
+
+  // ── Items table ──
+  const COL_NUM  = { x: PAGE.MARGIN,       w: 10 };
+  const COL_NSN  = { x: PAGE.MARGIN + 10,  w: 38 };
+  const COL_NAME = { x: PAGE.MARGIN + 48,  w: 68 };
+  const COL_QTY  = { x: PAGE.MARGIN + 116, w: 14 };
+  const COL_COND = { x: PAGE.MARGIN + 130, w: 25 };
+  const COL_REASON = { x: PAGE.MARGIN + 155, w: 25 };
+
+  // Table header
+  doc.setFillColor(...COL.armyGreen);
+  doc.rect(PAGE.MARGIN, y, PAGE.CW, 6, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  doc.setTextColor(255, 255, 255);
+  doc.text('#',        COL_NUM.x + 2,    y + 4);
+  doc.text('NSN',      COL_NSN.x + 1,    y + 4);
+  doc.text('Nomenclature', COL_NAME.x + 1, y + 4);
+  doc.text('Qty W/O',  COL_QTY.x + 1,    y + 4);
+  doc.text('Condition', COL_COND.x + 1,  y + 4);
+  doc.text('Reason',   COL_REASON.x + 1, y + 4);
+  y += 7;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  const ROW_H = 7;
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const woQty = Number(item.qtyWrittenOff || item.writtenOff) || 0;
+    const fill = i % 2 === 0 ? [248, 246, 240] : [255, 255, 255];
+    doc.setFillColor(...fill);
+    doc.rect(PAGE.MARGIN, y, PAGE.CW, ROW_H, 'F');
+    doc.setTextColor(...COL.txtDark);
+    doc.text(String(i + 1), COL_NUM.x + 4,    y + 4.5, { align: 'right' });
+    doc.text(String(item.nsn || '—').slice(0, 18), COL_NSN.x + 1, y + 4.5);
+    doc.text(String(item.name || '—').slice(0, 35), COL_NAME.x + 1, y + 4.5);
+    doc.text(String(woQty), COL_QTY.x + 6, y + 4.5, { align: 'right' });
+    doc.text('Written off', COL_COND.x + 1, y + 4.5);
+    // Reason line (abbreviated from item notes)
+    const reason = String(item.notes || '—').slice(0, 20);
+    doc.text(reason, COL_REASON.x + 1, y + 4.5);
+    doc.setDrawColor(...COL.borderLight);
+    doc.setLineWidth(0.2);
+    doc.line(PAGE.MARGIN, y + ROW_H, PAGE.MARGIN + PAGE.CW, y + ROW_H);
+    y += ROW_H;
+  }
+  y += 4;
+
+  // ── Survey findings / recommendation ──
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(...COL.armyGreen);
+  doc.text('BOARD FINDINGS AND RECOMMENDATION', PAGE.MARGIN, y);
+  y += 5;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...COL.txtDark);
+  const finding = `The Board has examined the above items and finds that they are beyond economic repair. ` +
+    `The Board recommends that the items be struck off charge from the unit\'s Q-store holdings.`;
+  doc.text(finding, PAGE.MARGIN, y, { maxWidth: PAGE.CW });
+  y += 10;
+
+  // ── Signature blocks — Board members ──
+  const SIG_W = (PAGE.CW - 6) / 3;
+  for (let s = 0; s < 3; s++) {
+    const sx = PAGE.MARGIN + s * (SIG_W + 3);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...COL.txtDark);
+    doc.text(`BOARD MEMBER ${s + 1}`, sx, y);
+    doc.setDrawColor(...COL.tan);
+    doc.setLineWidth(0.4);
+    doc.line(sx, y + 12, sx + SIG_W - 2, y + 12);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    doc.setTextColor(...COL.txtMuted);
+    doc.text('Rank / Name / Signature / Date', sx, y + 15);
+  }
+  y += 20;
+
+  // ── CO approval ──
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(...COL.armyGreen);
+  doc.text('COMMANDING OFFICER AUTHORITY', PAGE.MARGIN, y);
+  y += 5;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...COL.txtDark);
+  doc.text('I approve the write-off of the items listed above in accordance with unit regulations.', PAGE.MARGIN, y, { maxWidth: PAGE.CW });
+  y += 8;
+
+  const approxSigW = PAGE.CW / 2 - 5;
+  doc.setDrawColor(...COL.tan);
+  doc.setLineWidth(0.5);
+  doc.line(PAGE.MARGIN, y + 15, PAGE.MARGIN + approxSigW, y + 15);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(...COL.txtMuted);
+  doc.text(`${unit.coName || 'Commanding Officer'} / Date`, PAGE.MARGIN, y + 18);
+
+  _drawFooter(doc);
+
+  const slug = _unitSlug(unit);
+  const filename = `AB174_BoardOfSurvey_${slug}_${today}.pdf`;
+  return _packageResult(doc, filename);
+}
+
+// -----------------------------------------------------------------------------
+
 function _packageResult(doc, filename) {
   const buf = doc.output('arraybuffer');
   const blob = new Blob([buf], { type: 'application/pdf' });
