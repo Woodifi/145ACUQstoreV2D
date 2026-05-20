@@ -8,3 +8,7 @@ node_modules/
 DIST_LOG.md
 MANUAL_ADDENDUM_OWNER.md
 dist/manual-owner.html
+
+# Named distribution builds (recipient-stamped files) — local outputs only
+# dist/qstore.html and docs/index.html are still tracked (standard builds)
+dist/qstore-*-????????.html
