@@ -6882,6 +6882,63 @@ details[open] > .help__section-summary::after {
   .dash__overdue-row td:nth-child(1) { display: none; }
 }
 
+/* ── Inventory maintenance / notes log modal ── */
+.inv__mlog {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.inv__mlog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.inv__mlog-entry {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+}
+
+.inv__mlog-ts {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: block;
+  margin-bottom: 2px;
+}
+
+.inv__mlog-user {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  float: right;
+  margin-top: -18px;
+}
+
+.inv__mlog-note {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.inv__mlog-empty {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 13px;
+}
+
+.inv__mlog-form {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
 /* ── Cadet equipment profile modal ── */
 .cad__eq-profile {
   overflow-x: auto;

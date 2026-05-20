@@ -60,6 +60,9 @@ const ACTION_LABELS = Object.freeze({
   logout:                  'Logout',
   login_failed:            'Login failed',
   session_unlock:          'Session unlocked',
+  item_note:               'Item note added',
+  loans_cleanup:           'Phantom loan records removed',
+  stocktake_finalise:      'Stocktake finalised',
 });
 
 // Action → CSS modifier. Categorises actions broadly: success / mutation /
@@ -87,6 +90,9 @@ const ACTION_CATEGORY = Object.freeze({
   logout:                  'auth',
   login_failed:            'failure',
   session_unlock:          'auth',
+  item_note:               'mutation',
+  loans_cleanup:           'mutation',
+  stocktake_finalise:      'mutation',
 });
 
 // -----------------------------------------------------------------------------

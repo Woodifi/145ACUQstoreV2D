@@ -321,12 +321,16 @@ function _itemRowHtml(item, photoUrl, { canEdit, canDel }) {
                data-action="photo" data-item-id="${esc(item.id)}"
                title="Click to upload photo">📷</button>`;
 
+  const mlogCount = Array.isArray(item.maintenanceLogs) ? item.maintenanceLogs.length : 0;
   const actionsCell = `
     <td class="inv__col-actions">
       <div class="inv__row-actions">
         <button type="button" class="btn btn--sm btn--ghost"
                 data-action="history" data-item-id="${esc(item.id)}"
                 title="View loan history for this item">History</button>
+        <button type="button" class="btn btn--sm btn--ghost"
+                data-action="maint-log" data-item-id="${esc(item.id)}"
+                title="View / add maintenance notes">${mlogCount > 0 ? `Notes (${mlogCount})` : 'Notes'}</button>
         ${canEdit ? `<button type="button" class="btn btn--sm btn--ghost"
                               data-action="edit" data-item-id="${esc(item.id)}">Edit</button>` : ''}
         ${canDel  ? `<button type="button" class="btn btn--sm btn--danger"
@@ -418,6 +422,9 @@ async function _onRootClick(e) {
       break;
     case 'history':
       if (itemId) await _openHistoryModal(itemId);
+      break;
+    case 'maint-log':
+      if (itemId) await _openMaintLogModal(itemId);
       break;
     case 'edit':
       if (AUTH.can('editItem') && itemId) await _openEditModal(itemId);
@@ -606,6 +613,114 @@ function _fmtDateAU(iso) {
   const d = new Date(iso);
   if (isNaN(d)) return iso;
   return d.toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function _fmtDateTimeAU(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleString('en-AU', {
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
+}
+
+// -----------------------------------------------------------------------------
+// Maintenance / notes log modal
+// -----------------------------------------------------------------------------
+// Provides a timestamped free-text log per item. Entries are stored as
+// `item.maintenanceLogs = [{ ts, user, note }, ...]` (appended, never deleted).
+// The log is purely informational — no stock impact. Useful for servicing,
+// calibration reminders, or QM notes about an item's physical state.
+
+async function _openMaintLogModal(itemId) {
+  const item = await Storage.items.get(itemId);
+  if (!item) return;
+
+  const logs = Array.isArray(item.maintenanceLogs) ? item.maintenanceLogs : [];
+
+  const _renderLogs = (entries) => entries.length === 0
+    ? `<p class="inv__mlog-empty">No notes yet. Add the first one below.</p>`
+    : `<div class="inv__mlog-list">
+        ${entries.slice().reverse().map((e) => `
+          <div class="inv__mlog-entry">
+            <span class="inv__mlog-ts">${esc(_fmtDateTimeAU(e.ts))}</span>
+            <span class="inv__mlog-user">${esc(e.user || '—')}</span>
+            <p class="inv__mlog-note">${esc(e.note)}</p>
+          </div>`).join('')}
+       </div>`;
+
+  openModal({
+    titleHtml: `Maintenance notes — ${esc(item.name || itemId)}`,
+    size: 'md',
+    bodyHtml: `
+      <div class="inv__mlog" data-mlog-itemid="${esc(itemId)}">
+        <div data-mlog-list>
+          ${_renderLogs(logs)}
+        </div>
+        <div class="inv__mlog-form">
+          <label class="form__field">
+            <span class="form__label">Add note</span>
+            <textarea class="form__input" rows="3" data-mlog-input
+                      placeholder="e.g. Sent for calibration 2026-05-20, due back 2026-06-10"></textarea>
+          </label>
+          <div class="form__error" data-mlog-error role="alert"></div>
+          <div class="form__actions" style="margin-top:8px">
+            <button type="button" class="btn btn--primary" data-action="mlog-save">
+              + Add note
+            </button>
+          </div>
+        </div>
+      </div>
+    `,
+    async onMount(panel) {
+      panel.querySelector('[data-action="mlog-save"]')?.addEventListener('click', async () => {
+        const textarea = panel.querySelector('[data-mlog-input]');
+        const errEl    = panel.querySelector('[data-mlog-error]');
+        const note     = (textarea?.value || '').trim();
+        if (!note) { errEl.textContent = 'Note cannot be empty.'; return; }
+        errEl.textContent = '';
+
+        const saveBtn = panel.querySelector('[data-action="mlog-save"]');
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Saving…';
+
+        try {
+          // Re-fetch the item to avoid overwriting concurrent changes.
+          const current = await Storage.items.get(itemId);
+          if (!current) throw new Error('Item no longer exists.');
+          const existing = Array.isArray(current.maintenanceLogs) ? current.maintenanceLogs : [];
+          const entry = {
+            ts:   new Date().toISOString(),
+            user: AUTH.getSession()?.name || 'unknown',
+            note,
+          };
+          current.maintenanceLogs = [...existing, entry];
+          current.updatedAt = entry.ts;
+          await Storage.items.put(current);
+          await Storage.audit.append({
+            action: 'item_note',
+            user:   entry.user,
+            desc:   `Note added to "${current.name}" (${current.nsn}): ${note.slice(0, 100)}${note.length > 100 ? '…' : ''}`,
+          });
+          Sync.notifyChanged();
+
+          // Refresh the log display in-place without closing the modal.
+          textarea.value = '';
+          const listEl = panel.querySelector('[data-mlog-list]');
+          if (listEl) listEl.innerHTML = _renderLogs(current.maintenanceLogs);
+
+          // Refresh the Notes button count in the main list.
+          await _render();
+        } catch (err) {
+          errEl.textContent = 'Failed to save: ' + (err.message || err);
+        } finally {
+          saveBtn.disabled = false;
+          saveBtn.textContent = '+ Add note';
+        }
+      });
+    },
+  });
 }
 
 async function _openEditModal(itemId) {
