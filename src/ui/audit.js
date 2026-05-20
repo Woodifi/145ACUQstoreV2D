@@ -96,6 +96,8 @@ const ACTION_CATEGORY = Object.freeze({
 let _root          = null;
 let _filter        = 'all';        // action key or 'all'
 let _search        = '';
+let _dateFrom      = '';           // 'YYYY-MM-DD' or '' (no lower bound)
+let _dateTo        = '';           // 'YYYY-MM-DD' or '' (no upper bound)
 let _renderLimit   = PAGE_SIZE;    // pagination cursor — grows on "Load more"
 let _verifyState   = null;         // { ok, count, brokenAt?, reason? } | null
 let _filteredRows  = [];           // current filtered set — used by export
@@ -109,6 +111,8 @@ export async function mount(rootEl) {
   _root        = rootEl;
   _filter      = 'all';
   _search      = '';
+  _dateFrom    = '';
+  _dateTo      = '';
   _renderLimit = PAGE_SIZE;
   _verifyState = null;
   await _render();
@@ -146,6 +150,14 @@ async function _render() {
       (r.user   || '').toLowerCase().includes(q) ||
       (r.action || '').toLowerCase().includes(q));
   }
+  // Date range filter — compare the ISO timestamp prefix (YYYY-MM-DD) against
+  // the configured from/to dates (inclusive on both ends).
+  if (_dateFrom) {
+    filtered = filtered.filter((r) => r.ts && r.ts.slice(0, 10) >= _dateFrom);
+  }
+  if (_dateTo) {
+    filtered = filtered.filter((r) => r.ts && r.ts.slice(0, 10) <= _dateTo);
+  }
   _filteredRows     = filtered;          // stash for export
   const filteredLen = filtered.length;
   const visible     = filtered.slice(0, _renderLimit);
@@ -165,6 +177,18 @@ async function _render() {
               `<option value="${esc(a)}" ${a === _filter ? 'selected' : ''}>${esc(ACTION_LABELS[a] || a)}</option>`
             ).join('')}
           </select>
+          <div class="aud__date-range" title="Filter by date range">
+            <label class="aud__date-label" for="aud-date-from">From</label>
+            <input type="date" id="aud-date-from" class="aud__date-input"
+                   value="${esc(_dateFrom)}" aria-label="From date">
+            <label class="aud__date-label" for="aud-date-to">To</label>
+            <input type="date" id="aud-date-to" class="aud__date-input"
+                   value="${esc(_dateTo)}" aria-label="To date">
+            ${(_dateFrom || _dateTo) ? `
+              <button type="button" class="btn btn--ghost btn--sm aud__date-clear"
+                      data-action="clear-date-range" title="Clear date filter">✕</button>
+            ` : ''}
+          </div>
         </div>
         <div class="aud__actions">
           <button type="button" class="btn btn--ghost" data-action="export-csv"
@@ -185,7 +209,7 @@ async function _render() {
 
       <div class="aud__meta">
         ${filteredLen} ${filteredLen === 1 ? 'entry' : 'entries'} match
-        ${(_filter !== 'all' || _search) && totalCount !== filteredLen
+        ${(_filter !== 'all' || _search || _dateFrom || _dateTo) && totalCount !== filteredLen
           ? `<span class="aud__meta-of"> of ${totalCount} total</span>`
           : ''}
       </div>
@@ -287,6 +311,16 @@ function _wireEventListeners() {
     _renderLimit = PAGE_SIZE;
     _render();
   });
+  $('#aud-date-from', _root)?.addEventListener('change', (e) => {
+    _dateFrom = e.target.value;
+    _renderLimit = PAGE_SIZE;
+    _render();
+  });
+  $('#aud-date-to', _root)?.addEventListener('change', (e) => {
+    _dateTo = e.target.value;
+    _renderLimit = PAGE_SIZE;
+    _render();
+  });
   _root.addEventListener('click', _onRootClick);
 }
 
@@ -294,10 +328,16 @@ async function _onRootClick(e) {
   const action = e.target.closest('[data-action]')?.dataset.action;
   if (!action) return;
   switch (action) {
-    case 'export-csv':   await _doExportCsv(); break;
-    case 'export-json':  await _doExportJson(); break;
-    case 'verify-chain': await _doVerify(e.target.closest('button')); break;
-    case 'load-more':    _renderLimit += PAGE_SIZE; await _render(); break;
+    case 'export-csv':      await _doExportCsv(); break;
+    case 'export-json':     await _doExportJson(); break;
+    case 'verify-chain':    await _doVerify(e.target.closest('button')); break;
+    case 'load-more':       _renderLimit += PAGE_SIZE; await _render(); break;
+    case 'clear-date-range':
+      _dateFrom = '';
+      _dateTo   = '';
+      _renderLimit = PAGE_SIZE;
+      await _render();
+      break;
   }
 }
 

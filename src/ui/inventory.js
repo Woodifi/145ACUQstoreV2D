@@ -289,6 +289,15 @@ function _itemRowHtml(item, photoUrl, { canEdit, canDel }) {
   const pct = authQty > 0 ? Math.min(100, Math.round((onHand / authQty) * 100)) : 0;
   const fillClass = pct < 50 ? 'is-low' : pct < 75 ? 'is-mid' : '';
 
+  // Low-stock / zero-stock indicator. Only shown when an auth qty is set.
+  const isZeroStock = authQty > 0 && onHand === 0;
+  const isLowStock  = authQty > 0 && !isZeroStock && onHand < Math.ceil(authQty * 0.25);
+  const stockBadge  = isZeroStock
+    ? `<span class="inv__stock-badge inv__stock-badge--zero" title="No stock on hand">Zero stock</span>`
+    : isLowStock
+      ? `<span class="inv__stock-badge inv__stock-badge--low" title="Below 25% of authorised qty">Low stock</span>`
+      : '';
+
   // Badge derivation: blends the line-level `condition` flag with the
   // numeric `unsvc`/`onHand` counts so that bumping just the Unsvc count
   // surfaces visually. Without this, a line with onHand=2/unsvc=2 and
@@ -326,11 +335,11 @@ function _itemRowHtml(item, photoUrl, { canEdit, canDel }) {
     </td>`;
 
   return `
-    <tr class="inv__row">
+    <tr class="inv__row ${isZeroStock ? 'inv__row--zero-stock' : isLowStock ? 'inv__row--low-stock' : ''}">
       <td class="inv__col-nsn"><span class="inv__nsn">${esc(item.nsn || '—')}</span></td>
       <td class="inv__col-photo">${photoCell}</td>
       <td class="inv__col-name">
-        <div class="inv__name">${esc(item.name || '')}</div>
+        <div class="inv__name">${esc(item.name || '')}${stockBadge}</div>
         ${item.notes ? `<div class="inv__notes">${esc(item.notes)}</div>` : ''}
       </td>
       <td class="inv__col-cat">${esc(item.cat || '—')}</td>
@@ -720,16 +729,31 @@ async function _openItemFormModal({ mode, item }) {
         </div>
       </form>
     `,
-    onMount(panel, close) {
+    async onMount(panel, close) {
       const form = $('form[data-form="item"]', panel);
       const errEl = $('.form__error', panel);
       const nsnInput = $('input[name="nsn"]', panel);
       const nsnHint  = $('[data-hint="nsn"]', panel);
 
-      // Live NSN format hint.
+      // Pre-load the item list once for duplicate NSN checks.
+      let allItems = [];
+      try { allItems = await Storage.items.list(); } catch (_) { /* non-fatal */ }
+
+      // Live NSN format hint + duplicate detection.
       const updateNsnHint = () => {
         const v = nsnInput.value.trim();
-        if (!v) { nsnHint.textContent = ''; return; }
+        if (!v) { nsnHint.textContent = ''; nsnHint.className = 'form__hint'; return; }
+
+        // Duplicate check — ignore the item being edited (same id).
+        const dupe = allItems.find(
+          (i) => i.nsn === v && (!isEdit || i.id !== item?.id)
+        );
+        if (dupe) {
+          nsnHint.textContent = `⚠ Duplicate NSN — already used by "${dupe.name}"`;
+          nsnHint.className = 'form__hint is-warn';
+          return;
+        }
+
         nsnHint.textContent = NSN_PATTERN.test(v)
           ? '✓ Standard format'
           : 'Non-standard format (will be accepted as a local NSN)';
@@ -840,6 +864,13 @@ function _readNonNegInt(fd, key, label) {
 }
 
 async function _saveAdd(data) {
+  // Guard against duplicate NSNs — a second click or a race condition could
+  // slip through the live hint. Throw so the form shows an inline error.
+  const existing = await Storage.items.list();
+  const dupe = existing.find((i) => i.nsn === data.nsn);
+  if (dupe) {
+    throw new Error(`NSN ${data.nsn} is already in the inventory ("${dupe.name}"). Edit that item instead.`);
+  }
   const id = 'I' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   const item = {
     id,
