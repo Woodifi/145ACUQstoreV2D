@@ -629,3 +629,33 @@ END OF LOG — append new entries above this line
         option value stays 'Rank Surname (svcNo)' so svcNo match logic unchanged;
         placeholder updated; label updated to mention sub-unit search
   Build: 20260520-83C741DB  |  33 loans tests passed
+
+[2026-05-21] FIX — repair broken ctc-issue handler in src/ui/requests.js
+  • Template literal mangling from prior session left `const reqId = ;` and empty
+    string expressions throughout the bulk-copy submit handler
+  • Rewrote all broken expressions using string concatenation (avoids shell substitution)
+  • Bulk copy now creates PENDING requests only: status='pending', no loans, no loanRefs
+  • Notes field records source request ID ('Copied from request REQ-XXXX')
+  • Audit action: 'request_submitted'; toast directs QM to Pending tab
+  • _revertAutoIssuedRequests() migration (added prior session) remains intact
+  Build: 20260520-1B40533E  |  53/53 tests passed  |  commit b2b5979 → pushed
+
+[2026-05-21] FEAT — Editable Issue Items modal + bug fixes (commit 268ee38)
+  • Replaced auto-issue in _handleApproveAndIssue with a reviewed modal
+  • Modal shows editable table: description (inventory datalist), NSN, Qty Req'd, Qty Issue, Status
+  • Per-line Status dropdown: Issue / Loan (prior issue) / Backorder / Unavailable
+    – Issue: standard loan record, onLoan++
+    – Loan: existingLoan=true (prior issue not in system), onLoan++
+    – Backorder / Unavailable: no loan record; reason noted in decisionNote
+  • NSN auto-fill when description matches an inventory item name
+  • Qty Issued editable (defaults to requested qty); zero-qty silently skips line
+  • qtyIssued + lineAction saved back to request record for re-open consistency
+  • Issue Notes field: appended to each loan remark
+  • Toast summarises items issued / backordered / unavailable / errors
+  BUG FIXES:
+  • AbortController on _mountPending prevents duplicate click handlers accumulating
+    across re-renders (was root cause of phantom modal/add-cadet popups)
+  • _mountPending re-fetches request live from DB (was closing over stale array)
+  • _filterStatus is module-level — filter selection persists across tab switches
+  • mount() resets _filterStatus and _pendingAbort on fresh page load
+  Build: 20260521-06D18A97  |  53/53 tests passed

@@ -205,9 +205,9 @@ async function _renderIssueTab(body) {
     ? parseInt(dueDaysSetting, 10)
     : 7;
 
-  const cadets = await Storage.cadets.list();
+  const [cadets, staffList] = await Promise.all([Storage.cadets.list(), Storage.staff.list()]);
   const items  = await Storage.items.list();
-  const activeCadets = cadets.filter((c) => c.active !== false);
+  const activeCadets = [...cadets.filter((c) => c.active !== false), ...staffList.filter((s) => s.active !== false)];
 
   // Resolve the currently-selected borrower (if any) so we can show their
   // name and any existing active loans alongside the form.
@@ -954,17 +954,18 @@ async function _submitIssue(body) {
 async function _renderReturnTab(body) {
   AUTH.requirePermission('return');
 
-  const cadets = await Storage.cadets.list();
+  const [cadets, staffList] = await Promise.all([Storage.cadets.list(), Storage.staff.list()]);
+  const allPersonnel = [...cadets, ...staffList];
 
-  // Borrowers shown in the picker = cadets with at least one active loan.
-  // Walking listForCadet for every cadet would be O(N) queries; faster
+  // Borrowers shown in the picker = cadets/staff with at least one active loan.
+  // Walking listForCadet for every person would be O(N) queries; faster
   // to fetch all loans once and group.
   const allLoans    = await Storage.loans.list();
   const activeLoans = allLoans.filter((l) => l.active === true);
   const svcsWithLoans = new Set(activeLoans.map((l) => l.borrowerSvc));
 
-  // Eligible cadets: those with at least one active loan.
-  const eligibleCadets = cadets.filter((c) => svcsWithLoans.has(c.svcNo));
+  // Eligible borrowers: cadets/staff with at least one active loan.
+  const eligibleCadets = allPersonnel.filter((c) => svcsWithLoans.has(c.svcNo));
 
   // Virtual "borrower" entry for unit/activity loans (borrowerSvc = UNIT-LOAN).
   const hasUnitLoans = activeLoans.some((l) => l.borrowerSvc === 'UNIT-LOAN');
@@ -980,7 +981,7 @@ async function _renderReturnTab(body) {
 
   const isUnitLoanView = _returnState.svcNo === 'UNIT-LOAN';
   const borrower = (!isUnitLoanView && _returnState.svcNo)
-    ? cadets.find((c) => c.svcNo === _returnState.svcNo) || null
+    ? allPersonnel.find((c) => c.svcNo === _returnState.svcNo) || null
     : null;
   const borrowerLoans = _returnState.svcNo
     ? activeLoans.filter((l) => l.borrowerSvc === _returnState.svcNo)
@@ -1398,10 +1399,12 @@ async function _promptAddNonStockToInventory(candidates) {
 async function _renderAllTab(body) {
   AUTH.requirePermission('view');
 
-  const [all, cadets] = await Promise.all([
+  const [all, cadets, staffList] = await Promise.all([
     Storage.loans.list(),
     Storage.cadets.list(),
+    Storage.staff.list(),
   ]);
+  const allPersonnelHist = [...cadets, ...staffList];
   const today = _todayLocalIsoDate();
 
   // Build a sorted list of borrowers who have at least one loan record,
@@ -1413,9 +1416,9 @@ async function _renderAllTab(body) {
       borrowerMap.set(l.borrowerSvc, l.borrowerName || l.borrowerSvc);
     }
   });
-  // Enrich with live cadet records where possible (rank may have changed).
-  const cadetSvcSet = new Set(cadets.map((c) => c.svcNo));
-  cadets.forEach((c) => {
+  // Enrich with live personnel records where possible (rank may have changed).
+  const cadetSvcSet = new Set(allPersonnelHist.map((c) => c.svcNo));
+  allPersonnelHist.forEach((c) => {
     if (borrowerMap.has(c.svcNo)) {
       borrowerMap.set(c.svcNo, `${c.rank || ''} ${c.surname || ''} ${c.firstName ? c.firstName.charAt(0) + '.' : ''}`.trim());
     }

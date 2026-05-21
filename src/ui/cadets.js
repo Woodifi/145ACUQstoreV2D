@@ -205,6 +205,8 @@ async function _render() {
         <div class="cad__actions">
           <button type="button" class="btn btn--ghost" data-action="print-roll"
                   title="Print the currently-shown nominal roll">⎙ Print roll</button>
+          <button type="button" class="btn btn--ghost" data-action="batch-checklists"
+                  title="Print kit checklist PDFs for all visible cadets with active loans">⎙ Batch checklists</button>
           ${canManage ? `
             <button type="button" class="btn btn--ghost" data-action="import-csv"
                     title="Import cadets from a CSV nominal roll">⇪ Import CSV</button>
@@ -411,7 +413,8 @@ async function _onRootClick(e) {
       _showInactive = false;
       await _render();
       break;
-    case 'print-roll': await _doPrintRoll(e.target.closest('button')); break;
+    case 'print-roll':       await _doPrintRoll(e.target.closest('button')); break;
+    case 'batch-checklists': await _doPrintBatchKitChecklists(e.target.closest('button')); break;
   }
 }
 
@@ -474,6 +477,65 @@ async function _doPrintRoll(button) {
     showToast('Roll generation failed: ' + (err.message || err), 'error');
   } finally {
     if (button) { button.disabled = false; button.textContent = '⎙ Print roll'; }
+  }
+}
+
+/**
+ * Batch kit checklists — generates one PDF per cadet visible in the current
+ * filtered view who has at least one active loan. Downloads all in sequence.
+ */
+async function _doPrintBatchKitChecklists(button) {
+  if (button) { button.disabled = true; button.textContent = 'Building PDFs…'; }
+  try {
+    const all      = await Storage.cadets.list();
+    const useStruct = _structure.length > 0;
+    const term     = _searchTerm.trim().toLowerCase();
+
+    const comparator = useStruct
+      ? Structure.makeComparator(_structure, compareRanks)
+      : (a, b) => compareRanks(a.rank, b.rank) || (a.surname || '').localeCompare(b.surname || '');
+
+    const filtered = all.filter((c) => {
+      if (!_showInactive && c.active === false) return false;
+      if (useStruct) {
+        if (_coFilter     && (c.company  || '') !== _coFilter)     return false;
+        if (_pltFilterStr && (c.platoon  || c.plt || '') !== _pltFilterStr) return false;
+        if (_secFilter    && (c.section  || '') !== _secFilter)    return false;
+      } else {
+        if (_pltFilter && (c.plt || '') !== _pltFilter) return false;
+      }
+      if (term) {
+        const hay = [c.surname, c.given, c.svcNo, c.rank, c.plt].join(' ').toLowerCase();
+        if (!hay.includes(term)) return false;
+      }
+      return true;
+    });
+    filtered.sort(comparator);
+
+    const settings = await Storage.settings.getAll();
+    let generated  = 0;
+    for (const cadet of filtered) {
+      const allLoans    = await Storage.loans.listForCadet(cadet.svcNo);
+      const activeLoans = allLoans.filter((l) => l.active !== false);
+      if (activeLoans.length === 0) continue;
+      const result = await generateCadetKitChecklist(activeLoans, { cadet, unit: settings });
+      downloadPdf(result);
+      generated++;
+    }
+    if (generated === 0) {
+      showToast('No cadets in the current view have active loans.', 'warn');
+      return;
+    }
+    await Storage.audit.append({
+      action: 'pdf_kit_checklist_batch',
+      user:   AUTH.getSession()?.name || 'unknown',
+      desc:   `Batch kit checklist PDFs generated — ${generated} cadet${generated === 1 ? '' : 's'} with active loans`,
+    });
+    showToast(`${generated} kit checklist${generated === 1 ? '' : 's'} downloaded.`, 'success');
+  } catch (err) {
+    showToast('Batch checklist failed: ' + (err.message || err), 'error');
+  } finally {
+    if (button) { button.disabled = false; button.textContent = '⎙ Batch checklists'; }
   }
 }
 

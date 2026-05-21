@@ -37,25 +37,29 @@ import * as Settings  from './settings.js';
 import * as Help      from './help.js';
 import * as Orders    from './orders.js';
 import * as Requests  from './requests.js';
-import * as Reference from './reference.js';
+import * as Reference  from './reference.js';
+import * as Staff      from './staff.js';
+import * as ImsReports from './ims-reports.js';
 import { openModal }  from './modal.js';
 import { esc, $, render } from './util.js';
 import { applyStoredTheme, applyTheme } from '../theme.js';
 import * as Shortcuts from './shortcuts.js';
 
 const PAGES = {
-  dashboard: { label: 'Home',      perm: 'view',     mount: Dashboard.mount },
-  inventory: { label: 'Inventory', perm: 'view',     mount: Inventory.mount },
-  loans:     { label: 'Loans',     perm: 'view',     mount: Loans.mount     },
-  cadets:    { label: 'Cadets',    perm: 'view',     mount: Cadets.mount    },
-  stocktake: { label: 'Stocktake', perm: 'editItem',     mount: Stocktake.mount  },
-  orders:    { label: 'Orders',    perm: 'editItem',     mount: Orders.mount     },
-  requests:  { label: 'Requests',  perm: 'requestIssue', mount: Requests.mount   },
-  audit:     { label: 'Audit',     perm: 'audit',        mount: Audit.mount      },
-  users:     { label: 'Users',     coOnly: true,     mount: Users.mount     },
-  settings:  { label: 'Settings',  coOnly: true,     mount: Settings.mount  },
-  reference: { label: 'Reference',  perm: 'view',     mount: Reference.mount },
-  help:      { label: 'Help',      perm: 'view',     mount: Help.mount      },
+  dashboard:  { label: 'Home',      perm: 'view',         mount: Dashboard.mount  },
+  inventory:  { label: 'Inventory', perm: 'view',         mount: Inventory.mount  },
+  loans:      { label: 'Loans',     perm: 'view',         mount: Loans.mount      },
+  cadets:     { label: 'Cadets',    perm: 'view',         mount: Cadets.mount     },
+  staff:      { label: 'Staff',     perm: 'view',         mount: Staff.mount      },
+  stocktake:  { label: 'Stocktake', perm: 'editItem',     mount: Stocktake.mount  },
+  orders:     { label: 'Orders',    perm: 'editItem',     mount: Orders.mount     },
+  requests:   { label: 'Requests',  perm: 'requestIssue', mount: Requests.mount   },
+  reports:    { label: 'Reports',   perm: 'audit',        mount: ImsReports.mount },
+  audit:      { label: 'Audit',     perm: 'audit',        mount: Audit.mount      },
+  users:      { label: 'Users',     coOnly: true,         mount: Users.mount      },
+  settings:   { label: 'Settings',  coOnly: true,         mount: Settings.mount   },
+  reference:  { label: 'Reference', perm: 'view',         mount: Reference.mount  },
+  help:       { label: 'Help',      perm: 'view',         mount: Help.mount       },
 };
 
 const DEFAULT_PAGE = 'dashboard';
