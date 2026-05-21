@@ -672,6 +672,7 @@ async function _doFinalise(matches, overs, shorts, itemsById) {
   const finalisedAt = new Date().toISOString();
   const reportRows  = [];
   let totalWriteOffs = 0;
+  const updatedItems = []; // collected for atomic finalise write
 
   // 1. Apply each counted item: update onHand, unsvc, writtenOff + condition.
   for (const { item, stk, v } of [...matches, ...overs, ...shorts]) {
@@ -707,7 +708,7 @@ async function _doFinalise(matches, overs, shorts, itemsById) {
       lastStocktakeAt:   finalisedAt,
       updatedAt:         finalisedAt,
     };
-    await Storage.items.put(updated);
+    updatedItems.push(updated); // deferred — written atomically with stocktake.clear below
 
     // Audit per-discrepancy. Matches rolled up in summary.
     const variance = total - (Number(item.onHand) || 0);
@@ -758,8 +759,8 @@ async function _doFinalise(matches, overs, shorts, itemsById) {
             (totalWriteOffs > 0 ? `, ${totalWriteOffs} write-off item${totalWriteOffs === 1 ? '' : 's'} recorded` : '') + '.',
   });
 
-  // 3. Clear the draft.
-  await Storage.stocktake.clear();
+  // 3. Atomically write all updated items + clear the draft in one IDB transaction.
+  await Storage.atomic.stocktakeFinalise(updatedItems);
   _countsByItem.clear();
 
   Sync.notifyChanged();

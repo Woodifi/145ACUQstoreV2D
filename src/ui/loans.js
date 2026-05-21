@@ -819,8 +819,7 @@ async function _submitIssue(body) {
         if (!fresh) throw new Error(`"${item.name}" was deleted during issue.`);
         // Increment onLoan only — onHand is unchanged.
         fresh.onLoan = (Number(fresh.onLoan) || 0) + qty;
-        await Storage.items.put(fresh);
-        await Storage.loans.put(loan);
+        await Storage.atomic.issue(loan, fresh);
         await Storage.audit.append({
           action: 'issue',
           user:   sessionUser,
@@ -864,9 +863,7 @@ async function _submitIssue(body) {
           throw new Error(`Only ${freshAvail} of "${item.name}" are now available — the form was open while stock changed. Please reduce the quantity and try again.`);
         }
         fresh.onLoan = (Number(fresh.onLoan) || 0) + qty;
-        await Storage.items.put(fresh);
-
-        await Storage.loans.put(loan);
+        await Storage.atomic.issue(loan, fresh);
         await Storage.audit.append({
           action: 'issue',
           user:   sessionUser,
@@ -1140,6 +1137,10 @@ async function _submitReturn(body) {
       if (!loan) { errors.push(`${ref}: no longer exists`); continue; }
       if (!loan.active) { errors.push(`${ref}: already returned`); continue; }
 
+      // _updatedItem collects any item record that must be co-written with
+      // the loan in one IDB transaction (prevents partial-write corruption).
+      let _updatedItem = null;
+
       if (loan.nonStock) {
         // Non-stock return — try to match by NSN.
         let matched = false;
@@ -1151,7 +1152,7 @@ async function _submitReturn(body) {
               match.qtyServiceable = (Number(match.qtyServiceable) || 0) + loan.qty;
             }
             match.updatedAt = now;
-            await Storage.items.put(match);
+            _updatedItem = match; // deferred — written atomically with loan below
             // Update our local list so duplicate NSNs in the same batch are
             // also caught correctly without re-querying.
             const idx = imsItemsList.findIndex((i) => i.id === match.id);
@@ -1187,7 +1188,7 @@ async function _submitReturn(body) {
             item.condition = 'unserviceable';
           }
           item.updatedAt = now;
-          await Storage.items.put(item);
+          _updatedItem = item; // deferred — written atomically with loan below
           stockRestored++;
         }
       } else {
@@ -1202,7 +1203,7 @@ async function _submitReturn(body) {
             item.condition = 'unserviceable';
           }
           item.updatedAt = now;
-          await Storage.items.put(item);
+          _updatedItem = item; // deferred — written atomically with loan below
         }
       }
 
@@ -1211,7 +1212,12 @@ async function _submitReturn(body) {
       loan.returnCondition = condition;
       loan.returnRemarks   = remarks;
       loan.returnedBy      = sessionUser;
-      await Storage.loans.put(loan);
+      // Write loan + item change in one IDB transaction where possible.
+      if (_updatedItem) {
+        await Storage.atomic.return(loan, _updatedItem);
+      } else {
+        await Storage.loans.put(loan);
+      }
 
       await Storage.audit.append({
         action: 'return',
@@ -2201,6 +2207,10 @@ async function _quickReturnLoan(ref, body) {
           const now         = new Date().toISOString();
           const needsPrompt = [];
 
+          // _qrUpdatedItem collects any item that must be co-written with the
+          // loan record in one IDB transaction (prevents partial-write corruption).
+          let _qrUpdatedItem = null;
+
           if (current.nonStock) {
             // Non-stock return — try NSN match.
             let matched = false;
@@ -2213,7 +2223,7 @@ async function _quickReturnLoan(ref, body) {
                   match.qtyServiceable = (Number(match.qtyServiceable) || 0) + current.qty;
                 }
                 match.updatedAt = now;
-                await Storage.items.put(match);
+                _qrUpdatedItem = match; // deferred — written atomically with loan below
                 matched = true;
                 showToast('Non-stock item matched by NSN and added to inventory.', 'success', 5000);
               }
@@ -2237,7 +2247,7 @@ async function _quickReturnLoan(ref, body) {
               }
               if (condition === 'write-off') item.condition = 'unserviceable';
               item.updatedAt = now;
-              await Storage.items.put(item);
+              _qrUpdatedItem = item; // deferred — written atomically with loan below
               showToast('Existing-loan item returned — On Hand restored.', 'success', 5000);
             }
           } else {
@@ -2250,7 +2260,7 @@ async function _quickReturnLoan(ref, body) {
               }
               if (condition === 'write-off') item.condition = 'unserviceable';
               item.updatedAt = now;
-              await Storage.items.put(item);
+              _qrUpdatedItem = item; // deferred — written atomically with loan below
             }
           }
 
@@ -2259,7 +2269,12 @@ async function _quickReturnLoan(ref, body) {
           current.returnCondition = condition;
           current.returnRemarks   = remarks;
           current.returnedBy      = sessionUser;
-          await Storage.loans.put(current);
+          // Write loan + item change in one IDB transaction where possible.
+          if (_qrUpdatedItem) {
+            await Storage.atomic.return(current, _qrUpdatedItem);
+          } else {
+            await Storage.loans.put(current);
+          }
 
           await Storage.audit.append({
             action: 'return',

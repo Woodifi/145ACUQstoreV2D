@@ -924,6 +924,62 @@ export const meta = {
 };
 
 // -----------------------------------------------------------------------------
+// Atomic multi-store writes — issue, return, and stocktake use IDB transactions
+// to prevent partial-write corruption on crash between paired writes.
+// PII encryption happens before the transaction opens (async crypto, not IDB).
+// -----------------------------------------------------------------------------
+
+export const atomic = {
+  /**
+   * Issue a loan and update item onLoan in one IDB transaction.
+   * @param {object} loan - plaintext loan record (ref required)
+   * @param {object} updatedItem - item with onLoan already incremented (id required)
+   */
+  async issue(loan, updatedItem) {
+    if (!loan?.ref)        throw new Error('Loan.ref required');
+    if (!updatedItem?.id)  throw new Error('Item.id required');
+    const encLoan = await PII.encryptRecord(loan, PII.PII_FIELDS_LOANS);
+    const tx = _db.transaction([STORES.ITEMS, STORES.LOANS], 'readwrite');
+    tx.objectStore(STORES.ITEMS).put(updatedItem);
+    tx.objectStore(STORES.LOANS).put(encLoan);
+    await _txDone(tx);
+  },
+
+  /**
+   * Mark a loan returned and update the item in one IDB transaction.
+   * @param {object} loan - plaintext loan record (ref required, active=false)
+   * @param {object} updatedItem - item with onHand/onLoan already updated (id required)
+   */
+  async return(loan, updatedItem) {
+    if (!loan?.ref)        throw new Error('Loan.ref required');
+    if (!updatedItem?.id)  throw new Error('Item.id required');
+    const encLoan = await PII.encryptRecord(loan, PII.PII_FIELDS_LOANS);
+    const tx = _db.transaction([STORES.ITEMS, STORES.LOANS], 'readwrite');
+    tx.objectStore(STORES.ITEMS).put(updatedItem);
+    tx.objectStore(STORES.LOANS).put(encLoan);
+    await _txDone(tx);
+  },
+
+  /**
+   * Finalise a stocktake: write all updated items and clear the stocktake
+   * draft store in one IDB transaction.
+   * @param {object[]} itemUpdates - array of updated item records (id required each)
+   */
+  async stocktakeFinalise(itemUpdates) {
+    if (!Array.isArray(itemUpdates)) throw new Error('itemUpdates must be an array');
+    const tx = _db.transaction([STORES.ITEMS, STORES.STOCKTAKE], 'readwrite');
+    const itemsStore     = tx.objectStore(STORES.ITEMS);
+    const stocktakeStore = tx.objectStore(STORES.STOCKTAKE);
+    for (const item of itemUpdates) {
+      if (!item?.id) throw new Error('Each item update must have an id');
+      itemsStore.put(item);
+    }
+    stocktakeStore.clear();
+    await _txDone(tx);
+  },
+};
+
+// -----------------------------------------------------------------------------
 // Maintenance: export, import, wipe
 // -----------------------------------------------------------------------------
 
