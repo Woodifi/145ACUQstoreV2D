@@ -1425,6 +1425,17 @@ input {
   outline: none;
   border-color: var(--gold);
 }
+/* Auto-derived / read-only field (Svc — calculated from onHand minus others) */
+.inv__bd-input--derived {
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  cursor: default;
+  border-style: dashed;
+  opacity: 0.85;
+}
+.inv__bd-input--derived:focus {
+  border-color: var(--border);  /* no gold highlight — not interactive */
+}
 
 .inv__row-actions {
   display: flex;

@@ -824,10 +824,11 @@ async function _openItemFormModal({ mode, item }) {
           </div>
           <div class="inv__breakdown-row">
             <label class="inv__bd-field">
-              <span class="inv__bd-label inv__bd-label--svc" title="Serviceable — ready for issue">Svc</span>
+              <span class="inv__bd-label inv__bd-label--svc" title="Serviceable — auto-calculated (On hand minus all other categories)">Svc</span>
               <input type="number" name="qtyServiceable" min="0" step="1" inputmode="numeric"
-                     value="${esc(String(bd.qtyServiceable))}" class="inv__bd-input"
-                     title="Serviceable — ready for issue">
+                     value="${esc(String(bd.qtyServiceable))}" class="inv__bd-input inv__bd-input--derived"
+                     data-target="qty-svc" readonly
+                     title="Auto-calculated: On hand minus Unserviceable, Repair, Calibration due, and Written off">
             </label>
             <label class="inv__bd-field">
               <span class="inv__bd-label inv__bd-label--uns" title="Unserviceable — damaged or non-functional">U/S</span>
@@ -906,32 +907,35 @@ async function _openItemFormModal({ mode, item }) {
       nsnInput.addEventListener('input', updateNsnHint);
       updateNsnHint();
 
-      // Live breakdown total — updates as the user types.
-      const onHandInput  = $('[data-target="onhand-input"]', panel);
-      const bdInputs     = $$('.inv__bd-input', panel);
-      const bdTotalEl    = $('[data-target="bd-total"]', panel);
-      const _updateBdTotal = () => {
-        if (!bdTotalEl) return;
-        const oh    = Math.max(0, Number(onHandInput?.value) || 0);
-        const total = bdInputs.reduce((s, el) => s + (Math.max(0, Number(el.value) || 0)), 0);
-        bdTotalEl.textContent = `Total: ${total} / ${oh}`;
-        bdTotalEl.className = `inv__bd-total ${total === oh ? 'inv__bd-total--ok' : 'inv__bd-total--warn'}`;
+      // Live breakdown — qtyServiceable is auto-derived; all editable fields
+      // trigger a recalculation: Svc = max(0, onHand − U/S − Repr − Cal − W/O).
+      const onHandInput = $('[data-target="onhand-input"]', panel);
+      const svcInput    = $('[data-target="qty-svc"]',     panel);
+      const bdTotalEl   = $('[data-target="bd-total"]',    panel);
+      // Non-serviceable editable inputs only (svcInput is readonly, excluded).
+      const nonSvcInputs = [
+        $('input[name="qtyUnserviceable"]',  panel),
+        $('input[name="qtyRepair"]',         panel),
+        $('input[name="qtyCalibrationDue"]', panel),
+        $('input[name="qtyWrittenOff"]',     panel),
+      ].filter(Boolean);
+
+      const _recalcBreakdown = () => {
+        const oh     = Math.max(0, Number(onHandInput?.value) || 0);
+        const nonSvc = nonSvcInputs.reduce((s, el) => s + Math.max(0, Number(el.value) || 0), 0);
+        const svc    = Math.max(0, oh - nonSvc);
+        if (svcInput) svcInput.value = String(svc);
+        if (bdTotalEl) {
+          const total = svc + nonSvc;
+          bdTotalEl.textContent = `Total: ${total} / ${oh}`;
+          // Total will always equal onHand (svc absorbs remainder) unless nonSvc > onHand
+          bdTotalEl.className = `inv__bd-total ${total === oh ? 'inv__bd-total--ok' : 'inv__bd-total--warn'}`;
+        }
       };
-      bdInputs.forEach(el => el.addEventListener('input', _updateBdTotal));
-      if (onHandInput) {
-        onHandInput.addEventListener('input', () => {
-          // Auto-adjust Svc to absorb any change in onHand so the total stays consistent.
-          const oh    = Math.max(0, Number(onHandInput.value) || 0);
-          const svcEl = $('input[name="qtyServiceable"]', panel);
-          if (svcEl) {
-            const nonSvc = bdInputs
-              .filter(el => el.name !== 'qtyServiceable')
-              .reduce((s, el) => s + (Math.max(0, Number(el.value) || 0)), 0);
-            svcEl.value = String(Math.max(0, oh - nonSvc));
-          }
-          _updateBdTotal();
-        });
-      }
+
+      nonSvcInputs.forEach(el => el.addEventListener('input', _recalcBreakdown));
+      if (onHandInput) onHandInput.addEventListener('input', _recalcBreakdown);
+      _recalcBreakdown();   // initialise on open
 
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -963,18 +967,21 @@ function _readFormData(form, isEdit) {
   const authQty = _readNonNegInt(fd, 'authQty', 'Authorised qty');
   const onHand  = _readNonNegInt(fd, 'onHand',  'On hand');
 
-  // Condition breakdown — always present (both add and edit).
-  const qtyServiceable    = _readNonNegInt(fd, 'qtyServiceable',    'Svc count');
+  // Condition breakdown — qtyServiceable is read-only/auto-derived in the form.
+  // We re-derive it here from the other fields so the stored value is always
+  // consistent regardless of what the hidden input contains.
   const qtyUnserviceable  = _readNonNegInt(fd, 'qtyUnserviceable',  'U/S count');
   const qtyRepair         = _readNonNegInt(fd, 'qtyRepair',         'Repr count');
   const qtyCalibrationDue = _readNonNegInt(fd, 'qtyCalibrationDue', 'Cal count');
   const qtyWrittenOff     = _readNonNegInt(fd, 'qtyWrittenOff',     'W/O count');
-  const bdTotal = qtyServiceable + qtyUnserviceable + qtyRepair + qtyCalibrationDue + qtyWrittenOff;
-  if (bdTotal !== onHand) {
+  const nonSvcTotal       = qtyUnserviceable + qtyRepair + qtyCalibrationDue + qtyWrittenOff;
+  if (nonSvcTotal > onHand) {
     throw new Error(
-      `Condition breakdown total (${bdTotal}) must equal On hand (${onHand}).`
+      `Non-serviceable total (${nonSvcTotal}) cannot exceed On hand (${onHand}). ` +
+      'Reduce one of the other categories first.'
     );
   }
+  const qtyServiceable = onHand - nonSvcTotal;
 
   // Derive legacy aggregated fields from the breakdown (kept for backward compat
   // and for any code that still reads .unsvc / .condition directly).
