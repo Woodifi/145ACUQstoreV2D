@@ -6850,6 +6850,126 @@ details[open] > .help__section-summary::after {
   font-size: 0.82rem;
 }
 
+/* ── Issue Items modal (.iss__*) ── */
+.iss__meta {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.iss__borrower-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.iss__meta-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.iss__svc-no {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.iss__purpose {
+  font-size: 0.78rem;
+  background: rgba(196,169,107,0.12);
+  color: var(--gold);
+  padding: 1px 7px;
+  border-radius: 10px;
+}
+
+.iss__due-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.iss__due-inp {
+  width: 150px;
+}
+
+/* ── Table ── */
+.iss__table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 4px;
+}
+
+.iss__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.iss__table thead th {
+  background: var(--bg-panel);
+  padding: 7px 8px;
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+
+.iss__table tbody td {
+  padding: 5px 6px;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border);
+}
+
+.iss__table tbody tr:last-child td { border-bottom: none; }
+
+/* Column widths */
+.iss__th-num    { width: 28px; text-align: center; }
+.iss__th-desc   { min-width: 180px; }
+.iss__th-nsn    { width: 130px; }
+.iss__th-req    { width: 42px; text-align: center; }
+.iss__th-qty    { width: 70px; }
+.iss__th-action { width: 145px; }
+
+.iss__td-num    { text-align: center; color: var(--text-muted); font-size: 0.78rem; }
+.iss__td-req    { text-align: center; color: var(--text-muted); font-size: 0.82rem; }
+
+/* Compact inputs inside the table */
+.iss__desc-inp,
+.iss__nsn-inp,
+.iss__qty-inp,
+.iss__action-sel {
+  padding: 4px 6px;
+  font-size: 0.84rem;
+  height: 30px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.iss__qty-inp { text-align: right; }
+
+/* Row status tints */
+.iss__line[data-action-val="issue"]       { background: transparent; }
+.iss__line[data-action-val="loan"]        { background: rgba(96,165,250,0.07); }
+.iss__line[data-action-val="backorder"]   { background: rgba(251,191,36,0.08); }
+.iss__line[data-action-val="unavailable"] { background: rgba(220,38,38,0.06); opacity: 0.75; }
+
+/* Status select colour hints */
+.iss__action-sel option[value="issue"]       { background: var(--bg-deep); }
+.iss__action-sel option[value="loan"]        { background: var(--bg-deep); }
+.iss__action-sel option[value="backorder"]   { background: var(--bg-deep); }
+.iss__action-sel option[value="unavailable"] { background: var(--bg-deep); }
+
 /* ── Dashboard: overdue loans detail table ── */
 .dash__section--overdue {
   border: 1px solid var(--danger);

@@ -69,10 +69,12 @@ const REQUEST_PURPOSES = [
 // Module state
 // ---------------------------------------------------------------------------
 
-let _root      = null;
-let _tab       = null;
-let _lines     = [];   // new-request form lines
-let _unmounted = false;
+let _root         = null;
+let _tab          = null;
+let _lines        = [];   // new-request form lines
+let _unmounted    = false;
+let _filterStatus = 'all'; // persists across All Requests tab visits
+let _pendingAbort = null;  // AbortController for pending-tab click listener
 
 // ---------------------------------------------------------------------------
 // One-time migration: reverse requests auto-issued by the old bulk-copy code.
@@ -163,10 +165,12 @@ async function _revertAutoIssuedRequests() {
 // ---------------------------------------------------------------------------
 
 export async function mount(rootEl) {
-  _root      = rootEl;
-  _tab       = null;
-  _lines     = [{ description: '', nsn: '', qty: 1 }];
-  _unmounted = false;
+  _root         = rootEl;
+  _tab          = null;
+  _lines        = [{ description: '', nsn: '', qty: 1 }];
+  _unmounted    = false;
+  _filterStatus = 'all';
+  _pendingAbort = null;
 
   const canManage = AUTH.can('issue') || AUTH.isCO();
   _tab = canManage ? 'pending' : 'submit';
@@ -296,6 +300,11 @@ async function _mountTabBody() {
 // ---------------------------------------------------------------------------
 
 async function _mountPending(body) {
+  // Abort any previously registered click listener on this body element
+  // to prevent duplicate handlers accumulating across re-renders.
+  if (_pendingAbort) { _pendingAbort.abort(); }
+  _pendingAbort = new AbortController();
+
   const requests = await Storage.requests.listByStatus('pending');
 
   if (requests.length === 0) {
@@ -321,7 +330,9 @@ async function _mountPending(body) {
     const id = card.dataset.reqId;
     const action = e.target.closest('[data-action]')?.dataset.action;
     if (!action) return;
-    const req = requests.find(r => r.id === id);
+    // Re-fetch request live so we always have current data.
+    let req;
+    try { req = await Storage.requests.get(id); } catch { return; }
     if (!req) return;
 
     if (action === 'approve-issue')  await _handleApproveAndIssue(req, body);
@@ -329,7 +340,7 @@ async function _mountPending(body) {
     if (action === 'deny')           await _handleDeny(req, body);
     if (action === 'print-ab189')    await _printRequestAB189(req, e.target);
     if (action === 'copy-to-cadets') await _handleCopyToCadets(req, body);
-  });
+  }, { signal: _pendingAbort.signal });
 }
 
 function _requestCardHtml(req, showActions) {
@@ -390,54 +401,373 @@ function _requestCardHtml(req, showActions) {
 }
 
 async function _handleApproveAndIssue(req, body) {
-  const session = AUTH.getSession();
+  const session     = AUTH.getSession();
   const sessionUser = session?.name || 'unknown';
-  const now = new Date().toISOString();
 
-  // Try to get the cadet record for borrower name.
+  // Load inventory items for datalist + NSN lookup.
+  let allItems = [];
+  try { allItems = await Storage.items.list(); } catch { /* ok */ }
+
+  // Resolve borrower name from cadet record if available.
   let cadet = null;
   try { cadet = await Storage.cadets.get(req.requestorSvc); } catch { /* ok */ }
-
   const borrowerSvc  = req.requestorSvc;
-  const borrowerName = cadet
-    ? `${cadet.rank} ${cadet.surname}`
-    : req.requestorName;
+  const borrowerName = cadet ? (cadet.rank + ' ' + cadet.surname) : req.requestorName;
+  const defaultDue   = req.requiredBy || _defaultDueDate();
 
-  const { loanRefs, errors } = await _issueLinesToCadet(req, {
-    borrowerSvc,
-    borrowerName,
-    dueDate:     req.requiredBy || _defaultDueDate(),
-    sessionUser,
+  // Build editable line state — each line carries the original fields plus
+  // qtyIssued (editable, defaults to requested) and lineAction (issue/loan/backorder/unavailable).
+  const editableLines = (req.lines || []).map(function(line) {
+    return {
+      description: line.description || '',
+      nsn:         line.nsn || '',
+      qty:         line.qty || 1,
+      qtyIssued:   line.qtyIssued != null ? line.qtyIssued : (line.qty || 1),
+      lineAction:  line.lineAction || 'issue',
+    };
   });
 
-  // Update request record.
-  const updated = {
-    ...req,
-    status:      loanRefs.length === req.lines.length ? 'issued' : 'approved',
-    decidedBy:   sessionUser,
-    decidedAt:   now,
-    decisionNote: loanRefs.length < req.lines.length && errors.length > 0
-      ? `Partial issue: ${errors.join('; ')}`
-      : null,
-    loanRefs,
-  };
-  await Storage.requests.put(updated);
-  await Storage.audit.append({
-    action: 'request_approved',
-    user:   sessionUser,
-    desc:   `Request ${req.id} from ${req.requestorName} approved and issued. Refs: ${loanRefs.join(', ')}`,
+  // Build inventory datalist options (used for description auto-complete).
+  const datalistId = 'iss-inv-dl';
+  const datalistHtml = '<datalist id="' + datalistId + '">' +
+    allItems.map(function(it) {
+      return '<option value="' + esc(it.name) + '" data-nsn="' + esc(it.nsn || '') + '">';
+    }).join('') +
+    '</datalist>';
+
+  const lineActionOpts = [
+    { v: 'issue',       l: 'Issue'              },
+    { v: 'loan',        l: 'Loan (prior issue)' },
+    { v: 'backorder',   l: 'Backorder'          },
+    { v: 'unavailable', l: 'Unavailable'        },
+  ];
+
+  function _lineRowHtml(line, idx) {
+    const selOpts = lineActionOpts.map(function(o) {
+      return '<option value="' + o.v + '"' + (line.lineAction === o.v ? ' selected' : '') + '>' + o.l + '</option>';
+    }).join('');
+    return (
+      '<tr class="iss__line" data-line-idx="' + idx + '" data-action-val="' + esc(line.lineAction) + '">' +
+        '<td class="iss__td-num">' + (idx + 1) + '</td>' +
+        '<td class="iss__td-desc">' +
+          '<input type="text" class="form__input iss__desc-inp" list="' + datalistId + '"' +
+                 ' value="' + esc(line.description) + '" data-field="description"' +
+                 ' placeholder="Description">' +
+        '</td>' +
+        '<td class="iss__td-nsn">' +
+          '<input type="text" class="form__input iss__nsn-inp" value="' + esc(line.nsn) + '"' +
+                 ' data-field="nsn" placeholder="NSN">' +
+        '</td>' +
+        '<td class="iss__td-req">' + esc(String(line.qty)) + '</td>' +
+        '<td class="iss__td-qty">' +
+          '<input type="number" class="form__input iss__qty-inp" value="' + esc(String(line.qtyIssued)) + '"' +
+                 ' data-field="qtyIssued" min="0" max="999">' +
+        '</td>' +
+        '<td class="iss__td-action">' +
+          '<select class="form__select iss__action-sel" data-field="lineAction">' + selOpts + '</select>' +
+        '</td>' +
+      '</tr>'
+    );
+  }
+
+  openModal({
+    titleHtml: 'Issue Items — ' + esc(req.id),
+    size: 'lg',
+    bodyHtml: (
+      datalistHtml +
+      '<div class="iss__meta">' +
+        '<div class="iss__borrower-info">' +
+          '<span class="iss__meta-label">Borrower:</span> ' +
+          '<strong>' + esc(borrowerName) + '</strong>' +
+          '<span class="iss__svc-no">' + esc(borrowerSvc) + '</span>' +
+          '<span class="iss__purpose">' + esc(req.purpose) + '</span>' +
+        '</div>' +
+        '<label class="iss__due-wrap">' +
+          '<span class="iss__meta-label">Due date</span>' +
+          '<input type="date" class="form__input iss__due-inp" id="iss-due-date"' +
+                 ' value="' + esc(defaultDue) + '" min="' + esc(_todayLocalIsoDate()) + '">' +
+        '</label>' +
+      '</div>' +
+      '<div class="iss__table-wrap">' +
+        '<table class="iss__table">' +
+          '<thead><tr>' +
+            '<th class="iss__th-num">#</th>' +
+            '<th class="iss__th-desc">Item Description</th>' +
+            '<th class="iss__th-nsn">NSN</th>' +
+            '<th class="iss__th-req" title="Requested quantity">Req</th>' +
+            '<th class="iss__th-qty" title="Quantity to issue">Qty</th>' +
+            '<th class="iss__th-action">Status</th>' +
+          '</tr></thead>' +
+          '<tbody id="iss-tbody">' +
+            editableLines.map(function(l, i) { return _lineRowHtml(l, i); }).join('') +
+          '</tbody>' +
+        '</table>' +
+      '</div>' +
+      '<label class="form__field" style="margin-top:12px">' +
+        '<span class="form__label">Issue notes <span class="form__hint">(appended to each loan remark)</span></span>' +
+        '<textarea id="iss-notes" class="form__textarea" rows="2"' +
+                  ' placeholder="e.g. Boot size 10, item exchanged&#8230;"></textarea>' +
+      '</label>' +
+      '<div class="form__error" id="iss-err" role="alert"></div>' +
+      '<div class="form__actions">' +
+        '<button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>' +
+        '<button type="button" class="btn btn--primary" id="iss-submit">Issue Items</button>' +
+      '</div>'
+    ),
+
+    async onMount(panel, close) {
+      const tbody     = panel.querySelector('#iss-tbody');
+      const dueEl     = panel.querySelector('#iss-due-date');
+      const notesEl   = panel.querySelector('#iss-notes');
+      const errEl     = panel.querySelector('#iss-err');
+      const submitBtn = panel.querySelector('#iss-submit');
+
+      // Helper: sync a single line from its DOM row into editableLines.
+      function _syncLine(lineEl) {
+        const idx = Number(lineEl.dataset.lineIdx);
+        if (idx < 0 || idx >= editableLines.length) return;
+        const desc   = lineEl.querySelector('[data-field="description"]');
+        const nsn    = lineEl.querySelector('[data-field="nsn"]');
+        const qty    = lineEl.querySelector('[data-field="qtyIssued"]');
+        const action = lineEl.querySelector('[data-field="lineAction"]');
+        if (desc)   editableLines[idx].description = desc.value.trim();
+        if (nsn)    editableLines[idx].nsn         = nsn.value.trim();
+        if (qty)    editableLines[idx].qtyIssued   = Math.max(0, Number(qty.value) || 0);
+        if (action) editableLines[idx].lineAction  = action.value;
+      }
+
+      // Helper: update row CSS class for status colour.
+      function _updateRowClass(lineEl) {
+        const action = lineEl.querySelector('[data-field="lineAction"]')?.value || 'issue';
+        lineEl.dataset.actionVal = action;
+      }
+
+      // Wire input / change events on the table.
+      tbody.addEventListener('input', function(e) {
+        const lineEl = e.target.closest('[data-line-idx]');
+        if (!lineEl) return;
+        _syncLine(lineEl);
+
+        // Auto-fill NSN when description matches an inventory item name.
+        if (e.target.dataset.field === 'description') {
+          const val     = e.target.value.trim().toLowerCase();
+          const matched = allItems.find(function(it) {
+            return it.name.trim().toLowerCase() === val;
+          });
+          if (matched) {
+            const nsnInp = lineEl.querySelector('[data-field="nsn"]');
+            if (nsnInp && !nsnInp.value) {
+              nsnInp.value = matched.nsn || '';
+              editableLines[Number(lineEl.dataset.lineIdx)].nsn = nsnInp.value;
+            }
+          }
+        }
+      });
+
+      tbody.addEventListener('change', function(e) {
+        const lineEl = e.target.closest('[data-line-idx]');
+        if (!lineEl) return;
+        _syncLine(lineEl);
+        _updateRowClass(lineEl);
+      });
+
+      // Submit: process lines and create loan records.
+      submitBtn.addEventListener('click', async function() {
+        errEl.textContent = '';
+        const dueDate    = dueEl.value || defaultDue;
+        const issueNotes = notesEl.value.trim();
+
+        // Final sync of all lines from DOM.
+        tbody.querySelectorAll('[data-line-idx]').forEach(function(lineEl) {
+          _syncLine(lineEl);
+        });
+
+        submitBtn.disabled    = true;
+        submitBtn.textContent = 'Issuing…';
+
+        const now       = new Date().toISOString();
+        const loanRefs  = [];
+        const errors    = [];
+        const skipped   = [];  // backorder / unavailable / 0-qty lines
+
+        // Pre-load fresh item list once.
+        let freshItems = [];
+        try { freshItems = await Storage.items.list(); } catch { /* ok */ }
+
+        for (let idx = 0; idx < editableLines.length; idx++) {
+          const line   = editableLines[idx];
+          const action = line.lineAction;
+
+          if (action === 'backorder' || action === 'unavailable') {
+            skipped.push({ desc: line.description || ('Item ' + (idx + 1)), reason: action });
+            continue;
+          }
+
+          const qty = Math.max(0, Math.floor(Number(line.qtyIssued) || 0));
+          if (qty === 0) {
+            skipped.push({ desc: line.description || ('Item ' + (idx + 1)), reason: 'qty 0' });
+            continue;
+          }
+
+          const existingLoan = (action === 'loan');
+
+          // Match inventory item by NSN then by name.
+          let item = null;
+          if (line.nsn) {
+            item = freshItems.find(function(it) {
+              return it.nsn && it.nsn.trim() === line.nsn.trim();
+            }) || null;
+          }
+          if (!item && line.description) {
+            const d = line.description.trim().toLowerCase();
+            item = freshItems.find(function(it) {
+              return it.name && it.name.trim().toLowerCase() === d;
+            }) || null;
+          }
+
+          try {
+            const ref = await _nextRequestLoanRef();
+
+            if (item) {
+              // Inventory item: increment onLoan (onHand unchanged — existingLoan flag
+              // governs whether return restores onHand).
+              const fresh = await Storage.items.get(item.id);
+              if (!fresh) throw new Error('"' + item.name + '" no longer exists.');
+              fresh.onLoan = (Number(fresh.onLoan) || 0) + qty;
+              await Storage.items.put(fresh);
+
+              await Storage.loans.put({
+                ref,
+                itemId:       item.id,
+                itemName:     item.name,
+                nsn:          item.nsn || '',
+                qty,
+                borrowerSvc,
+                borrowerName,
+                purpose:      req.purpose,
+                issueDate:    _todayLocalIsoDate(),
+                dueDate,
+                longTermLoan: false,
+                unitLoan:     false,
+                nonStock:     false,
+                existingLoan,
+                condition:    item.condition || 'serviceable',
+                remarks:      'Issued from request ' + req.id + (issueNotes ? '. ' + issueNotes : ''),
+                notes:        '',
+                active:       true,
+                issuedBy:     sessionUser,
+              });
+              await Storage.audit.append({
+                action: existingLoan ? 'loan_existing' : 'issue',
+                user:   sessionUser,
+                desc:   ref + ': ' + item.name + ' \xd7 ' + qty +
+                        (existingLoan ? ' [existing loan]' : ' issued') +
+                        ' to ' + borrowerName + ' (from request ' + req.id + ')',
+              });
+            } else {
+              // Non-stock line.
+              await Storage.loans.put({
+                ref,
+                itemId:       null,
+                itemName:     line.description,
+                nsn:          line.nsn || '',
+                qty,
+                borrowerSvc,
+                borrowerName,
+                purpose:      req.purpose,
+                issueDate:    _todayLocalIsoDate(),
+                dueDate,
+                longTermLoan: false,
+                unitLoan:     false,
+                nonStock:     true,
+                existingLoan,
+                condition:    'serviceable',
+                remarks:      'Issued from request ' + req.id + (issueNotes ? '. ' + issueNotes : ''),
+                notes:        '',
+                active:       true,
+                issuedBy:     sessionUser,
+              });
+              await Storage.audit.append({
+                action: existingLoan ? 'loan_existing' : 'issue',
+                user:   sessionUser,
+                desc:   ref + ': [non-stock] ' + line.description + ' \xd7 ' + qty +
+                        (existingLoan ? ' [existing loan]' : ' issued') +
+                        ' to ' + borrowerName + ' (from request ' + req.id + ')',
+              });
+            }
+
+            loanRefs.push(ref);
+            // Update freshItems cache so subsequent lines see the updated onLoan.
+            freshItems = freshItems.map(function(it) {
+              return it.id === (item && item.id) ? { ...it, onLoan: it.onLoan + qty } : it;
+            });
+          } catch (err) {
+            errors.push((line.description || ('Item ' + (idx + 1))) + ': ' + err.message);
+          }
+        }
+
+        // Build decision note from non-issued lines.
+        const noteParts = [];
+        const backordered  = skipped.filter(function(s) { return s.reason === 'backorder'; });
+        const unavailable  = skipped.filter(function(s) { return s.reason === 'unavailable'; });
+        const zeroQty      = skipped.filter(function(s) { return s.reason === 'qty 0'; });
+        if (backordered.length)  noteParts.push('Backorder: ' + backordered.map(function(s) { return s.desc; }).join(', '));
+        if (unavailable.length)  noteParts.push('Unavailable: ' + unavailable.map(function(s) { return s.desc; }).join(', '));
+        if (zeroQty.length)      noteParts.push('Skipped (qty 0): ' + zeroQty.map(function(s) { return s.desc; }).join(', '));
+        if (errors.length)       noteParts.push('Errors: ' + errors.join('; '));
+
+        // Determine final request status.
+        const hasActive   = loanRefs.length > 0;
+        const hasDeferred = skipped.length > 0 || errors.length > 0;
+        const newStatus   = hasActive && !hasDeferred ? 'issued' : (hasActive ? 'issued' : 'approved');
+
+        // Save updated lines (with qtyIssued + lineAction) back to the request.
+        const updatedLines = editableLines.map(function(l) {
+          return {
+            description: l.description,
+            nsn:         l.nsn,
+            qty:         l.qty,
+            qtyIssued:   l.qtyIssued,
+            lineAction:  l.lineAction,
+          };
+        });
+
+        const updatedReq = {
+          ...req,
+          lines:        updatedLines,
+          status:       newStatus,
+          decidedBy:    sessionUser,
+          decidedAt:    now,
+          decisionNote: noteParts.length > 0 ? noteParts.join('; ') : null,
+          loanRefs,
+        };
+        await Storage.requests.put(updatedReq);
+        await Storage.audit.append({
+          action: 'request_approved',
+          user:   sessionUser,
+          desc:   'Request ' + req.id + ' from ' + req.requestorName + ' issued. ' +
+                  'Refs: ' + (loanRefs.join(', ') || 'none') +
+                  (noteParts.length ? '. ' + noteParts.join('; ') : ''),
+        });
+        Sync.notifyChanged();
+
+        // Build summary toast.
+        const toastParts = [];
+        if (loanRefs.length) toastParts.push(loanRefs.length + ' item' + (loanRefs.length !== 1 ? 's' : '') + ' issued');
+        if (backordered.length)  toastParts.push(backordered.length + ' on backorder');
+        if (unavailable.length)  toastParts.push(unavailable.length + ' unavailable');
+        if (errors.length)       toastParts.push(errors.length + ' error' + (errors.length !== 1 ? 's' : ''));
+        if (loanRefs.length) toastParts.push('Refs: ' + loanRefs.join(', '));
+
+        showToast(toastParts.join(' · ') || 'No items issued.',
+          errors.length ? 'warn' : 'success', 8000);
+
+        close();
+        await _mountPending(body);
+        await _refreshPendingBadge();
+      });
+    },
   });
-  Sync.notifyChanged();
-
-  const msg = errors.length > 0
-    ? `${loanRefs.length} of ${req.lines.length} items issued. Errors: ${errors.join('; ')}`
-    : `Approved and issued ${loanRefs.length} item${loanRefs.length !== 1 ? 's' : ''}. Refs: ${loanRefs.join(', ')}`;
-
-  showToast(msg, errors.length > 0 ? 'warn' : 'success', 7000);
-
-  // Refresh pending tab.
-  await _mountPending(body);
-  await _refreshPendingBadge();
 }
 
 // ---------------------------------------------------------------------------
@@ -903,45 +1233,54 @@ async function _mountAll(body) {
   allReqs.sort((a, b) => (a.submittedAt > b.submittedAt ? -1 : 1));
 
   const statuses = ['all', 'pending', 'approved', 'issued', 'denied', 'withdrawn'];
-  let filterStatus = 'all';
+  // _filterStatus is module-level so it persists across tab switches.
 
-  function filtered() {
-    return filterStatus === 'all'
+  function _filtered() {
+    return _filterStatus === 'all'
       ? allReqs
-      : allReqs.filter(r => r.status === filterStatus);
+      : allReqs.filter(function(r) { return r.status === _filterStatus; });
   }
 
-  function refresh() {
+  function _refreshList() {
     const list = body.querySelector('[data-target="req-list"]');
     if (!list) return;
-    const items = filtered();
+    const items = _filtered();
     list.innerHTML = items.length === 0
-      ? `<p class="req__empty">No requests match the filter.</p>`
-      : items.map(r => _requestCardHtml(r, false)).join('');
+      ? '<p class="req__empty">No requests match the filter.</p>'
+      : items.map(function(r) { return _requestCardHtml(r, false); }).join('');
   }
 
-  body.innerHTML = `
-    <div class="req__filter-bar">
-      ${statuses.map(s => `
-        <button type="button"
-                class="req__filter-btn ${s === filterStatus ? 'is-active' : ''}"
-                data-filter="${esc(s)}">
-          ${esc(s === 'all' ? 'All' : _statusLabel(s))}
-        </button>`).join('')}
-    </div>
-    <div class="req__list" data-target="req-list">
-      ${filtered().length === 0
-        ? `<p class="req__empty">No requests yet.</p>`
-        : filtered().map(r => _requestCardHtml(r, false)).join('')}
-    </div>`;
+  function _buildFilterBar() {
+    return '<div class="req__filter-bar">' +
+      statuses.map(function(s) {
+        return (
+          '<button type="button"' +
+                  ' class="req__filter-btn ' + (s === _filterStatus ? 'is-active' : '') + '"' +
+                  ' data-filter="' + esc(s) + '">' +
+            esc(s === 'all' ? 'All' : _statusLabel(s)) +
+          '</button>'
+        );
+      }).join('') +
+      '</div>';
+  }
 
-  body.querySelector('.req__filter-bar')?.addEventListener('click', (e) => {
+  const initItems = _filtered();
+  body.innerHTML =
+    _buildFilterBar() +
+    '<div class="req__list" data-target="req-list">' +
+      (initItems.length === 0
+        ? '<p class="req__empty">No requests yet.</p>'
+        : initItems.map(function(r) { return _requestCardHtml(r, false); }).join('')) +
+    '</div>';
+
+  body.querySelector('.req__filter-bar')?.addEventListener('click', function(e) {
     const btn = e.target.closest('[data-filter]');
     if (!btn) return;
-    filterStatus = btn.dataset.filter;
-    $$('.req__filter-btn', body).forEach(b =>
-      b.classList.toggle('is-active', b.dataset.filter === filterStatus));
-    refresh();
+    _filterStatus = btn.dataset.filter;
+    $$('.req__filter-btn', body).forEach(function(b) {
+      b.classList.toggle('is-active', b.dataset.filter === _filterStatus);
+    });
+    _refreshList();
   });
 }
 
