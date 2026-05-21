@@ -71,6 +71,7 @@ import { showToast }                        from './toast.js';
 // -----------------------------------------------------------------------------
 
 let _root          = null;
+let _controller    = null;  // AbortController — cleaned up on unmount
 let _searchTerm    = '';
 let _pltFilter     = '';    // legacy platoon filter (when no structure configured)
 let _coFilter      = '';    // company filter (structure mode)
@@ -86,6 +87,7 @@ let _structure     = [];    // unit structure cache — loaded once per mount
 export async function mount(rootEl) {
   AUTH.requirePermission('view');
   _root         = rootEl;
+  _controller   = new AbortController();
   _searchTerm   = '';
   _pltFilter    = '';
   _coFilter     = '';
@@ -96,7 +98,11 @@ export async function mount(rootEl) {
   // change mid-session, so caching is safe.
   _structure    = await Structure.load();
   await _render();
-  return function unmount() { _root = null; };
+  return function unmount() {
+    _controller.abort();
+    _controller = null;
+    _root = null;
+  };
 }
 
 // -----------------------------------------------------------------------------
@@ -104,7 +110,9 @@ export async function mount(rootEl) {
 // -----------------------------------------------------------------------------
 
 async function _render() {
-  const all       = await Storage.cadets.list();
+  // Exclude any records with personType='staff' — they belong in the staff
+  // store and are migrated on staff-page mount.
+  const all       = (await Storage.cadets.list()).filter(c => c.personType !== 'staff');
   const useStruct = _structure.length > 0;
 
   // Sort using structure-aware comparator if configured, otherwise plain sort.
@@ -351,13 +359,14 @@ function _cadetRowHtml(c, { canManage, useStruct }) {
 // -----------------------------------------------------------------------------
 
 function _wireEventListeners() {
-  $('.cad__search',         _root)?.addEventListener('input',  _onSearchInput);
-  $('.cad__plt-filter',     _root)?.addEventListener('change', _onPltChange);
-  $('.cad__co-filter',      _root)?.addEventListener('change', _onCoFilterChange);
-  $('.cad__plt-filter-str', _root)?.addEventListener('change', _onPltFilterStrChange);
-  $('.cad__sec-filter',     _root)?.addEventListener('change', _onSecFilterChange);
-  _root.addEventListener('click',  _onRootClick);
-  _root.addEventListener('change', _onRootChange);
+  const sig = _controller.signal;
+  $('.cad__search',         _root)?.addEventListener('input',  _onSearchInput,        { signal: sig });
+  $('.cad__plt-filter',     _root)?.addEventListener('change', _onPltChange,          { signal: sig });
+  $('.cad__co-filter',      _root)?.addEventListener('change', _onCoFilterChange,     { signal: sig });
+  $('.cad__plt-filter-str', _root)?.addEventListener('change', _onPltFilterStrChange, { signal: sig });
+  $('.cad__sec-filter',     _root)?.addEventListener('change', _onSecFilterChange,    { signal: sig });
+  _root.addEventListener('click',  _onRootClick,  { signal: sig });
+  _root.addEventListener('change', _onRootChange, { signal: sig });
 }
 
 function _onSearchInput(e) {

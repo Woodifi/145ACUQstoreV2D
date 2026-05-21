@@ -55,6 +55,7 @@ const STAFF_POSITIONS = [
 // -----------------------------------------------------------------------------
 
 let _root         = null;
+let _controller   = null;   // AbortController — cleaned up on unmount
 let _searchTerm   = '';
 let _showInactive = false;
 
@@ -65,10 +66,26 @@ let _showInactive = false;
 export async function mount(rootEl) {
   AUTH.requirePermission('view');
   _root         = rootEl;
+  _controller   = new AbortController();
   _searchTerm   = '';
   _showInactive = false;
+
+  // Auto-migrate any cadets with personType='staff' to the staff store
+  const migrated = await _migrateStaffFromCadets();
+  if (migrated > 0) {
+    showToast(
+      `${migrated} staff record${migrated === 1 ? '' : 's'} migrated from the cadet list.`,
+      'success',
+    );
+    Sync.notifyChanged();
+  }
+
   await _render();
-  return function unmount() { _root = null; };
+  return function unmount() {
+    _controller.abort();
+    _controller = null;
+    _root = null;
+  };
 }
 
 // -----------------------------------------------------------------------------
@@ -207,10 +224,53 @@ function _staffRowHtml(s, canManage) {
 // Event wiring
 // -----------------------------------------------------------------------------
 
+// -----------------------------------------------------------------------------
+// Staff migration — move cadets with personType='staff' into the staff store
+// -----------------------------------------------------------------------------
+
+async function _migrateStaffFromCadets() {
+  let cadets;
+  try { cadets = await Storage.cadets.list(); } catch { return 0; }
+  const staffCadets = cadets.filter(c => c.personType === 'staff');
+  if (staffCadets.length === 0) return 0;
+
+  for (const c of staffCadets) {
+    const existing = await Storage.staff.get(c.svcNo);
+    if (!existing) {
+      await Storage.staff.put({
+        svcNo:      c.svcNo,
+        surname:    c.surname    || '',
+        given:      c.given      || '',
+        rank:       c.rank       || '',
+        position:   c.position   || '',
+        company:    c.company    || c.plt || '',
+        personType: 'staff',
+        active:     c.active !== false,
+        email:      c.email      || '',
+        notes:      c.notes      || '',
+        createdAt:  c.createdAt  || new Date().toISOString(),
+        migratedAt: new Date().toISOString(),
+      });
+      await Storage.audit.append({
+        action: 'staff_add',
+        user:   AUTH.getSession()?.name || 'system',
+        desc:   `Migrated from cadet list: ${c.rank} ${c.surname} (${c.svcNo})`,
+      }).catch(() => {});
+    }
+    await Storage.cadets.delete(c.svcNo);
+  }
+  return staffCadets.length;
+}
+
+// -----------------------------------------------------------------------------
+// Event wiring
+// -----------------------------------------------------------------------------
+
 function _wireEventListeners() {
-  $('.stf__search', _root)?.addEventListener('input', _onSearchInput);
-  _root.addEventListener('click',  _onRootClick);
-  _root.addEventListener('change', _onRootChange);
+  const sig = _controller.signal;
+  $('.stf__search', _root)?.addEventListener('input', _onSearchInput, { signal: sig });
+  _root.addEventListener('click',  _onRootClick,  { signal: sig });
+  _root.addEventListener('change', _onRootChange, { signal: sig });
 }
 
 function _onSearchInput(e) {

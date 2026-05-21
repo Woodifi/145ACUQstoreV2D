@@ -91,22 +91,26 @@ const MAX_DELETE_REASON = 200;
 // Module state
 // -----------------------------------------------------------------------------
 
-let _root = null;
-let _searchTerm = '';
+let _root           = null;
+let _controller     = null;  // AbortController — cleaned up on unmount
+let _searchTerm     = '';
 let _categoryFilter = '';
-let _urlPool = new ObjectURLPool();
+let _urlPool        = new ObjectURLPool();
 
 // -----------------------------------------------------------------------------
 // Mount / unmount
 // -----------------------------------------------------------------------------
 
 export async function mount(rootEl) {
-  _root = rootEl;
+  _root         = rootEl;
+  _controller   = new AbortController();
   _root.innerHTML = '';   // ensure first render always builds the full shell
-  _searchTerm = '';
+  _searchTerm   = '';
   _categoryFilter = '';
   await _render();
   return function unmount() {
+    _controller.abort();
+    _controller = null;
     _urlPool.revokeAll();
     _root = null;
   };
@@ -374,15 +378,16 @@ function _itemRowHtml(item, photoUrl, { canEdit, canDel }) {
 // -----------------------------------------------------------------------------
 
 function _wireEventListeners() {
+  const sig    = _controller.signal;
   const search = $('.inv__search', _root);
   if (search) {
-    search.addEventListener('input', _onSearchInput);
+    search.addEventListener('input', _onSearchInput, { signal: sig });
   }
   const catSel = $('.inv__cat-filter', _root);
   if (catSel) {
-    catSel.addEventListener('change', _onCategoryChange);
+    catSel.addEventListener('change', _onCategoryChange, { signal: sig });
   }
-  _root.addEventListener('click', _onRootClick);
+  _root.addEventListener('click', _onRootClick, { signal: sig });
 }
 
 let _searchDebounce = null;

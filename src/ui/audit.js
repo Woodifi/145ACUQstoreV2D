@@ -112,6 +112,7 @@ const ACTION_CATEGORY = Object.freeze({
 // -----------------------------------------------------------------------------
 
 let _root          = null;
+let _controller    = null;         // AbortController — cleaned up on unmount
 let _filter        = 'all';        // action key or 'all'
 let _search        = '';
 let _dateFrom      = '';           // 'YYYY-MM-DD' or '' (no lower bound)
@@ -127,6 +128,7 @@ let _filteredRows  = [];           // current filtered set — used by export
 export async function mount(rootEl) {
   AUTH.requirePermission('audit');
   _root        = rootEl;
+  _controller  = new AbortController();
   _filter      = 'all';
   _search      = '';
   _dateFrom    = '';
@@ -134,7 +136,11 @@ export async function mount(rootEl) {
   _renderLimit = PAGE_SIZE;
   _verifyState = null;
   await _render();
-  return function unmount() { _root = null; };
+  return function unmount() {
+    _controller.abort();
+    _controller = null;
+    _root = null;
+  };
 }
 
 // -----------------------------------------------------------------------------
@@ -319,27 +325,28 @@ function _rowHtml(row) {
 // -----------------------------------------------------------------------------
 
 function _wireEventListeners() {
+  const sig = _controller.signal;
   $('.aud__search', _root)?.addEventListener('input', (e) => {
     _search = e.target.value;
     _renderLimit = PAGE_SIZE;   // reset pagination on filter change
     _render();
-  });
+  }, { signal: sig });
   $('.aud__action-filter', _root)?.addEventListener('change', (e) => {
     _filter = e.target.value;
     _renderLimit = PAGE_SIZE;
     _render();
-  });
+  }, { signal: sig });
   $('#aud-date-from', _root)?.addEventListener('change', (e) => {
     _dateFrom = e.target.value;
     _renderLimit = PAGE_SIZE;
     _render();
-  });
+  }, { signal: sig });
   $('#aud-date-to', _root)?.addEventListener('change', (e) => {
     _dateTo = e.target.value;
     _renderLimit = PAGE_SIZE;
     _render();
-  });
-  _root.addEventListener('click', _onRootClick);
+  }, { signal: sig });
+  _root.addEventListener('click', _onRootClick, { signal: sig });
 }
 
 async function _onRootClick(e) {

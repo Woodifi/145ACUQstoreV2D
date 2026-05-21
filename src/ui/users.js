@@ -35,7 +35,8 @@ const ROLE_ORDER = ['co', 'qm', 'staff', 'cadet', 'ro'];
 // Module state
 // -----------------------------------------------------------------------------
 
-let _root = null;
+let _root       = null;
+let _controller = null;  // AbortController — cleaned up on unmount
 
 // -----------------------------------------------------------------------------
 // Mount
@@ -43,9 +44,14 @@ let _root = null;
 
 export async function mount(rootEl) {
   AUTH.requireCO();
-  _root = rootEl;
+  _root       = rootEl;
+  _controller = new AbortController();
   await _render();
-  return function unmount() { _root = null; };
+  return function unmount() {
+    _controller.abort();
+    _controller = null;
+    _root = null;
+  };
 }
 
 // -----------------------------------------------------------------------------
@@ -78,7 +84,7 @@ async function _render() {
     </section>
   `);
 
-  _root.addEventListener('click', _onRootClick);
+  _root.addEventListener('click', _onRootClick, { signal: _controller.signal });
 }
 
 function _tableHtml(users) {
