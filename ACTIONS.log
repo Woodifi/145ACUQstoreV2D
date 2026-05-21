@@ -659,3 +659,23 @@ END OF LOG — append new entries above this line
   • _filterStatus is module-level — filter selection persists across tab switches
   • mount() resets _filterStatus and _pendingAbort on fresh page load
   Build: 20260521-06D18A97  |  53/53 tests passed
+
+[2026-05-21T05:09Z] GIT COMMIT — Add TOTP 2FA, export encryption, privacy notice (V2)
+  Commit: ebe9f74
+  Files changed: 9 (3 new: src/totp.js, src/ui/totp-setup.js, test-totp.mjs)
+  • src/totp.js: RFC 6238 TOTP — generateSecret, getCode, verify (±30s window
+    + replay guard), generateBackupCodes (SHA-256 hashed), verifyBackupCode,
+    otpauthUri, formatSecret; HMAC-SHA1 via Web Crypto; no external deps
+  • src/ui/totp-setup.js: 3-step enrolment wizard (secret display → verify →
+    backup codes), manage modal (disable/regen), print backup codes
+  • src/ui/login.js: TOTP step 3 after PIN success; backup code fallback path;
+    privacy notice footer on user picker; openModal + TOTP imports added
+  • src/ui/settings.js: 2FA section with status, setup/manage actions; TotpSetup
+    import; export encryption modal (AES-256-GCM + PBKDF2 310k iterations);
+    _promptDecrypt for encrypted .qstore backup files; file accept += .qstore
+  • src/pii.js: totpSecret added to PII_FIELDS_USERS (device-bound encryption)
+  • qstore.css: .login__privacy, .login__totp-*, .totp-setup-*,
+    .settings__status-block-*, .totp-manage-* styles
+  • test-totp.mjs: 44 TOTP tests all pass
+  Build: 20260521-BDAEA420  |  23/23 export-import tests pass + 44/44 TOTP tests pass
+  Pushed to: https://github.com/Woodifi/145ACUQstoreV2D.git (master)
