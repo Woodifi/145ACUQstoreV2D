@@ -23,11 +23,12 @@
 12. [Cloud Sync (OneDrive)](#12-cloud-sync-onedrive)
 13. [Backup and Restore](#13-backup-and-restore)
 14. [PIN Security](#14-pin-security)
-15. [OC PIN Recovery](#15-oc-pin-recovery)
-16. [Issue Kits](#16-issue-kits)
-17. [QR Codes](#17-qr-codes)
-18. [Troubleshooting](#18-troubleshooting)
-19. [Reference — Uniform Sizing](#19-reference--uniform-sizing)
+15. [Two-Factor Authentication (2FA)](#15-two-factor-authentication-2fa)
+16. [OC PIN Recovery](#16-oc-pin-recovery)
+17. [Issue Kits](#17-issue-kits)
+18. [QR Codes](#18-qr-codes)
+19. [Troubleshooting](#19-troubleshooting)
+20. [Reference — Uniform Sizing](#20-reference--uniform-sizing)
 
 ---
 
@@ -666,11 +667,15 @@ Both exports honour the active search and action filter — use filters to narro
 | pin_change | PIN set or reset by administrator |
 | recovery_set | OC recovery code generated |
 | recovery_reset | OC PIN reset using recovery code |
+| 2fa_enabled | Two-factor authentication enabled for an account |
+| 2fa_disabled | Two-factor authentication disabled for an account |
+| 2fa_backup_used | Backup code used to complete 2FA login |
+| 2fa_backup_regen | 2FA backup codes regenerated |
 | login | Successful login |
 | logout | User signed out |
 | login_failed | Failed PIN attempt |
 | session_unlock | Locked session resumed after PIN entry |
-| data_export | Backup exported |
+| data_export | Backup exported (plain or encrypted) |
 | data_imported | Backup imported |
 | stocktake | Stocktake finalised |
 | stocktake_writeoff | Written-off items flagged during stocktake |
@@ -820,20 +825,34 @@ Manual backup/restore is available in **Settings → Data backup & restore**. Us
 - Transfer data to a new device
 - Restore after accidental data loss
 
+> **Data sensitivity:** Backup files contain names, service numbers, and equipment records. Store them as you would any personnel document — not in shared drives or unprotected email attachments.
+
 ### Exporting a Backup
 
 1. Click **Export backup**
-2. A JSON file is downloaded named `qstore-backup-<unitcode>-<date>.json`
-3. Store this file in a safe location (not on the same device)
+2. An **Export backup** dialog appears — choose whether to password-protect the file:
+   - **Without a password:** a plain `.json` file is downloaded (`qstore-backup-<unitcode>-<date>.json`)
+   - **With a password:** enter a password, confirm it, and click **Export backup** — an encrypted `.qstore` file is downloaded
+3. Store the file in a safe location off-device
 
 The backup includes all inventory, photos, loans, cadets, users, settings, supply orders, and the full audit chain.
+
+#### Encrypted backups (.qstore files)
+
+Encrypted backups use **AES-256-GCM** with a key derived via **PBKDF2 (310,000 iterations, SHA-256)**. The file is unreadable without the correct password. Use this when:
+- Storing a backup in a shared or cloud location (email, OneDrive, USB drive)
+- Handing a backup to another person for safe-keeping
+- Complying with unit data-handling requirements for personnel files
+
+> **Keep the password safe.** There is no password recovery — a forgotten password means the encrypted backup cannot be restored.
 
 ### Importing a Backup
 
 1. Click **Import backup**
-2. Select the previously exported `.json` file
-3. Confirm — **this replaces all current data**
-4. The audit chain is preserved and extended with an import entry
+2. Type **OVERWRITE** to confirm — this replaces all current data
+3. Select the previously exported `.json` or `.qstore` file
+4. If the file is encrypted, enter the password when prompted
+5. The page reloads — the audit chain is preserved and extended with an import entry
 
 ### CSV Import
 
@@ -894,7 +913,82 @@ Lockouts apply per user account. Other users are unaffected.
 
 ---
 
-## 15. OC PIN Recovery
+## 15. Two-Factor Authentication (2FA)
+
+Two-factor authentication (2FA) adds a second sign-in step after the PIN. Once enabled, signing in requires:
+
+1. Your **PIN** — something you know
+2. A **6-digit code** from an authenticator app — something you have
+
+2FA works fully **offline** — no internet connection is required. It is compatible with Google Authenticator, Microsoft Authenticator, Authy, 1Password, Bitwarden, and any RFC 6238-compliant app.
+
+> **Recommendation:** OC and QM accounts should have 2FA enabled. These accounts have full write access to all data including user management and exports.
+
+### Setting Up 2FA (per user)
+
+Each user sets up 2FA on their own account. OCs can see the 2FA status of all accounts on the Users page.
+
+1. Log in, then go to **Settings → Two-factor authentication**
+2. Click **Set up two-factor authentication**
+3. **Step 1 — Add account to your authenticator app:**
+   - Open your authenticator app and choose *Enter a setup key* or *Manual entry*
+   - Enter the **secret key** shown on screen (or click **Copy** to copy it)
+   - Set the account name to your QStore username
+4. **Step 2 — Verify:**
+   - Enter the 6-digit code currently shown in your authenticator app
+   - Click **Verify code** — this confirms the app is working correctly
+5. **Step 3 — Save backup codes:**
+   - Eight single-use backup codes are generated
+   - **Save them immediately** — print them or store them in a password manager
+   - Tick the confirmation checkbox, then click **Enable two-factor authentication**
+
+2FA is now active on your account. The next login will ask for a 6-digit code after the PIN.
+
+### Signing In With 2FA
+
+1. Select your name on the login screen
+2. Enter your 4-digit PIN
+3. Open your authenticator app and enter the **6-digit code** shown for QStore IMS
+4. The code auto-submits when 6 digits are entered
+
+If the code is rejected, check that your device clock is accurate — TOTP codes are time-sensitive.
+
+### Backup Codes
+
+Backup codes are used when you cannot access your authenticator app (e.g. lost phone). Each code is **single-use** — it is consumed immediately on successful login.
+
+**Using a backup code:**
+1. On the TOTP code screen, click **Use a backup code instead**
+2. Enter the 8-character backup code (letters and digits)
+3. The code is consumed; check how many codes remain in Settings
+
+**Managing backup codes:**
+
+| Action | Location |
+|--------|----------|
+| View remaining count | Settings → Two-factor authentication |
+| Regenerate all codes | Settings → Two-factor authentication → Manage 2FA → Regenerate backup codes |
+
+> **Warning:** If you run out of backup codes and lose your authenticator app, you cannot log in. Regenerate backup codes before they run out.
+
+### Disabling 2FA
+
+1. Go to **Settings → Two-factor authentication → Manage 2FA**
+2. Click **Disable two-factor authentication**
+3. Confirm — the TOTP secret and backup codes are removed from your account
+
+### 2FA Audit Entries
+
+| Action | Meaning |
+|--------|---------|
+| `2fa_enabled` | 2FA successfully enrolled for an account |
+| `2fa_disabled` | 2FA removed from an account |
+| `2fa_backup_used` | A backup code was used to log in (with remaining count) |
+| `2fa_backup_regen` | Backup codes regenerated |
+
+---
+
+## 16. OC PIN Recovery
 
 The OC account has an additional recovery mechanism that is not available to other roles. It is important to set this up before it is needed.
 
@@ -926,7 +1020,7 @@ There is no bypass for a lost OC PIN without a recovery code. Options:
 
 ---
 
-## 16. Issue Kits
+## 17. Issue Kits
 
 Issue kits are pre-defined bundles of items (e.g., *Initial Issue — Male Cadet*) that pre-fill the loan issue form with a single click.
 
@@ -959,7 +1053,7 @@ Issue kits are pre-defined bundles of items (e.g., *Initial Issue — Male Cadet
 
 ---
 
-## 17. QR Codes
+## 18. QR Codes
 
 QR code labels allow quick item lookup using a phone or tablet camera.
 
@@ -978,7 +1072,7 @@ QR code labels allow quick item lookup using a phone or tablet camera.
 
 ---
 
-## 18. Troubleshooting
+## 19. Troubleshooting
 
 ### App won't load / blank screen
 
@@ -1047,7 +1141,7 @@ If the automatic issue failed for some lines, the request is marked **Approved**
 
 ---
 
-## 19. Reference — Uniform Sizing
+## 20. Reference — Uniform Sizing
 
 The **Reference** page is accessible from the main navigation bar and is available to all logged-in users. It provides ADF uniform and equipment sizing tables with conversions between AU/NATO (centimetres), US (inches/US sizes), and generalised sizes (XS–3XL), together with measurement guides for each garment type.
 

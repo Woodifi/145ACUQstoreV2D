@@ -430,7 +430,10 @@ const SECTIONS = [
           <tr><td>pin_change</td><td>PIN set or reset</td></tr>
           <tr><td>login / login_failed</td><td>Login events</td></tr>
           <tr><td>session_unlock</td><td>Locked session resumed after PIN entry</td></tr>
-          <tr><td>data_export / data_imported</td><td>Backup actions</td></tr>
+          <tr><td>data_export / data_imported</td><td>Backup exported or restored</td></tr>
+          <tr><td>2fa_enabled / 2fa_disabled</td><td>Two-factor authentication toggled</td></tr>
+          <tr><td>2fa_backup_used</td><td>Backup code used to complete 2FA login</td></tr>
+          <tr><td>2fa_backup_regen</td><td>2FA backup codes regenerated</td></tr>
           <tr><td>stocktake / stocktake_writeoff</td><td>Stocktake finalised / write-off recorded during stocktake</td></tr>
           <tr><td>order-import</td><td>AAC QStore order PDF imported</td></tr>
           <tr><td>order-received</td><td>Order approved and items received into IMS</td></tr>
@@ -476,6 +479,12 @@ const SECTIONS = [
         </tbody>
       </table>
 
+      <h4>Two-factor authentication (2FA) <span class="help__role">all roles</span></h4>
+      <p>2FA adds a second sign-in step: after your PIN, you enter a 6-digit code from an authenticator app (Google Authenticator, Microsoft Authenticator, Authy, etc.). It works fully offline.</p>
+      <p>To set up 2FA on your account: <strong>Settings → Two-factor authentication → Set up two-factor authentication</strong>. The 3-step wizard walks you through adding the account to your authenticator app, verifying a code, and saving backup codes.</p>
+      <p>Once enabled, your next login will ask for a code after the PIN. If you cannot access your authenticator app, click <strong>Use a backup code instead</strong> on the code screen and enter one of your 8-character single-use backup codes.</p>
+      <p class="help__note">OC and QM accounts have full data access — 2FA is strongly recommended for these roles.</p>
+
       <h4>OC PIN recovery <span class="help__role">OC only</span></h4>
       <p>The OC account has an additional recovery path: generate a recovery code in <strong>Settings → OC PIN recovery</strong>. Store it off-device (e.g. printed copy in the unit safe). If the OC forgets their PIN, use it on the login screen via <strong>Forgot PIN?</strong>.</p>
       <p class="help__warn">Recovery codes are one-use only. Generate a new one immediately after use. Without a recovery code, a lost OC PIN cannot be recovered.</p>
@@ -490,15 +499,23 @@ const SECTIONS = [
       <ol>
         <li>Go to <strong>Settings → Data backup &amp; restore</strong></li>
         <li>Click <strong>Export backup</strong></li>
-        <li>A JSON file is downloaded — store it off-device</li>
+        <li>Choose whether to password-protect the file:
+          <ul>
+            <li><strong>No password</strong> — plain <code>.json</code> file downloaded</li>
+            <li><strong>With password</strong> — encrypted <code>.qstore</code> file; enter and confirm a password</li>
+          </ul>
+        </li>
+        <li>Store the file off-device in a secure location</li>
       </ol>
       <p>The backup includes all inventory, photos, loans, cadets, users, settings, and the audit chain.</p>
+      <p class="help__note">Encrypted backups use AES-256-GCM with PBKDF2 key derivation. The file is unreadable without the correct password — keep it safe, there is no recovery path.</p>
 
       <h4>Importing a backup <span class="help__role">OC</span></h4>
       <ol>
         <li>Click <strong>Import backup</strong></li>
-        <li>Select the <code>.json</code> file</li>
-        <li>Confirm — <strong>this replaces all current data</strong></li>
+        <li>Confirm by typing <strong>OVERWRITE</strong> — this replaces all current data</li>
+        <li>Select the <code>.json</code> or <code>.qstore</code> file</li>
+        <li>If encrypted, enter the password when prompted</li>
       </ol>
       <p class="help__warn">Always keep a current backup. Data is stored locally in the browser — clearing browser data will erase it.</p>
 
