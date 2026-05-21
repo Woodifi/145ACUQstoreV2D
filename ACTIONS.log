@@ -679,3 +679,23 @@ END OF LOG — append new entries above this line
   • test-totp.mjs: 44 TOTP tests all pass
   Build: 20260521-BDAEA420  |  23/23 export-import tests pass + 44/44 TOTP tests pass
   Pushed to: https://github.com/Woodifi/145ACUQstoreV2D.git (master)
+
+[2026-05-21] Read-access audit + 2FA status column (V2)
+  Commits: e055c8f, 1414f33
+  • audit.js: cadet_viewed, staff_viewed (category: access);
+    2fa_enabled/disabled/backup_used/backup_regen (category: security)
+  • cadets.js _openEquipmentProfile: fire-and-forget Storage.audit.append cadet_viewed
+  • staff.js _openEditModal: fire-and-forget Storage.audit.append staff_viewed
+  • users.js: 2FA status column with green/grey/amber badge + backup count tooltip
+  • qstore.css: .usr__col-2fa, .usr__2fa-badge (--on/--off/--warn)
+  Build: 20260521-98B192F3  |  Pushed to: https://github.com/Woodifi/145ACUQstoreV2D.git (master)
+
+[2026-05-21] Atomic IDB transactions for issue/return/stocktake (V2)
+  Commit: 33fb274
+  • storage.js: Storage.atomic.issue(), return(), stocktakeFinalise()
+    — each wraps multi-store writes in one IDB transaction
+  • loans.js: _submitReturn, _quickReturnLoan, issue existingLoan/standard
+    paths all use Storage.atomic
+  • stocktake.js: _doFinalise collects updatedItems[], calls
+    Storage.atomic.stocktakeFinalise (items + stocktake.clear in one tx)
+  Build: 20260521-E2D34F25  |  Pushed to: https://github.com/Woodifi/145ACUQstoreV2D.git (master)
