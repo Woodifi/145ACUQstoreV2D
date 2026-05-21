@@ -184,6 +184,18 @@ Click **Delete** on any row and confirm. Restrictions:
 - You cannot delete the last remaining OC account (assign another OC first)
 - Deleting a user removes their login access only — all loan history, audit entries, and records they created are preserved
 
+#### 2FA Status Column
+
+The Users table includes a **2FA** column showing the current two-factor authentication status for each account:
+
+| Badge | Meaning |
+|-------|---------|
+| **✓ On** (green) | 2FA is enabled; tooltip shows how many backup codes remain |
+| **Off** (grey) | 2FA is not configured |
+| **⚠ Off** (amber) | 2FA is not configured — this account has a privileged role (OC or QM) where 2FA is strongly recommended |
+
+Users configure their own 2FA through **Settings → Two-factor authentication**. See [Section 15 — Two-Factor Authentication](#15-two-factor-authentication-2fa) for the full setup guide.
+
 ---
 
 ## 4. Inventory
@@ -671,6 +683,8 @@ Both exports honour the active search and action filter — use filters to narro
 | 2fa_disabled | Two-factor authentication disabled for an account |
 | 2fa_backup_used | Backup code used to complete 2FA login |
 | 2fa_backup_regen | 2FA backup codes regenerated |
+| cadet_viewed | Cadet equipment profile opened (PII access recorded) |
+| staff_viewed | Staff record opened for editing (PII access recorded) |
 | login | Successful login |
 | logout | User signed out |
 | login_failed | Failed PIN attempt |

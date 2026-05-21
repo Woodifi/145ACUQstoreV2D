@@ -50,6 +50,14 @@ const SECTIONS = [
         <li>After saving, the PIN is displayed <strong>once</strong> — note it down immediately and give it to the user verbally</li>
         <li>Only the OC can manage PINs. Users cannot change their own PIN — if a user forgets their PIN they must ask the OC to reset it via the <strong>Reset PIN</strong> button on the Users page</li>
       </ol>
+      <h4>2FA status column</h4>
+      <p>The Users table includes a <strong>2FA</strong> column showing two-factor authentication status at a glance:</p>
+      <ul>
+        <li><strong>✓ On</strong> (green) — 2FA is active; hover to see remaining backup code count</li>
+        <li><strong>Off</strong> (grey) — 2FA is not configured</li>
+        <li><strong>⚠ Off</strong> (amber) — 2FA is not configured on a privileged account (OC or QM) — enabling it is strongly recommended</li>
+      </ul>
+      <p>Each user configures their own 2FA from <strong>Settings → Two-factor authentication</strong>.</p>
     `,
   },
   {
@@ -426,6 +434,8 @@ const SECTIONS = [
           <tr><td>issue / return</td><td>Loan issued or returned</td></tr>
           <tr><td>cadet_add / cadet_update</td><td>Nominal roll changes</td></tr>
           <tr><td>cadet_discharge</td><td>Cadet deactivated — outstanding loans automatically recalled</td></tr>
+          <tr><td>cadet_viewed</td><td>Cadet equipment profile opened (PII read-access logged)</td></tr>
+          <tr><td>staff_viewed</td><td>Staff record opened for editing (PII read-access logged)</td></tr>
           <tr><td>user_add / user_update / user_delete</td><td>User account management</td></tr>
           <tr><td>pin_change</td><td>PIN set or reset</td></tr>
           <tr><td>login / login_failed</td><td>Login events</td></tr>
