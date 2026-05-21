@@ -173,7 +173,9 @@ export const PII_FIELDS_EXPENSE_CLAIMS = ['claimantName', 'description', 'receip
 
 // Users: name (display name) and svcNo are PII. username is the login credential
 // and is indexed in IDB for login lookup — left unencrypted intentionally.
-export const PII_FIELDS_USERS   = ['name', 'svcNo'];
+// totpSecret is a cryptographic credential that must be protected at rest;
+// encrypting it here means it is device-bound and never exported in plaintext.
+export const PII_FIELDS_USERS   = ['name', 'svcNo', 'totpSecret'];
 
 // Pending requests: the requestor's personal details are PII.
 // requestorSvc is a service number FK — encrypted; the IDB index is not used

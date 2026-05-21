@@ -1,9 +1,10 @@
 // =============================================================================
 // QStore IMS v2 — Login screen
 // =============================================================================
-// Two-step flow:
+// Three-step flow:
 //   1. User picker  — list of all users in the unit, sorted by role then name
 //   2. PIN keypad   — 4-digit entry, auto-submits on 4th digit
+//   3. TOTP code    — 6-digit authenticator code (only if 2FA is enabled)
 //
 // Calls AUTH.login() and dispatches success via the onLoggedIn callback.
 // Unsuccessful logins shake the keypad and clear the buffer for retry.
@@ -20,10 +21,13 @@
 //     temporarily, useful for fat-finger debugging)
 //   - We never log the typed PIN, even on failure
 //   - Failed-login audit entries are written by AUTH.login(), not here
+//   - TOTP step uses a ±30s window and replay guard (totpLastUsedStep)
+//   - Backup codes are single-use; consumed entry is removed on success
 // =============================================================================
 
 import * as Storage from '../storage.js';
 import * as AUTH    from '../auth.js';
+import * as TOTP    from '../totp.js';
 import { openModal } from './modal.js';
 import { esc, $, $$, render, fmtDateOnly, sleep } from './util.js';
 
@@ -95,6 +99,11 @@ async function _renderUserPicker() {
             ${userButtonsHtml}
           </div>
         </div>
+        <footer class="login__privacy">
+          This system stores personnel and equipment data.
+          Access is restricted to authorised unit staff only.
+          All actions are audit-logged.
+        </footer>
       </div>
     </div>
   `);
@@ -327,7 +336,16 @@ async function _submitPin() {
 
   if (result.ok) {
     _teardownKeypad();
-    _onLoggedIn(result.session);
+    // Check if this user has TOTP enabled — if so, gate on the code step
+    // before completing the login. We pass the already-validated session
+    // so that if the user abandons the TOTP step, the session is never
+    // returned to the caller.
+    const userRecord = await Storage.users.get(_selectedUserId);
+    if (userRecord?.totpEnabled && userRecord?.totpSecret) {
+      await _renderTotpStep(userRecord, result.session);
+    } else {
+      _onLoggedIn(result.session);
+    }
     return;
   }
 
@@ -359,6 +377,153 @@ async function _submitPin() {
   }
 
   _refreshPinDisplay();
+}
+
+// -----------------------------------------------------------------------------
+// TOTP verification step (step 3 of login)
+// -----------------------------------------------------------------------------
+// Shown only when the authenticated user has totpEnabled=true.
+// Accepts both 6-digit TOTP codes and 8-char single-use backup codes.
+
+async function _renderTotpStep(userRecord, session) {
+  let _verifying  = false;
+  let _useBackup  = false;
+
+  const _render2FA = () => {
+    render(_root, `
+      <div class="login">
+        <div class="login__card">
+          <header class="login__header">
+            <button type="button" class="login__back" aria-label="Back to PIN entry">‹ Back</button>
+            <div class="login__user-summary">
+              <div class="login__user-name">${esc(userRecord.name)}</div>
+              <div class="login__user-meta">Two-factor authentication</div>
+            </div>
+          </header>
+          <div class="login__body">
+            <h2 class="login__heading">${_useBackup ? 'Enter backup code' : 'Enter authenticator code'}</h2>
+            <p class="login__hint">
+              ${_useBackup
+                ? 'Enter one of your 8-character backup codes.'
+                : 'Open your authenticator app and enter the 6-digit code.'}
+            </p>
+            <div class="login__totp-wrap">
+              <input type="text"
+                     id="login-totp-input"
+                     class="login__totp-input"
+                     inputmode="${_useBackup ? 'text' : 'numeric'}"
+                     ${_useBackup ? '' : 'pattern="\\d{6}" maxlength="6"'}
+                     ${_useBackup ? 'maxlength="8"' : ''}
+                     autocomplete="one-time-code"
+                     spellcheck="false"
+                     placeholder="${_useBackup ? 'XXXXXXXX' : '000000'}"
+                     aria-label="${_useBackup ? 'Backup code' : '6-digit authenticator code'}">
+            </div>
+            <div class="login__error" role="alert" aria-live="assertive"></div>
+            <div class="login__totp-actions">
+              <button type="button" class="login__forgot-link" data-action="toggle-backup">
+                ${_useBackup ? 'Use authenticator code instead' : 'Use a backup code instead'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `);
+
+    const input = $('#login-totp-input', _root);
+    if (input) {
+      input.focus();
+      input.addEventListener('input', () => {
+        if (!_useBackup) {
+          input.value = input.value.replace(/\D/g, '').slice(0, 6);
+          if (input.value.length === 6) _doVerify();
+        } else {
+          input.value = input.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase();
+          if (input.value.length === 8) _doVerify();
+        }
+      });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') _doVerify();
+      });
+    }
+
+    const card = $('.login__card', _root);
+    if (card) {
+      card.addEventListener('click', async (e) => {
+        const back   = e.target.closest('.login__back');
+        const action = e.target.closest('[data-action]')?.dataset.action;
+        if (back) {
+          // Back to PIN — clear session, re-render keypad
+          _selectedUserId = userRecord.id;
+          _pinBuffer = '';
+          await _renderPinKeypad();
+          return;
+        }
+        if (action === 'toggle-backup') {
+          _useBackup = !_useBackup;
+          _render2FA();
+          return;
+        }
+      });
+    }
+  };
+
+  const _doVerify = async () => {
+    if (_verifying) return;
+    const input  = $('#login-totp-input', _root);
+    const errEl  = $('.login__error',     _root);
+    const code   = input?.value?.trim() || '';
+    if (!code) return;
+
+    _verifying = true;
+    if (errEl) errEl.textContent = '';
+
+    try {
+      if (_useBackup) {
+        // Backup code path
+        const remaining = userRecord.totpHashedBackups || [];
+        const idx = await TOTP.verifyBackupCode(code, remaining);
+        if (idx < 0) {
+          _verifying = false;
+          if (errEl) errEl.textContent = 'Backup code not recognised or already used.';
+          if (input) { input.value = ''; input.focus(); }
+          return;
+        }
+        // Consume the code
+        const newBackups = remaining.filter((_, i) => i !== idx);
+        await Storage.users.put({ ...userRecord, totpHashedBackups: newBackups });
+        await Storage.audit.append({
+          action: '2fa_backup_used',
+          user:   userRecord.name || userRecord.id,
+          desc:   `Backup code used for login. ${newBackups.length} remaining.`,
+        });
+      } else {
+        // TOTP path
+        const result = await TOTP.verify(
+          userRecord.totpSecret,
+          code,
+          { lastUsedStep: userRecord.totpLastUsedStep ?? -1 },
+        );
+        if (!result.ok) {
+          _verifying = false;
+          if (errEl) errEl.textContent = 'Code incorrect or expired — check your device clock and try again.';
+          if (input) { input.value = ''; input.focus(); }
+          return;
+        }
+        // Update replay guard
+        await Storage.users.put({ ...userRecord, totpLastUsedStep: result.step });
+      }
+
+      // Success — hand off to the shell
+      _onLoggedIn(session);
+    } catch (err) {
+      _verifying = false;
+      console.error('TOTP verification error:', err);
+      if (errEl) errEl.textContent = 'Verification error — please try again.';
+    }
+  };
+
+  _render2FA();
 }
 
 function _startLockoutCountdown(unlockAt) {

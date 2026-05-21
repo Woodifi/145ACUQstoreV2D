@@ -31,6 +31,7 @@ import { esc, $, $$, render, fmtDate } from './util.js';
 import { STAFF_RANKS_CANONICAL, CADET_RANKS } from '../ranks.js';
 import * as Recovery   from '../recovery.js';
 import * as Migration  from '../migration.js';
+import * as TotpSetup  from './totp-setup.js';
 import * as CsvUi      from './csv-import.js';
 import { showToast }   from './toast.js';
 import * as Structure  from '../structure.js';
@@ -76,6 +77,7 @@ async function _render() {
   const recoveryStatus = sess?.userId
     ? await Recovery.statusForUser(sess.userId)
     : { exists: false, createdAt: null };
+  const totpUser       = sess?.userId ? await Storage.users.get(sess.userId) : null;
   const unitStructure  = await Structure.load();
   // Stored categories — null means "use defaults".
   const storedCats     = await Storage.settings.get('categories');
@@ -92,6 +94,7 @@ async function _render() {
         ${_loanSettingsSectionHtml(settings)}
         ${_appearanceSectionHtml(settings)}
         ${_recoverySectionHtml(recoveryStatus)}
+        ${_totpSectionHtml(totpUser)}
         ${_securitySectionHtml(settings)}
         ${_cloudSectionHtml(settings, status)}
         ${_dataSectionHtml(settings)}
@@ -791,6 +794,53 @@ function _recoverySectionHtml(recoveryStatus) {
   `;
 }
 
+// -----------------------------------------------------------------------------
+// Two-factor authentication section
+// -----------------------------------------------------------------------------
+
+function _totpSectionHtml(user) {
+  const enabled  = user?.totpEnabled === true;
+  const backups  = enabled ? (user?.totpHashedBackups || []).length : 0;
+
+  const statusBlock = enabled ? `
+    <div class="settings__status-block settings__status-block--ok">
+      <span class="badge badge--success">Enabled</span>
+      Two-factor authentication is active on your account.
+      Backup codes remaining: <strong>${backups}</strong>.
+    </div>
+    <div class="form__actions">
+      <button type="button" class="btn btn--outline" data-action="manage-2fa">
+        Manage 2FA (disable / regenerate backup codes)
+      </button>
+    </div>
+  ` : `
+    <div class="settings__status-block settings__status-block--warn">
+      <span class="badge badge--neutral">Not enabled</span>
+      Your account is protected by PIN only. Enabling 2FA adds a time-based
+      code from an authenticator app as a second sign-in step.
+    </div>
+    <div class="form__actions">
+      <button type="button" class="btn btn--primary" data-action="setup-2fa">
+        Set up two-factor authentication
+      </button>
+    </div>
+  `;
+
+  return `
+    <section class="settings__section" data-section="2fa">
+      <header class="settings__section-header">
+        <h2 class="settings__section-title">Two-factor authentication (2FA)</h2>
+        <p class="settings__section-hint">
+          When enabled, signing in requires both your PIN and a 6-digit code
+          from an authenticator app (Google Authenticator, Microsoft Authenticator,
+          Authy, etc.). Works fully offline — no internet required.
+        </p>
+      </header>
+      ${statusBlock}
+    </section>
+  `;
+}
+
 function _cloudSectionHtml(settings, status) {
   // Cloud sync requires a stable HTTP(S) origin for the OAuth redirect URI.
   // file:// origins can't be registered in Azure, so we disable the config
@@ -1215,7 +1265,7 @@ function _dataSectionHtml(settings) {
       </details>
 
       <input type="file" data-target="import-file"
-             accept="application/json,.json" hidden>
+             accept="application/json,.json,.qstore" hidden>
       <input type="file" data-target="import-v1-file"
              accept="application/json,.json" hidden>
     </section>
@@ -1565,6 +1615,8 @@ async function _onRootClick(e) {
     case 'import-items-csv':  CsvUi.openItemsCsvImport();  break;
     case 'import-cadets-csv': CsvUi.openCadetsCsvImport(); break;
     case 'recovery-generate':    await _doGenerateRecovery(e.target.closest('button')); break;
+    case 'setup-2fa':            { const s = AUTH.getSession(); if (s?.userId) TotpSetup.openTotpSetup(s.userId); } break;
+    case 'manage-2fa':           { const s = AUTH.getSession(); if (s?.userId) TotpSetup.openTotpManage(s.userId); } break;
     case 'logo-remove':          await _doRemoveLogo(); break;
     case 'configure-structure':  await _onConfigureStructure(); break;
     case 'clear-structure':      await _onClearStructure(e.target.closest('button')); break;
@@ -1928,6 +1980,58 @@ async function _doLoadFromCloud() {
 // while running so a frantic double-click can't kick off two exports or two
 // imports racing each other through the same IndexedDB transaction queue.
 
+// ---------------------------------------------------------------------------
+// Encrypted backup helpers
+// Encrypted file format: { qstoreEncrypted: true, v: 1, salt: b64, iv: b64, data: b64 }
+// Key derivation: PBKDF2 (SHA-256, 310000 iterations) → AES-256-GCM
+// ---------------------------------------------------------------------------
+
+function _b64(buf) {
+  return btoa(String.fromCharCode(...new Uint8Array(buf)));
+}
+function _fromB64(s) {
+  return Uint8Array.from(atob(s), c => c.charCodeAt(0));
+}
+
+async function _encryptBackup(jsonStr, password) {
+  const enc      = new TextEncoder();
+  const salt     = crypto.getRandomValues(new Uint8Array(32));
+  const iv       = crypto.getRandomValues(new Uint8Array(12));
+  const baseKey  = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
+  const aesKey   = await crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: 310_000, hash: 'SHA-256' },
+    baseKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt'],
+  );
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aesKey, enc.encode(jsonStr));
+  return JSON.stringify({ qstoreEncrypted: true, v: 1, salt: _b64(salt), iv: _b64(iv), data: _b64(ciphertext) });
+}
+
+async function _decryptBackup(encObj, password) {
+  if (!encObj?.qstoreEncrypted || encObj.v !== 1) throw new Error('Not a QStore encrypted backup.');
+  const enc     = new TextEncoder();
+  const salt    = _fromB64(encObj.salt);
+  const iv      = _fromB64(encObj.iv);
+  const data    = _fromB64(encObj.data);
+  const baseKey = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
+  const aesKey  = await crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: 310_000, hash: 'SHA-256' },
+    baseKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['decrypt'],
+  );
+  let plain;
+  try {
+    plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, aesKey, data);
+  } catch {
+    throw new Error('Incorrect password or corrupted backup file.');
+  }
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+
 async function _doExportData(btn) {
   if (btn) btn.disabled = true;
   try {
@@ -1940,28 +2044,88 @@ async function _doExportData(btn) {
     });
 
     const snapshot = await Storage.exportAll();
-    const blob = new Blob([JSON.stringify(snapshot)], { type: 'application/json' });
 
     const settings = await Storage.settings.getAll();
     const unitTag = (settings.unitCode || settings.unitName || 'qstore')
       .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'qstore';
     const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-    const filename = `qstore-backup-${unitTag}-${stamp}.json`;
+    const baseFilename = `qstore-backup-${unitTag}-${stamp}`;
 
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    // Revoke after a tick — some browsers need the URL to still be valid
-    // when the click handler returns.
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-
-    await Storage.settings.set('data.lastExport', new Date().toISOString());
-    await _render();
-    _flashSuccess(`Backup saved as ${filename}.`);
+    // Offer password protection via a modal. This is non-blocking: the user
+    // can choose plain JSON or an AES-256-GCM encrypted file.
+    openModal({
+      titleHtml: 'Export backup',
+      size: 'sm',
+      bodyHtml: `
+        <p class="modal__body">
+          Password-protect your backup to prevent anyone who finds the file
+          from reading your unit's data. You will need this password to restore.
+        </p>
+        <form class="form" data-form="export-pw" autocomplete="off">
+          <label class="form__field">
+            <span class="form__label">Password <span class="form__optional">(leave blank for unencrypted)</span></span>
+            <input type="password" name="pw" autocomplete="new-password"
+                   placeholder="Leave blank to export without encryption">
+          </label>
+          <label class="form__field">
+            <span class="form__label">Confirm password</span>
+            <input type="password" name="pw2" autocomplete="new-password"
+                   placeholder="Repeat password">
+          </label>
+          <div class="form__error" role="alert"></div>
+          <div class="form__actions">
+            <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
+            <button type="submit" class="btn btn--primary">Export backup</button>
+          </div>
+        </form>
+      `,
+      onMount(panel, close) {
+        const form  = $('form[data-form="export-pw"]', panel);
+        const errEl = $('.form__error', panel);
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          errEl.textContent = '';
+          const fd  = new FormData(form);
+          const pw  = String(fd.get('pw')  || '');
+          const pw2 = String(fd.get('pw2') || '');
+          if (pw && pw !== pw2) {
+            errEl.textContent = 'Passwords do not match.';
+            return;
+          }
+          const submitBtn = form.querySelector('[type="submit"]');
+          if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Exporting…'; }
+          try {
+            let outStr, filename, mimeType;
+            if (pw) {
+              outStr   = await _encryptBackup(JSON.stringify(snapshot), pw);
+              filename = `${baseFilename}.qstore`;
+              mimeType = 'application/octet-stream';
+            } else {
+              outStr   = JSON.stringify(snapshot);
+              filename = `${baseFilename}.json`;
+              mimeType = 'application/json';
+            }
+            const blob = new Blob([outStr], { type: mimeType });
+            const url  = URL.createObjectURL(blob);
+            const a    = document.createElement('a');
+            a.href     = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            close();
+            await Storage.settings.set('data.lastExport', new Date().toISOString());
+            await _render();
+            _flashSuccess(`Backup saved as ${filename}.${pw ? ' (encrypted)' : ''}`);
+          } catch (err) {
+            console.error('Export failed:', err);
+            errEl.textContent = 'Export failed: ' + (err.message || err);
+            if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Export backup'; }
+          }
+        });
+      },
+    });
   } catch (err) {
     console.error('Export failed:', err);
     showToast('Export failed: ' + (err.message || err), 'error');
@@ -2033,19 +2197,84 @@ async function _doImportData(btn) {
   });
 }
 
+/**
+ * Prompt the user for a decryption password when importing an encrypted backup.
+ * Returns the decrypted snapshot object, or null if the user cancels.
+ */
+function _promptDecrypt(encObj) {
+  return new Promise((resolve) => {
+    openModal({
+      titleHtml: 'Encrypted backup — enter password',
+      size: 'sm',
+      bodyHtml: `
+        <p class="modal__body">
+          This backup file is password-protected. Enter the password that was
+          used when the backup was exported.
+        </p>
+        <form class="form" data-form="decrypt-pw" autocomplete="off">
+          <label class="form__field">
+            <span class="form__label">Backup password</span>
+            <input type="password" name="pw" autocomplete="current-password" required
+                   autofocus placeholder="Enter backup password">
+          </label>
+          <div class="form__error" role="alert"></div>
+          <div class="form__actions">
+            <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
+            <button type="submit" class="btn btn--primary">Decrypt &amp; restore</button>
+          </div>
+        </form>
+      `,
+      onMount(panel, close) {
+        const form  = $('form[data-form="decrypt-pw"]', panel);
+        const errEl = $('.form__error', panel);
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          errEl.textContent = '';
+          const pw = String(new FormData(form).get('pw') || '');
+          const submitBtn = form.querySelector('[type="submit"]');
+          if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Decrypting…'; }
+          try {
+            const snapshot = await _decryptBackup(encObj, pw);
+            close();
+            resolve(snapshot);
+          } catch (err) {
+            errEl.textContent = err.message || 'Decryption failed.';
+            if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Decrypt & restore'; }
+          }
+        });
+        // If the modal is closed without submitting, resolve null so the
+        // import caller knows to abort cleanly.
+        panel.closest('.modal')?.addEventListener('modal-close', () => resolve(null), { once: true });
+      },
+    });
+  });
+}
+
 async function _performImport(file, btn) {
   if (btn) btn.disabled = true;
   try {
     const text = await file.text();
-    let snapshot;
+    let parsed;
     try {
-      snapshot = JSON.parse(text);
+      parsed = JSON.parse(text);
     } catch {
       showToast('That file is not valid JSON. Choose a backup file produced by QStore.', 'error');
+      if (btn) btn.disabled = false;
       return;
     }
+
+    // Detect encrypted backup (.qstore format)
+    let snapshot;
+    if (parsed?.qstoreEncrypted === true) {
+      snapshot = await _promptDecrypt(parsed);
+      if (!snapshot) { if (btn) btn.disabled = false; return; } // user cancelled
+    } else {
+      snapshot = parsed;
+    }
+
     if (!snapshot || typeof snapshot !== 'object' || !snapshot.schemaVersion) {
       showToast('That file is not a QStore backup (missing schemaVersion).', 'error');
+      if (btn) btn.disabled = false;
       return;
     }
     // Storage.importAll throws on schema mismatch; we surface that cleanly.
