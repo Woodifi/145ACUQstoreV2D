@@ -699,3 +699,11 @@ END OF LOG â€” append new entries above this line
   â€¢ stocktake.js: _doFinalise collects updatedItems[], calls
     Storage.atomic.stocktakeFinalise (items + stocktake.clear in one tx)
   Build: 20260521-E2D34F25  |  Pushed to: https://github.com/Woodifi/145ACUQstoreV2D.git (master)
+
+## 2026-05-21 — Manual & In-App Help Updates (Session close)
+- MANUAL.md §3: documented 2FA status badge column in user management table (green ? On / grey Off / amber ? Off for CO/QM)
+- MANUAL.md §10: added cadet_viewed and staff_viewed audit action type entries
+- src/ui/help.js: added 2FA status column subsection under Adding Users section
+- src/ui/help.js: added cadet_viewed and staff_viewed rows to in-app audit action types table
+- Build: 20260521-BA82FFFE — clean
+- Committed: d66a24d — pushed to GitHub
