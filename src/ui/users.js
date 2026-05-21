@@ -92,6 +92,7 @@ function _tableHtml(users) {
             <th class="usr__col-role">Role</th>
             <th class="usr__col-svc">Service No</th>
             <th class="usr__col-last">Last Login</th>
+            <th class="usr__col-2fa">2FA</th>
             <th class="usr__col-actions">Actions</th>
           </tr>
         </thead>
@@ -101,6 +102,21 @@ function _tableHtml(users) {
       </table>
     </div>
   `;
+}
+
+function _2faBadgeHtml(user) {
+  if (user.totpEnabled) {
+    const backups = Array.isArray(user.totpHashedBackups) ? user.totpHashedBackups.length : 0;
+    return `<span class="usr__2fa-badge usr__2fa-badge--on"
+              title="${backups} backup code${backups === 1 ? '' : 's'} remaining">
+              ✓ On
+            </span>`;
+  }
+  const isPrivileged = user.role === 'co' || user.role === 'qm';
+  return `<span class="usr__2fa-badge usr__2fa-badge--${isPrivileged ? 'warn' : 'off'}"
+            title="${isPrivileged ? 'Recommended for this role' : 'Not configured'}">
+            ${isPrivileged ? '⚠ Off' : 'Off'}
+          </span>`;
 }
 
 function _rowHtml(user) {
@@ -121,6 +137,7 @@ function _rowHtml(user) {
       </td>
       <td class="usr__svc">${esc(user.svcNo || '—')}</td>
       <td class="usr__last">${esc(lastLogin)}</td>
+      <td class="usr__2fa">${_2faBadgeHtml(user)}</td>
       <td class="usr__actions">
         <button type="button" class="btn btn--ghost btn--sm"
                 data-action="edit-user" data-user-id="${esc(user.id)}">Edit</button>

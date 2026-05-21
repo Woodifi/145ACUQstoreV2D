@@ -4611,6 +4611,7 @@ details[open] > .help__section-summary::after {
 .usr__col-role     { width: 130px; }
 .usr__col-svc      { width: 110px; }
 .usr__col-last     { width: 120px; }
+.usr__col-2fa      { width: 80px;  text-align: center; }
 .usr__col-actions  { width: 220px; white-space: nowrap; }
 
 .usr__name { font-weight: 500; }
@@ -4662,6 +4663,20 @@ details[open] > .help__section-summary::after {
 .usr__role-badge--staff { background: rgba(107,176,255,0.15); color: var(--info);   }
 .usr__role-badge--cadet { background: rgba(106,224,122,0.15); color: var(--good);   }
 .usr__role-badge--ro    { background: rgba(136,147,160,0.15); color: var(--text-muted); }
+
+/* 2FA status badge */
+.usr__2fa { text-align: center; }
+.usr__2fa-badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.15rem 0.45rem;
+  border-radius: 3px;
+  cursor: default;
+}
+.usr__2fa-badge--on   { background: rgba(106,224,122,0.15); color: var(--good); }
+.usr__2fa-badge--off  { background: rgba(136,147,160,0.10); color: var(--text-muted); }
+.usr__2fa-badge--warn { background: rgba(255,193,7,0.15);   color: var(--gold); }
 
 .usr__empty {
   padding: 48px 24px;
