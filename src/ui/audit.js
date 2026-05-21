@@ -63,6 +63,12 @@ const ACTION_LABELS = Object.freeze({
   item_note:               'Item note added',
   loans_cleanup:           'Phantom loan records removed',
   stocktake_finalise:      'Stocktake finalised',
+  cadet_viewed:            'Cadet record viewed',
+  staff_viewed:            'Staff record viewed',
+  '2fa_enabled':           '2FA enabled',
+  '2fa_disabled':          '2FA disabled',
+  '2fa_backup_used':       '2FA backup code used',
+  '2fa_backup_regen':      '2FA backup codes regenerated',
 });
 
 // Action → CSS modifier. Categorises actions broadly: success / mutation /
@@ -93,6 +99,12 @@ const ACTION_CATEGORY = Object.freeze({
   item_note:               'mutation',
   loans_cleanup:           'mutation',
   stocktake_finalise:      'mutation',
+  cadet_viewed:            'access',
+  staff_viewed:            'access',
+  '2fa_enabled':           'security',
+  '2fa_disabled':          'security',
+  '2fa_backup_used':       'security',
+  '2fa_backup_regen':      'security',
 });
 
 // -----------------------------------------------------------------------------

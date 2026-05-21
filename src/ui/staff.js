@@ -259,6 +259,12 @@ async function _openEditModal(svcNo) {
     await _render();
     return;
   }
+  // Fire-and-forget read-access audit — records who viewed this staff PII record
+  Storage.audit.append({
+    action: 'staff_viewed',
+    user:   AUTH.getSession()?.name || 'unknown',
+    detail: svcNo,
+  }).catch(() => {});
   _openStaffFormModal({ mode: 'edit', member });
 }
 

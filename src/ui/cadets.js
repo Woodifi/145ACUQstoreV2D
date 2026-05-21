@@ -1061,6 +1061,13 @@ async function _openEquipmentProfile(svcNo) {
   const cadet  = await Storage.cadets.get(svcNo);
   if (!cadet) { showToast('Cadet not found.', 'error'); return; }
 
+  // Fire-and-forget read-access audit — records who viewed this PII record
+  Storage.audit.append({
+    action: 'cadet_viewed',
+    user:   AUTH.getSession()?.name || 'unknown',
+    detail: svcNo,
+  }).catch(() => {});
+
   const allLoans  = await Storage.loans.listForCadet(svcNo);
   const today     = new Date().toISOString().slice(0, 10);
   const active    = allLoans.filter((l) => l.active !== false);
