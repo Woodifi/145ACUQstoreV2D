@@ -39,14 +39,20 @@ import { CATEGORIES as DEFAULT_CATEGORIES } from './inventory.js';
 import { INITIAL_ISSUE } from './loans.js';
 import { applyTheme }   from '../theme.js';
 
-let _root = null;
+let _root           = null;
+let _controller     = null;  // AbortController — cleaned up on unmount
 let _statusListener = null;
 
 export async function mount(rootEl) {
-  _root = rootEl;
+  _root       = rootEl;
+  _controller = new AbortController();
   AUTH.requireCO();
 
   await _render();
+
+  // Wire root click once here — not inside _wireEventListeners()/_render()
+  // to prevent accumulation across re-renders.
+  _root.addEventListener('click', _onRootClick, { signal: _controller.signal });
 
   // Listen for sync status changes so the page reflects sign-in/out, busy,
   // and error states without a full re-render.
@@ -54,6 +60,8 @@ export async function mount(rootEl) {
   Sync.addStatusListener(_statusListener);
 
   return function unmount() {
+    _controller.abort();
+    _controller = null;
     if (_statusListener) {
       Sync.removeStatusListener(_statusListener);
       _statusListener = null;
@@ -1348,11 +1356,12 @@ async function _refreshSyncBlock(status) {
 // -----------------------------------------------------------------------------
 
 function _wireEventListeners() {
+  // Note: _root.addEventListener('click', _onRootClick) is wired once in
+  // mount() with { signal } — not here — to avoid accumulation across re-renders.
   const cloudForm = $('form[data-form="cloud-config"]', _root);
   if (cloudForm) cloudForm.addEventListener('submit', _onSaveConfig);
   const unitForm = $('form[data-form="unit-config"]', _root);
   if (unitForm) unitForm.addEventListener('submit', _onSaveUnit);
-  _root.addEventListener('click', _onRootClick);
 
   const logoInput = $('input[data-target="logo-file-input"]', _root);
   if (logoInput) logoInput.addEventListener('change', _onLogoFileChange);

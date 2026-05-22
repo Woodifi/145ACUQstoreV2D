@@ -25,15 +25,26 @@ const _uuid = () => crypto.randomUUID?.() ||
 
 // ── Module state ──────────────────────────────────────────────────────────────
 
-let _root      = null;
-let _importing = false;
+let _root       = null;
+let _controller = null;  // AbortController — cleaned up on unmount
+let _importing  = false;
 
 // ── Mount / Unmount ───────────────────────────────────────────────────────────
 
 export async function mount(rootEl) {
-  _root = rootEl;
+  _root       = rootEl;
+  _controller = new AbortController();
   await _renderList();
-  return () => { _root = null; };
+  // Wire root click once here — not inside _renderList() to avoid accumulation.
+  _root.addEventListener('click', (e) => {
+    const row = e.target.closest('[data-order-id]');
+    if (row) _openDetail(row.dataset.orderId);
+  }, { signal: _controller.signal });
+  return () => {
+    _controller.abort();
+    _controller = null;
+    _root = null;
+  };
 }
 
 // ── List view ─────────────────────────────────────────────────────────────────
@@ -82,11 +93,7 @@ async function _renderList() {
   importLabel?.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput?.click(); }
   });
-
-  _root.addEventListener('click', (e) => {
-    const row = e.target.closest('[data-order-id]');
-    if (row) _openDetail(row.dataset.orderId);
-  });
+  // Note: _root click listener is wired once in mount(), not here.
 }
 
 function _orderRowHtml(order) {
