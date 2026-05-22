@@ -211,17 +211,17 @@ The Inventory page lists all items in the Q-Store. It is the first page shown af
 
 ### Condition Breakdown
 
-Every inventory item tracks the same five condition states as Stocktake:
+Every inventory item tracks a five-state breakdown. **Svc is automatically calculated** — only enter the non-serviceable quantities:
 
-| Field | Abbreviation | Meaning |
-|-------|-------------|---------|
-| Serviceable | Svc | Ready for issue |
-| Unserviceable | U/S | Damaged or non-functional |
-| In Repair | Repr | Temporarily unavailable (being repaired) |
-| Calibration Due | Cal | Must be calibrated before issue |
-| Written Off | W/O | Beyond repair — pending Board of Survey |
+| Field | Abbreviation | Editable | Meaning |
+|-------|-------------|----------|---------|
+| Serviceable | Svc | **Read-only** (auto = On hand − others) | Ready for issue |
+| Unserviceable | U/S | Yes | Damaged or non-functional |
+| In Repair | Repr | Yes | Temporarily unavailable (being repaired) |
+| Calibration Due | Cal | Yes | Must be calibrated before issue |
+| Written Off | W/O | Yes | Beyond repair — pending Board of Survey |
 
-The **Condition badge** and **Unsvc** count are derived automatically from these fields. There is no separate condition dropdown to maintain — the breakdown drives everything.
+The **Svc** count updates live as you change any other field. To move items from Svc to another category, just increase that category — Svc reduces automatically. No need to also reduce Svc manually. The **Condition badge** and **Unsvc** count are derived from the same fields.
 
 ### Adding an Item (OC / QM)
 
@@ -232,11 +232,11 @@ The **Condition badge** and **Unsvc** count are derived automatically from these
    - **Category** — Select from the unit's configured categories (see [Section 11 — Settings](#11-settings))
    - **Authorised qty** — Establishment quantity
    - **On hand** — Current physical quantity
-   - **Condition breakdown** — Enter a qty in each applicable condition field. The running total (shown top-right of the section) must equal On hand. Changing On hand automatically adjusts Svc to keep the total consistent.
+   - **Condition breakdown** — Enter quantities for U/S, Repr, Cal, and W/O as needed. **Svc is calculated automatically** from On hand minus the other categories.
    - **Location** — Storage location within the Q-Store
 3. Click **Save item**
 
-> **Tip:** For new items being added for the first time, the Svc field defaults to match On hand. Adjust if any units are already unserviceable.
+> **Tip:** Increasing On hand automatically increases Svc — new stock is assumed serviceable until categorised otherwise.
 
 ### Editing an Item (OC / QM)
 

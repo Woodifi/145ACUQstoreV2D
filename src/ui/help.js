@@ -133,27 +133,27 @@ const SECTIONS = [
       <p>The <strong>Condition</strong> column shows a coloured badge for each item's overall status. When an item has mixed conditions, a breakdown line appears below the badge — for example: <em>3 Svc · 1 U/S · 1 Repr</em>.</p>
 
       <h4>Condition breakdown</h4>
-      <p>Every item tracks the full five-state condition breakdown — the same states used in Stocktake:</p>
+      <p>Every item tracks a five-state condition breakdown. <strong>Svc is automatically calculated</strong> — only the four non-serviceable categories need to be entered:</p>
       <table class="help__table">
-        <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+        <thead><tr><th>Field</th><th>Meaning</th><th>Editable?</th></tr></thead>
         <tbody>
-          <tr><td><strong>Svc</strong></td><td>Serviceable — ready for issue</td></tr>
-          <tr><td><strong>U/S</strong></td><td>Unserviceable — damaged or non-functional</td></tr>
-          <tr><td><strong>Repr</strong></td><td>In repair — temporarily unavailable</td></tr>
-          <tr><td><strong>Cal</strong></td><td>Calibration due — must be calibrated before issue</td></tr>
-          <tr><td><strong>W/O</strong></td><td>Written off — beyond repair, pending Board of Survey</td></tr>
+          <tr><td><strong>Svc</strong></td><td>Serviceable — ready for issue (auto-calculated)</td><td>Read-only — derived from On hand minus all other categories</td></tr>
+          <tr><td><strong>U/S</strong></td><td>Unserviceable — damaged or non-functional</td><td>Yes</td></tr>
+          <tr><td><strong>Repr</strong></td><td>In repair — temporarily unavailable</td><td>Yes</td></tr>
+          <tr><td><strong>Cal</strong></td><td>Calibration due — must be calibrated before issue</td><td>Yes</td></tr>
+          <tr><td><strong>W/O</strong></td><td>Written off — beyond repair, pending Board of Survey</td><td>Yes</td></tr>
         </tbody>
       </table>
-      <p>The overall <strong>Condition badge</strong> and <strong>Unsvc</strong> count are derived automatically from these five fields — no separate dropdown needed.</p>
+      <p>The <strong>Svc</strong> field updates in real-time as you change any other category. To move 2 items from Svc to U/S: just increase U/S by 2 — Svc drops automatically. The overall <strong>Condition badge</strong> is also derived from these fields — no separate setting required.</p>
 
       <h4>Adding an item <span class="help__role">OC / QM</span></h4>
       <ol>
         <li>Click <strong>+ Add item</strong></li>
         <li>Enter NSN (4-2-3-4 format, e.g. <code>8470-66-001-0001</code>), name, category, authorised and on-hand quantities</li>
-        <li>Fill in the <strong>Condition breakdown</strong> — the five qty fields must total the On-hand count. The running total indicator turns green when they match.</li>
+        <li>Enter the quantities in each <strong>non-serviceable</strong> category (U/S, Repr, Cal, W/O). <strong>Svc is calculated automatically.</strong></li>
         <li>Enter a location and click <strong>Save item</strong></li>
       </ol>
-      <p class="help__note">Changing <strong>On hand</strong> automatically adjusts the <strong>Svc</strong> field to keep the total consistent. Fine-tune the other fields as needed.</p>
+      <p class="help__note">Increasing <strong>On hand</strong> automatically increases <strong>Svc</strong> — new stock is assumed serviceable until categorised otherwise.</p>
 
       <h4>Editing an item <span class="help__role">OC / QM</span></h4>
       <p>Click <strong>Edit</strong> on any row. The condition breakdown fields are pre-filled from current data. All changes are recorded in the audit log.</p>
