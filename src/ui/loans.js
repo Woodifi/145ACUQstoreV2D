@@ -211,8 +211,9 @@ async function _renderIssueTab(body) {
 
   // Resolve the currently-selected borrower (if any) so we can show their
   // name and any existing active loans alongside the form.
+  const allPersonnel = [...cadets, ...staffList];
   const borrower = _issueState.svcNo
-    ? cadets.find((c) => c.svcNo === _issueState.svcNo) || null
+    ? allPersonnel.find((c) => c.svcNo === _issueState.svcNo) || null
     : null;
   const borrowerActiveLoans = borrower
     ? (await Storage.loans.listForCadet(borrower.svcNo)).filter((l) => l.active === true)
@@ -514,7 +515,7 @@ function _wireIssueTab(body, activeCadets, allItems) {
   // Borrower picker (cadet mode).
   const borrowerInput  = $('input[data-borrower-search="issue"]', body);
   const borrowerHidden = $('input[data-borrower-id="issue"]', body);
-  borrowerInput?.addEventListener('input', () => {
+  const _onBorrowerChange = () => {
     const val   = borrowerInput.value;
     const match = activeCadets.find((c) =>
       `${c.rank} ${c.surname} (${c.svcNo})` === val);
@@ -523,7 +524,9 @@ function _wireIssueTab(body, activeCadets, allItems) {
       _issueState.svcNo = match.svcNo;
       _render();
     }
-  });
+  };
+  borrowerInput?.addEventListener('input',  _onBorrowerChange);
+  borrowerInput?.addEventListener('change', _onBorrowerChange);
 
   // Activity name input (unit-loan mode) — keep state in sync on blur.
   const activityInput = $('input[data-issue-field="activityName"]', body);
