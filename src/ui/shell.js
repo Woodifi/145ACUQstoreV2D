@@ -78,29 +78,55 @@ let _currentUnmount   = null;
 
 let _idleTimerHandle  = null;
 let _idleTimeoutMs    = 0;
+let _lastActivityAt   = 0;   // wall-clock ms of last user activity
 let _lockOverlay      = null;
+
+// Default timeout when the setting has never been saved (new installs).
+const _IDLE_DEFAULT_MINS = 15;
 
 const _IDLE_EVENTS = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'];
 
 function _onIdleActivity() {
+  _lastActivityAt = Date.now();
   _resetIdleTimer();
+}
+
+// Fired when the tab/window becomes visible again (covers OS sleep/wake and
+// tab switches).  setTimeout is suspended during sleep so we must compare
+// wall-clock elapsed time rather than trusting the remaining timer.
+function _onVisibilityChange() {
+  if (document.visibilityState !== 'visible') return;
+  if (!_idleTimeoutMs || _lockOverlay) return;
+  const elapsed = Date.now() - _lastActivityAt;
+  if (elapsed >= _idleTimeoutMs) {
+    _triggerLock();
+  } else {
+    // Recalibrate remaining time so the timer is accurate after wake.
+    if (_idleTimerHandle) clearTimeout(_idleTimerHandle);
+    _idleTimerHandle = setTimeout(_triggerLock, _idleTimeoutMs - elapsed);
+  }
 }
 
 async function _startIdleWatcher() {
   _stopIdleWatcher();
   const raw  = await Storage.settings.get('security.idleTimeoutMinutes');
-  const mins = parseInt(raw, 10);
-  if (!mins || mins <= 0) return;                // disabled
-  _idleTimeoutMs = mins * 60_000;
+  const stored = parseInt(raw, 10);
+  // If the setting has never been saved (NaN), apply the secure default.
+  // Explicit 0 (disabled) is not permitted — treat as default.
+  const mins = (!isNaN(stored) && stored > 0) ? stored : _IDLE_DEFAULT_MINS;
+  _idleTimeoutMs  = mins * 60_000;
+  _lastActivityAt = Date.now();
   _IDLE_EVENTS.forEach(ev =>
     document.addEventListener(ev, _onIdleActivity, { passive: true })
   );
+  document.addEventListener('visibilitychange', _onVisibilityChange);
   _resetIdleTimer();
 }
 
 function _stopIdleWatcher() {
   if (_idleTimerHandle) { clearTimeout(_idleTimerHandle); _idleTimerHandle = null; }
   _IDLE_EVENTS.forEach(ev => document.removeEventListener(ev, _onIdleActivity));
+  document.removeEventListener('visibilitychange', _onVisibilityChange);
   _idleTimeoutMs = 0;
 }
 

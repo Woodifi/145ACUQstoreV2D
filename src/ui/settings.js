@@ -1103,10 +1103,10 @@ function _appearanceSectionHtml(settings) {
 
 function _securitySectionHtml(settings) {
   const stored = parseInt(settings['security.idleTimeoutMinutes'], 10);
-  const current = isNaN(stored) ? 15 : stored;   // default 15 min
+  // Enforce minimum 5 min — 0 (disabled) is not permitted on security grounds.
+  const current = (!isNaN(stored) && stored >= 5) ? stored : 15;
 
   const opts = [
-    { value: 0,  label: 'Disabled' },
     { value: 5,  label: '5 minutes' },
     { value: 10, label: '10 minutes' },
     { value: 15, label: '15 minutes' },
@@ -1135,11 +1135,10 @@ function _securitySectionHtml(settings) {
         </select>
       </div>
       <p class="form__hint">
-        Any mouse, keyboard, or touch activity resets the timer.
-        ${current === 0
-          ? 'Auto-lock is currently <strong>disabled</strong>.'
-          : `Session will lock after <strong>${current} minute${current === 1 ? '' : 's'}</strong> of inactivity.`
-        }
+        Any mouse, keyboard, or touch activity resets the timer. The lock also
+        triggers immediately on wake from sleep or when returning to this tab
+        if the idle period has elapsed.
+        Session will lock after <strong>${current} minute${current === 1 ? '' : 's'}</strong> of inactivity.
       </p>
     </section>
   `;
