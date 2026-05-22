@@ -697,7 +697,8 @@ async function _submitIssue(body) {
     borrowerName = activityName;
     borrowerSvc  = 'UNIT-LOAN';
   } else {
-    cadet = await Storage.cadets.get(_issueState.svcNo);
+    cadet = await Storage.cadets.get(_issueState.svcNo)
+         || await Storage.staff.get(_issueState.svcNo);
     if (!cadet) { errEl.textContent = 'Selected borrower no longer exists.'; return; }
     borrowerName = `${cadet.rank} ${cadet.surname}`;
     borrowerSvc  = cadet.svcNo;
@@ -1430,10 +1431,10 @@ async function _renderAllTab(body) {
     }
   });
 
-  // Discharged cadets — inactive but still holding active loans. We flag those
+  // Discharged / inactive personnel — still holding active loans. We flag those
   // rows in the All Loans view so the QM can see what needs chasing.
   const dischargedSvcs = new Set(
-    cadets.filter((c) => c.active === false).map((c) => c.svcNo),
+    allPersonnelHist.filter((c) => c.active === false).map((c) => c.svcNo),
   );
 
   // Detect phantom borrowers — in loan records but absent from the cadet list
@@ -2469,7 +2470,8 @@ async function _printAB189ForLoans(loans) {
     throw new Error('No loans provided to print.');
   }
   const unit  = await Storage.settings.getAll();
-  const cadet = await Storage.cadets.get(loans[0].borrowerSvc);
+  const cadet = await Storage.cadets.get(loans[0].borrowerSvc)
+            || await Storage.staff.get(loans[0].borrowerSvc);
   const result = await generateAB189(loans, { unit, cadet: cadet || null });
   downloadPdf(result);
   const refs = loans.map((l) => l.ref).join(', ');
