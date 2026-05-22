@@ -19,6 +19,7 @@
 import * as Storage from '../storage.js';
 import * as AUTH    from '../auth.js';
 import * as TOTP    from '../totp.js';
+import { qrcode }   from 'qrcode-generator';
 import { openModal } from './modal.js';
 import { esc, $, render } from './util.js';
 import { showToast } from './toast.js';
@@ -31,9 +32,9 @@ import { showToast } from './toast.js';
  * Open the TOTP enrolment wizard for `userId`.
  * On success the user record will have totpEnabled=true and a hashed backup list.
  */
-export function openTotpSetup(userId) {
+export async function openTotpSetup(userId) {
   const secret = TOTP.generateSecret();
-  _wizardStep1(userId, secret);
+  await _wizardStep1(userId, secret);
 }
 
 /**
@@ -126,7 +127,30 @@ export function openBackupCodesView(user) {
 // Wizard steps (internal)
 // ---------------------------------------------------------------------------
 
-function _wizardStep1(userId, secret) {
+async function _wizardStep1(userId, secret) {
+  // Load user name for the authenticator app account label.
+  const user = await Storage.users.get(userId).catch(() => null);
+  const accountLabel = user?.name || userId;
+  const issuer       = 'QStore IMS';
+
+  // Build the otpauth:// URI — this is what authenticator apps parse when
+  // scanning a QR code. It contains the account name, issuer, and the secret.
+  const uri = TOTP.otpauthUri(secret, accountLabel, issuer);
+
+  // Generate QR code SVG inline (no external service — the URI contains the
+  // secret and must never be sent to a third-party API).
+  let qrSvg = '';
+  try {
+    const qr = qrcode(0, 'M');   // type 0 = auto-size, error level M
+    qr.addData(uri);
+    qr.make();
+    qrSvg = qr.createSvgTag({ scalable: true,
+      alt: 'QR code — scan with your authenticator app',
+      title: 'Scan to add QStore IMS to your authenticator app' });
+  } catch (err) {
+    qrSvg = `<p class="totp-setup__qr-fallback">QR code unavailable — use manual entry below.</p>`;
+  }
+
   const formatted = TOTP.formatSecret(secret);
 
   openModal({
@@ -137,40 +161,54 @@ function _wizardStep1(userId, secret) {
         <p class="totp-setup__intro">
           Install an authenticator app on your phone (Google Authenticator,
           Microsoft Authenticator, Authy, or any RFC 6238-compatible app), then
-          add a new account by entering the key below manually.
+          scan the QR code below to register your account.
         </p>
 
-        <div class="totp-setup__section">
-          <div class="totp-setup__label">Account type</div>
-          <div class="totp-setup__value totp-setup__value--meta">
-            Time-based (TOTP) · SHA1 · 6 digits · 30 second window
-          </div>
+        <div class="totp-setup__qr-wrap" aria-label="QR code for authenticator app">
+          ${qrSvg}
+          <p class="totp-setup__qr-label">
+            Scan with your authenticator app<br>
+            <span class="totp-setup__qr-meta">
+              ${esc(issuer)} · ${esc(accountLabel)}
+            </span>
+          </p>
         </div>
 
-        <div class="totp-setup__section">
-          <div class="totp-setup__label">Secret key</div>
-          <div class="totp-setup__secret" id="totp-secret-display">
-            <code class="totp-setup__code">${esc(formatted)}</code>
-            <button type="button" class="btn btn--xs btn--ghost" data-action="copy-secret"
-                    aria-label="Copy secret to clipboard">Copy</button>
+        <details class="totp-setup__manual-details">
+          <summary class="totp-setup__manual-summary">Can't scan? Enter the key manually instead</summary>
+          <div class="totp-setup__manual-body">
+            <div class="totp-setup__section">
+              <div class="totp-setup__label">Account type</div>
+              <div class="totp-setup__value totp-setup__value--meta">
+                Time-based (TOTP) · SHA1 · 6 digits · 30-second window
+              </div>
+            </div>
+            <div class="totp-setup__section">
+              <div class="totp-setup__label">Secret key</div>
+              <div class="totp-setup__secret" id="totp-secret-display">
+                <code class="totp-setup__code">${esc(formatted)}</code>
+                <button type="button" class="btn btn--xs btn--ghost" data-action="copy-secret"
+                        aria-label="Copy secret to clipboard">Copy</button>
+              </div>
+              <div class="totp-setup__secret-warn">
+                Keep this key private. Anyone with it can generate codes for your account.
+              </div>
+            </div>
+            <div class="totp-setup__section">
+              <div class="totp-setup__value totp-setup__value--meta">
+                In your authenticator app choose <strong>Enter a setup key</strong> or
+                <strong>Manual entry</strong>, paste the key above, and set the account
+                name to <strong>${esc(accountLabel)}</strong> and issuer to
+                <strong>${esc(issuer)}</strong>.
+              </div>
+            </div>
           </div>
-          <div class="totp-setup__secret-warn">
-            Keep this key private. Anyone with it can generate codes for this account.
-          </div>
-        </div>
-
-        <div class="totp-setup__section">
-          <div class="totp-setup__label">Manual entry hint</div>
-          <div class="totp-setup__value text--muted">
-            In your authenticator app: choose "Enter a setup key" or "Manual entry".
-            Paste the key above. Set account name to your QStore username.
-          </div>
-        </div>
+        </details>
 
         <div class="totp-setup__footer">
           <button type="button" class="btn btn--ghost" data-action="cancel">Cancel</button>
           <button type="button" class="btn btn--primary" data-action="next">
-            I've added the account — Next
+            I've scanned the code — Next
           </button>
         </div>
       </div>

@@ -532,6 +532,75 @@ input {
   color: var(--text-secondary);
 }
 
+/* QR code display */
+.totp-setup__qr-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 16px;
+  background: #fff;                 /* always white — QR scanners need contrast */
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.totp-setup__qr-wrap svg {
+  width: 200px;
+  height: 200px;
+  display: block;
+}
+.totp-setup__qr-label {
+  font-size: 0.82rem;
+  color: #444;                      /* dark on white bg regardless of theme */
+  text-align: center;
+  line-height: 1.4;
+  margin: 0;
+}
+.totp-setup__qr-meta {
+  font-size: 0.75rem;
+  color: #777;
+}
+.totp-setup__qr-fallback {
+  font-size: 0.85rem;
+  color: var(--danger, #c0392b);
+  text-align: center;
+  margin: 0;
+}
+
+/* Collapsible manual-entry fallback */
+.totp-setup__manual-details {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.totp-setup__manual-summary {
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.totp-setup__manual-summary::-webkit-details-marker { display: none; }
+.totp-setup__manual-summary::before {
+  content: '▶';
+  font-size: 0.7rem;
+  transition: transform 0.15s;
+}
+details.totp-setup__manual-details[open] .totp-setup__manual-summary::before {
+  transform: rotate(90deg);
+}
+.totp-setup__manual-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--border);
+}
+
 .totp-setup__verify-wrap {
   display: flex;
   flex-direction: column;
