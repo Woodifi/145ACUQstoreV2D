@@ -113,9 +113,9 @@ function _writeLockout(userId, state) {
 }
 
 function _lockoutDurationMs(failures) {
-  if (failures >= 15) return 30 * 60 * 1000;
-  if (failures >= 10) return 5 * 60 * 1000;
-  return 30 * 1000;
+  if (failures >= 15) return 60 * 60 * 1000;  // 60 minutes
+  if (failures >= 10) return 30 * 60 * 1000;  // 30 minutes
+  return 15 * 60 * 1000;                       // 15 minutes
 }
 
 /** Current lockout status for a user. Returns { locked, unlockAt, failures }. */
@@ -385,6 +385,28 @@ export async function verifyPin(userId, pin) {
     desc:   `Session unlocked: ${user.name} (${ROLES[user.role]?.label || user.role})`,
   });
   return { ok: true };
+}
+
+/**
+ * Suspend the active session — removes the token from sessionStorage while
+ * keeping the in-memory _session intact.  Called when the auto-lock overlay
+ * fires so that closing the browser/tab during a lock requires a full re-login
+ * (including 2FA) rather than auto-restoring from sessionStorage.
+ */
+export function suspendSession() {
+  sessionStorage.removeItem(SESSION_STORAGE_KEY);
+  // _session deliberately NOT cleared — the lock overlay needs it to display
+  // the user name and verify PIN, then re-save after successful unlock.
+}
+
+/**
+ * Resume a suspended session — re-writes the in-memory session to sessionStorage.
+ * Called after the lock overlay's PIN (+ optional TOTP) step succeeds.
+ */
+export function resumeSession() {
+  if (_session) {
+    sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(_session));
+  }
 }
 
 export async function logout() {

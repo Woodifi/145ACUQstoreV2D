@@ -35,6 +35,7 @@ import * as Audit     from './audit.js';
 import * as Users     from './users.js';
 import * as Settings  from './settings.js';
 import * as Help      from './help.js';
+import * as TOTP      from '../totp.js';
 import * as Orders    from './orders.js';
 import * as Requests  from './requests.js';
 import * as Reference  from './reference.js';
@@ -139,6 +140,10 @@ function _resetIdleTimer() {
 function _triggerLock() {
   if (_lockOverlay) return;   // already locked
   _stopIdleWatcher();         // pause activity tracking while locked
+  // Suspend the sessionStorage session so closing the browser/tab during a
+  // lock requires full re-login (including 2FA). The in-memory AUTH session
+  // is kept so the overlay can verify PIN and display the user name.
+  AUTH.suspendSession();
   _showLockOverlay();
 }
 
@@ -153,7 +158,9 @@ function _showLockOverlay() {
       <p class="lock-body">
         Signed in as <strong>${esc(_session?.name || 'Unknown')}</strong>
       </p>
-      <form class="lock-form" autocomplete="off" data-form="lock-form">
+
+      <!-- Step 1: PIN -->
+      <form class="lock-form" autocomplete="off" data-form="lock-pin-form">
         <input type="text" inputmode="numeric" pattern="\\d{4}" maxlength="4"
                class="form__input--pin lock-pin"
                placeholder="Enter PIN" autocomplete="off"
@@ -161,6 +168,23 @@ function _showLockOverlay() {
         <div class="form__error lock-error" role="alert"></div>
         <button type="submit" class="btn btn--primary lock-submit">Unlock</button>
       </form>
+
+      <!-- Step 2: 2FA (hidden until PIN passes) -->
+      <form class="lock-form lock-totp-form" autocomplete="off"
+            data-form="lock-totp-form" style="display:none">
+        <p class="lock-totp-hint" data-totp-hint>
+          Open your authenticator app and enter the 6-digit code.
+        </p>
+        <input type="text" class="form__input lock-totp-input"
+               inputmode="numeric" maxlength="6"
+               placeholder="000000" autocomplete="one-time-code"
+               spellcheck="false" aria-label="6-digit authenticator code">
+        <div class="form__error lock-totp-error" role="alert"></div>
+        <button type="submit" class="btn btn--primary">Verify</button>
+        <button type="button" class="btn btn--ghost lock-totp-backup-toggle"
+                data-action="toggle-backup">Use a backup code instead</button>
+      </form>
+
       <button type="button" class="btn btn--ghost lock-switch"
               data-action="lock-switch-user">Sign out / switch user</button>
     </div>
@@ -169,15 +193,26 @@ function _showLockOverlay() {
   document.body.appendChild(overlay);
   _lockOverlay = overlay;
 
-  // Focus the PIN field after the overlay is painted.
-  const pinInput = overlay.querySelector('.lock-pin');
+  const pinInput  = overlay.querySelector('.lock-pin');
   if (pinInput) requestAnimationFrame(() => pinInput.focus());
 
-  const form      = overlay.querySelector('[data-form="lock-form"]');
+  const pinForm   = overlay.querySelector('[data-form="lock-pin-form"]');
+  const totpForm  = overlay.querySelector('[data-form="lock-totp-form"]');
   const errEl     = overlay.querySelector('.lock-error');
   const switchBtn = overlay.querySelector('[data-action="lock-switch-user"]');
 
-  form.addEventListener('submit', async (e) => {
+  let _useBackup  = false;
+  let _cachedUser = null;
+
+  // Helper: complete unlock after all auth steps pass.
+  function _doUnlock() {
+    AUTH.resumeSession();      // re-write session to sessionStorage
+    _hideLockOverlay();
+    _startIdleWatcher();       // restart idle watcher
+  }
+
+  // ── Step 1: PIN ──────────────────────────────────────────────────────────
+  pinForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     errEl.textContent = '';
 
@@ -187,14 +222,24 @@ function _showLockOverlay() {
       return;
     }
 
-    const submit = form.querySelector('[type="submit"]');
+    const submit = pinForm.querySelector('[type="submit"]');
     if (submit) { submit.disabled = true; submit.textContent = 'Checking…'; }
 
     const result = await AUTH.verifyPin(_session.userId, enteredPin);
 
     if (result.ok) {
-      _hideLockOverlay();
-      await _startIdleWatcher();     // restart idle watcher after successful unlock
+      // Check whether this user also has TOTP enabled.
+      const userRecord = await Storage.users.get(_session.userId);
+      if (userRecord?.totpEnabled && userRecord?.totpSecret) {
+        // Gate on 2FA before unlocking.
+        _cachedUser = userRecord;
+        pinForm.style.display  = 'none';
+        totpForm.style.display = '';
+        const totpInput = totpForm.querySelector('.lock-totp-input');
+        if (totpInput) { totpInput.value = ''; requestAnimationFrame(() => totpInput.focus()); }
+      } else {
+        _doUnlock();
+      }
     } else {
       if (submit) { submit.disabled = false; submit.textContent = 'Unlock'; }
       pinInput.value = '';
@@ -205,6 +250,100 @@ function _showLockOverlay() {
       } else {
         errEl.textContent = 'Incorrect PIN. Try again.';
       }
+    }
+  });
+
+  // ── Step 2: TOTP / backup code ───────────────────────────────────────────
+  totpForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const totpInput  = totpForm.querySelector('.lock-totp-input');
+    const totpErrEl  = totpForm.querySelector('.lock-totp-error');
+    const submit     = totpForm.querySelector('[type="submit"]');
+    const code       = (totpInput?.value || '').trim().toUpperCase().replace(/\s/g, '');
+    if (!code) return;
+
+    if (submit) { submit.disabled = true; submit.textContent = 'Verifying…'; }
+    if (totpErrEl) totpErrEl.textContent = '';
+
+    try {
+      if (_useBackup) {
+        const remaining = _cachedUser.totpHashedBackups || [];
+        const idx = await TOTP.verifyBackupCode(code, remaining);
+        if (idx < 0) {
+          if (submit) { submit.disabled = false; submit.textContent = 'Verify'; }
+          if (totpErrEl) totpErrEl.textContent = 'Backup code not recognised or already used.';
+          if (totpInput) { totpInput.value = ''; totpInput.focus(); }
+          return;
+        }
+        const newBackups = remaining.filter((_, i) => i !== idx);
+        await Storage.users.put({ ..._cachedUser, totpHashedBackups: newBackups });
+        await Storage.audit.append({
+          action: '2fa_backup_used',
+          user:   _cachedUser.name || _cachedUser.id,
+          desc:   `Backup code used for session unlock. ${newBackups.length} remaining.`,
+        });
+      } else {
+        const result = await TOTP.verify(
+          _cachedUser.totpSecret,
+          code,
+          { lastUsedStep: _cachedUser.totpLastUsedStep ?? -1 },
+        );
+        if (!result.ok) {
+          if (submit) { submit.disabled = false; submit.textContent = 'Verify'; }
+          if (totpErrEl) totpErrEl.textContent = 'Code incorrect or expired — check your device clock.';
+          if (totpInput) { totpInput.value = ''; totpInput.focus(); }
+          return;
+        }
+        await Storage.users.put({ ..._cachedUser, totpLastUsedStep: result.step });
+        await Storage.audit.append({
+          action: 'session_unlock',
+          user:   _cachedUser.name || _cachedUser.username,
+          desc:   `Session unlocked with PIN + 2FA: ${_cachedUser.name || _cachedUser.username}`,
+        });
+      }
+      _doUnlock();
+    } catch (err) {
+      console.error('Lock overlay TOTP verification error:', err);
+      if (submit) { submit.disabled = false; submit.textContent = 'Verify'; }
+      if (totpErrEl) totpErrEl.textContent = 'Verification error — please try again.';
+    }
+  });
+
+  // Auto-submit on correct-length input
+  totpForm.addEventListener('input', (e) => {
+    const totpInput = totpForm.querySelector('.lock-totp-input');
+    if (!totpInput || e.target !== totpInput) return;
+    if (_useBackup) {
+      totpInput.value = totpInput.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase();
+      if (totpInput.value.length === 8) totpForm.querySelector('[type="submit"]')?.click();
+    } else {
+      totpInput.value = totpInput.value.replace(/\D/g, '').slice(0, 6);
+      if (totpInput.value.length === 6) totpForm.querySelector('[type="submit"]')?.click();
+    }
+  });
+
+  // Toggle TOTP ↔ backup code mode
+  totpForm.addEventListener('click', (e) => {
+    if (e.target.closest('[data-action="toggle-backup"]')) {
+      _useBackup = !_useBackup;
+      const totpInput  = totpForm.querySelector('.lock-totp-input');
+      const hintEl     = totpForm.querySelector('[data-totp-hint]');
+      const toggleBtn  = totpForm.querySelector('[data-action="toggle-backup"]');
+      const totpErrEl  = totpForm.querySelector('.lock-totp-error');
+      if (totpInput) {
+        totpInput.value       = '';
+        totpInput.placeholder = _useBackup ? 'XXXXXXXX' : '000000';
+        totpInput.inputMode   = _useBackup ? 'text' : 'numeric';
+        totpInput.maxLength   = _useBackup ? 8 : 6;
+        totpInput.focus();
+      }
+      if (hintEl) hintEl.textContent = _useBackup
+        ? 'Enter one of your 8-character backup codes.'
+        : 'Open your authenticator app and enter the 6-digit code.';
+      if (toggleBtn) toggleBtn.textContent = _useBackup
+        ? 'Use authenticator code instead'
+        : 'Use a backup code instead';
+      if (totpErrEl) totpErrEl.textContent = '';
     }
   });
 
