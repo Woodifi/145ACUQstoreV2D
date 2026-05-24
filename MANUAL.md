@@ -28,7 +28,8 @@
 17. [Issue Kits](#17-issue-kits)
 18. [QR Codes](#18-qr-codes)
 19. [Troubleshooting](#19-troubleshooting)
-20. [Reference — Uniform Sizing](#20-reference--uniform-sizing)
+20. [Keyboard Shortcuts](#20-keyboard-shortcuts)
+21. [Reference — Uniform Sizing](#21-reference--uniform-sizing)
 
 ---
 
@@ -785,13 +786,15 @@ Configure the auto-lock idle timeout.
 
 | Setting | Options | Default |
 |---------|---------|---------|
-| Auto-lock after idle | Disabled / 5 / 10 / 15 / 30 min / 1 hour | 15 minutes |
+| Auto-lock after idle | 5 / 10 / 15 / 30 min / 1 hour | 15 minutes |
 
-When configured, the app locks automatically after the selected period without mouse, keyboard, or touch input. A PIN entry screen overlays the current page — work is not lost. The user enters their PIN to resume or clicks **Sign out / switch user** to log out fully.
+Auto-lock cannot be disabled — the minimum is 5 minutes. When the idle period expires, a PIN entry screen overlays the current page — work is not lost. The user enters their PIN to resume or clicks **Sign out / switch user** to log out fully.
+
+The lock also triggers **immediately on wake from sleep or when returning to the browser tab** if the idle period has elapsed during that time. This prevents an unattended machine from remaining unlocked after wake from sleep.
 
 Changes take effect immediately without a reload.
 
-> **Tip:** Enable auto-lock on any device shared between users (duty computer, parade-night tablet) to prevent one user's session being accessed by another. 15 minutes is appropriate for most environments.
+> **Tip:** 15 minutes suits most shared-device environments (duty computer, parade-night tablet). Lower to 5 minutes on devices in high-traffic areas.
 
 See [Section 14 — PIN Security](#14-pin-security) for full auto-lock behaviour.
 
@@ -899,19 +902,18 @@ PINs are managed exclusively by the **OC (administrator)**. This is a deliberate
 
 ### Auto-Lock (Idle Timeout)
 
-The OC can configure the app to lock automatically after inactivity. This is set in **Settings → Security → Auto-lock after idle**.
+Auto-lock is configured in **Settings → Security → Auto-lock after idle** (5 / 10 / 15 / 30 minutes / 1 hour — minimum 5 minutes; cannot be disabled). 15 minutes is the default on all installations, even before the setting has been explicitly configured.
 
 **How it works:**
 - Any mouse, keyboard, or touch activity resets the idle timer
 - When the timer expires, a lock overlay appears over the current page — the user does not lose their place
 - Entering the correct PIN dismisses the overlay and resumes the session
 - Clicking **Sign out / switch user** on the lock screen performs a full logout
+- The lock triggers **immediately on wake from sleep** or when the browser tab becomes visible again if the idle period has elapsed — this covers the common case of closing a laptop lid without logging out
 
 **Lockout on the lock screen:** Failed PIN attempts follow the same escalating lockout as login — 5 wrong attempts triggers a 30-second delay, 10 triggers 5 minutes, 15+ triggers 30 minutes.
 
 **Audit trail:** Successful unlocks are recorded as `session_unlock`. Failed attempts are recorded as `login_failed`, the same as login failures.
-
-> **Recommendation:** Enable auto-lock on any shared or unattended device. 15 minutes is the default and suits most environments.
 
 ### PIN Lockout
 
@@ -1155,7 +1157,34 @@ If the automatic issue failed for some lines, the request is marked **Approved**
 
 ---
 
-## 20. Reference — Uniform Sizing
+## 20. Keyboard Shortcuts
+
+Keyboard shortcuts let power users navigate and trigger actions without touching the mouse. Shortcuts are active when no modal is open and no input field is focused. Modifier keys (Ctrl, Alt, Meta) are always passed through to the browser — no shortcut conflicts with browser commands.
+
+Press **?** at any time to open a quick-reference overlay inside the app.
+
+| Key | Action |
+|-----|--------|
+| `/` | Focus the search / filter input on the current page |
+| `n` | Trigger the primary New / Add action on the current page |
+| `Shift+N` | Go to Loans → Issue tab |
+| `Shift+R` | Go to Loans → Return tab |
+| `Shift+I` | Go to Inventory |
+| `← →` | Switch tabs on tabbed pages (Loans, etc.) |
+| `1` | Go to Dashboard |
+| `2` | Go to Inventory |
+| `3` | Go to Loans |
+| `4` | Go to Cadets |
+| `5` | Go to Audit log |
+| `6` | Go to Settings |
+| `?` | Show shortcuts overlay |
+| `Esc` | Close the current modal or dismiss an overlay |
+
+> **Note:** The number keys follow the visible navigation order. If you have navigated to a page that is not in the main nav (e.g., Users), number keys still jump to their assigned pages.
+
+---
+
+## 21. Reference — Uniform Sizing
 
 The **Reference** page is accessible from the main navigation bar and is available to all logged-in users. It provides ADF uniform and equipment sizing tables with conversions between AU/NATO (centimetres), US (inches/US sizes), and generalised sizes (XS–3XL), together with measurement guides for each garment type.
 

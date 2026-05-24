@@ -471,8 +471,8 @@ const SECTIONS = [
       <p>PINs must be exactly 4 digits.</p>
 
       <h4>Auto-lock (idle timeout) <span class="help__role">OC only</span></h4>
-      <p>The OC can configure the app to lock automatically after a period of inactivity in <strong>Settings → Security → Auto-lock after idle</strong>. Options: Disabled, 5, 10, 15, 30 minutes, or 1 hour.</p>
-      <p>When locked, a PIN entry screen overlays the current page. Any mouse, keyboard, or touch activity resets the timer. On the lock screen:</p>
+      <p>Configure in <strong>Settings → Security → Auto-lock after idle</strong>: 5, 10, 15, 30 minutes, or 1 hour. Auto-lock cannot be disabled — minimum is 5 minutes. The default (15 minutes) is active from first login even before the setting is explicitly saved.</p>
+      <p>When locked, a PIN entry screen overlays the current page. Any mouse, keyboard, or touch activity resets the timer. The lock also fires immediately when the device wakes from sleep or when the browser tab becomes visible again, if the idle period elapsed during that time. On the lock screen:</p>
       <ul>
         <li>Enter your PIN to resume — the page you were on is still active behind the overlay</li>
         <li>Click <strong>Sign out / switch user</strong> to log out fully</li>
