@@ -51,7 +51,7 @@ const PAGES = {
   inventory:  { label: 'Inventory', perm: 'view',         mount: Inventory.mount  },
   loans:      { label: 'Loans',     perm: 'view',         mount: Loans.mount      },
   cadets:     { label: 'Cadets',    perm: 'view',         mount: Cadets.mount     },
-  staff:      { label: 'Staff',     perm: 'view',         mount: Staff.mount      },
+  staff:      { label: 'Staff',     perm: 'view',         mount: Staff.mount,      notForCadet: true },
   stocktake:  { label: 'Stocktake', perm: 'editItem',     mount: Stocktake.mount  },
   orders:     { label: 'Orders',    perm: 'editItem',     mount: Orders.mount     },
   requests:   { label: 'Requests',  perm: 'requestIssue', mount: Requests.mount   },
@@ -604,8 +604,9 @@ function _navHtml(activePage) {
 }
 
 function _hasAccessTo(pageDef) {
-  if (pageDef.coOnly) return AUTH.isCO();
-  if (pageDef.perm)   return AUTH.can(pageDef.perm) || AUTH.isCO();
+  if (pageDef.coOnly)      return AUTH.isCO();
+  if (pageDef.notForCadet && AUTH.isCadet()) return false;
+  if (pageDef.perm)        return AUTH.can(pageDef.perm) || AUTH.isCO();
   return true;
 }
 

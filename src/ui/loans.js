@@ -1422,11 +1422,26 @@ async function _promptAddNonStockToInventory(candidates) {
 async function _renderAllTab(body) {
   AUTH.requirePermission('view');
 
-  const [all, cadets, staffList] = await Promise.all([
+  // Cadet isolation: cadets may only see their own loans.
+  const session   = AUTH.getSession();
+  const cadetMode = AUTH.isCadet();
+  const ownSvcNo  = session?.svcNo || null;
+
+  let [all, cadets, staffList] = await Promise.all([
     Storage.loans.list(),
     Storage.cadets.list(),
     Storage.staff.list(),
   ]);
+
+  if (cadetMode) {
+    // Restrict loan data to the logged-in cadet's loans only.
+    // A cadet with no svcNo linked sees nothing.
+    all      = ownSvcNo ? all.filter(l => l.borrowerSvc === ownSvcNo) : [];
+    // Restrict personnel data — no other people's records exposed.
+    cadets   = ownSvcNo ? cadets.filter(c => c.svcNo === ownSvcNo) : [];
+    staffList = [];
+  }
+
   const allPersonnelHist = [...cadets, ...staffList];
   const today = _todayLocalIsoDate();
 
@@ -1513,6 +1528,7 @@ async function _renderAllTab(body) {
       <header class="loan__all-toolbar">
         <div class="loan__all-filters">
 
+          ${!cadetMode ? `
           <div class="loan__borrower-row">
             <div class="loan__borrower-pick">
               <input type="search"
@@ -1552,6 +1568,7 @@ async function _renderAllTab(body) {
               </button>
             </div>
           ` : ''}
+          ` : ''}
 
           <input type="search" class="loan__all-search"
                  placeholder="Search ref, item, borrower, NSN…"
@@ -1572,11 +1589,13 @@ async function _renderAllTab(body) {
           </div>
         </div>
         <div class="loan__all-actions">
+          ${!cadetMode ? `
           <button type="button" class="btn btn--ghost"
                   data-action="print-outstanding"
                   title="Print active loans (with overdue highlighted)">
             ⎙ Print outstanding
           </button>
+          ` : ''}
         </div>
       </header>
 

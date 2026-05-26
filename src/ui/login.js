@@ -76,6 +76,14 @@ async function _renderUserPicker() {
   const unitName = settings.unitName || 'QStore IMS';
   const unitCode = settings.unitCode || '';
 
+  // In cadet picker mode, load cadet records to build a svcNo → cadet map
+  // so we can display "SURNAME F." instead of the stored user.name.
+  let cadetRecordMap = new Map();
+  if (_cadetPickerMode) {
+    const cadetRecords = await Storage.cadets.list();
+    cadetRecordMap = new Map(cadetRecords.map(c => [c.svcNo, c]));
+  }
+
   users.sort((a, b) => {
     const ra = ROLE_ORDER.indexOf(a.role);
     const rb = ROLE_ORDER.indexOf(b.role);
@@ -91,9 +99,17 @@ async function _renderUserPicker() {
 
   let userButtonsHtml;
   if (_cadetPickerMode) {
+    // Sort by surname from cadet records (privacy: no given name shown in list)
+    visibleUsers.sort((a, b) => {
+      const ca = cadetRecordMap.get(a.svcNo);
+      const cb = cadetRecordMap.get(b.svcNo);
+      const sa = (ca?.surname || a.name || '').toUpperCase();
+      const sb = (cb?.surname || b.name || '').toUpperCase();
+      return sa.localeCompare(sb);
+    });
     userButtonsHtml = visibleUsers.length === 0
       ? `<div class="login__empty">No cadet accounts registered.</div>`
-      : visibleUsers.map(_userButtonHtml).join('');
+      : visibleUsers.map(u => _cadetButtonHtml(u, cadetRecordMap.get(u.svcNo))).join('');
   } else {
     userButtonsHtml = visibleUsers.length === 0
       ? `<div class="login__empty">No staff accounts yet. The system needs to be initialised by an administrator.</div>`
@@ -174,6 +190,36 @@ function _userButtonHtml(user) {
       <span class="login__user-name">${esc(user.name)}</span>
       <span class="login__user-meta">
         <span class="login__user-role">${esc(roleLabel)}</span>
+        <span class="login__user-last">${esc(lastSeen)}</span>
+      </span>
+    </button>
+  `;
+}
+
+/**
+ * Button for the cadet picker — shows "SURNAME F." for privacy.
+ * Full name is never shown in the list; only last name + first initial.
+ * Falls back to the user.name if no matching cadet record exists.
+ */
+function _cadetButtonHtml(user, cadetRecord) {
+  let displayName;
+  if (cadetRecord?.surname) {
+    const initial = cadetRecord.given ? ` ${cadetRecord.given.charAt(0).toUpperCase()}.` : '';
+    displayName = `${cadetRecord.surname.toUpperCase()}${initial}`;
+  } else {
+    // Fallback: use stored user name if no cadet record linked yet
+    displayName = user.name || user.username;
+  }
+  const lastSeen = user.lastLogin
+    ? `last seen ${fmtDateOnly(user.lastLogin)}`
+    : `never logged in`;
+  return `
+    <button type="button"
+            class="login__user-btn"
+            data-user-id="${esc(user.id)}"
+            role="listitem">
+      <span class="login__user-name">${esc(displayName)}</span>
+      <span class="login__user-meta">
         <span class="login__user-last">${esc(lastSeen)}</span>
       </span>
     </button>

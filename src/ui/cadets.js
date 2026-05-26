@@ -112,7 +112,15 @@ export async function mount(rootEl) {
 async function _render() {
   // Exclude any records with personType='staff' — they belong in the staff
   // store and are migrated on staff-page mount.
-  const all       = (await Storage.cadets.list()).filter(c => c.personType !== 'staff');
+  let all = (await Storage.cadets.list()).filter(c => c.personType !== 'staff');
+
+  // Cadet isolation: a cadet user may only view their own record.
+  // The session svcNo links the user account to the cadet record.
+  const session = AUTH.getSession();
+  if (AUTH.isCadet()) {
+    all = session?.svcNo ? all.filter(c => c.svcNo === session.svcNo) : [];
+  }
+
   const useStruct = _structure.length > 0;
 
   // Sort using structure-aware comparator if configured, otherwise plain sort.
@@ -151,7 +159,8 @@ async function _render() {
     return true;
   });
 
-  const canManage = AUTH.can('manageCadets');
+  const canManage  = AUTH.can('manageCadets');
+  const isCadet    = AUTH.isCadet();
 
   // Build filter controls based on mode.
   let filterHtml = '';
@@ -197,6 +206,7 @@ async function _render() {
   render(_root, `
     <section class="cad">
       <header class="cad__toolbar">
+        ${!isCadet ? `
         <div class="cad__filters">
           <input type="search"
                  class="cad__search"
@@ -210,11 +220,14 @@ async function _render() {
             Show inactive
           </label>
         </div>
+        ` : ''}
         <div class="cad__actions">
+          ${!isCadet ? `
           <button type="button" class="btn btn--ghost" data-action="print-roll"
                   title="Print the currently-shown nominal roll">⎙ Print roll</button>
           <button type="button" class="btn btn--ghost" data-action="batch-checklists"
                   title="Print kit checklist PDFs for all visible cadets with active loans">⎙ Batch checklists</button>
+          ` : ''}
           ${canManage ? `
             <button type="button" class="btn btn--ghost" data-action="import-csv"
                     title="Import cadets from a CSV nominal roll">⇪ Import CSV</button>

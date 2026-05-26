@@ -65,6 +65,12 @@ let _showInactive = false;
 
 export async function mount(rootEl) {
   AUTH.requirePermission('view');
+  // Cadets must not access the staff list — defence-in-depth block in
+  // addition to the notForCadet nav flag in shell.js.
+  if (AUTH.isCadet()) {
+    rootEl.innerHTML = `<div class="page-denied"><p>Access restricted.</p></div>`;
+    return function unmount() {};
+  }
   _root         = rootEl;
   _controller   = new AbortController();
   _searchTerm   = '';

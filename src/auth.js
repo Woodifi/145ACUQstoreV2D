@@ -452,6 +452,10 @@ export function isCO() {
   return _session !== null && _session.role === 'co';
 }
 
+export function isCadet() {
+  return _session !== null && _session.role === 'cadet';
+}
+
 /** Throws Error if the current session lacks the named permission. */
 export function requirePermission(perm) {
   if (!can(perm)) {
