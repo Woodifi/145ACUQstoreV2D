@@ -226,6 +226,34 @@ async function _loadOrGenPiiKey() {
   // Initialise the PII module with the raw base-64 key so it can perform
   // field-level AES-GCM encryption/decryption throughout the storage layer.
   await PII.init(b64);
+  // One-time migration: encrypt any cadet records that pre-date PII encryption
+  // (i.e. records where PII fields are still stored as plain text).
+  await _migratePlainTextCadets();
+}
+
+async function _migratePlainTextCadets() {
+  try {
+    const tx    = _db.transaction(STORES.CADETS, 'readwrite');
+    const store = tx.objectStore(STORES.CADETS);
+    const rows  = await _reqDone(store.getAll());
+    let   count = 0;
+    for (const row of rows) {
+      // A field is plain-text when it is a non-empty string not starting with '~enc:'
+      const needsEnc = PII.PII_FIELDS_CADETS.some(
+        f => typeof row[f] === 'string' && row[f].length > 0 && !row[f].startsWith('~enc:')
+      );
+      if (needsEnc) {
+        const enc = await PII.encryptRecord(row, PII.PII_FIELDS_CADETS);
+        store.put(enc);
+        count++;
+      }
+    }
+    await _txDone(tx);
+    if (count > 0) console.info(`[storage] Migrated ${count} cadet record(s) to PII encryption.`);
+  } catch (err) {
+    console.warn('[storage] Cadet PII migration error:', err);
+    // Non-fatal — records will still be encrypted on their next write.
+  }
 }
 
 /**

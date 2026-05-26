@@ -43,6 +43,7 @@ let _pinBuffer      = '';
 let _pinRevealed    = false;
 let _busy           = false;
 let _lockoutTimer   = null;
+let _cadetPickerMode = false; // true when showing cadet sub-list
 
 /**
  * Mount the login screen into a DOM container. Calls onLoggedIn(session)
@@ -56,6 +57,7 @@ export async function mount(rootEl, { onLoggedIn } = {}) {
   _pinRevealed = false;
   _busy = false;
 
+  _cadetPickerMode = false;
   await _renderUserPicker();
 
   return function unmount() {
@@ -69,7 +71,7 @@ export async function mount(rootEl, { onLoggedIn } = {}) {
 // -----------------------------------------------------------------------------
 
 async function _renderUserPicker() {
-  const users = await Storage.users.list();
+  const users    = await Storage.users.list();
   const settings = await Storage.settings.getAll();
   const unitName = settings.unitName || 'QStore IMS';
   const unitCode = settings.unitCode || '';
@@ -81,23 +83,48 @@ async function _renderUserPicker() {
     return (a.name || '').localeCompare(b.name || '');
   });
 
-  const userButtonsHtml = users.length === 0
-    ? `<div class="login__empty">No user accounts yet. The system needs to be initialised by an administrator.</div>`
-    : users.map(_userButtonHtml).join('');
+  // In cadet picker mode show only cadets; otherwise show non-cadets + the
+  // Cadet Login button.
+  const visibleUsers = _cadetPickerMode
+    ? users.filter(u => u.role === 'cadet')
+    : users.filter(u => u.role !== 'cadet');
+
+  let userButtonsHtml;
+  if (_cadetPickerMode) {
+    userButtonsHtml = visibleUsers.length === 0
+      ? `<div class="login__empty">No cadet accounts registered.</div>`
+      : visibleUsers.map(_userButtonHtml).join('');
+  } else {
+    userButtonsHtml = visibleUsers.length === 0
+      ? `<div class="login__empty">No staff accounts yet. The system needs to be initialised by an administrator.</div>`
+      : visibleUsers.map(_userButtonHtml).join('');
+  }
+
+  const headerHtml = _cadetPickerMode
+    ? `<button type="button" class="login__back" data-action="back-to-staff" aria-label="Back to sign in">‹ Back</button>
+       <div class="login__user-summary"><div class="login__user-name">Cadet Login</div></div>`
+    : `<h1 class="login__title">${esc(unitName)}</h1>
+       ${unitCode ? `<div class="login__subtitle">${esc(unitCode)} — Q-Store IMS</div>` : ''}`;
+
+  const cadetBtnHtml = !_cadetPickerMode
+    ? `<button type="button" class="btn btn--secondary login__cadet-login-btn" data-action="cadet-login">
+         Cadet Login
+       </button>`
+    : '';
 
   render(_root, `
     <div class="login">
       <div class="login__card">
         <header class="login__header">
-          <h1 class="login__title">${esc(unitName)}</h1>
-          ${unitCode ? `<div class="login__subtitle">${esc(unitCode)} — Q-Store IMS</div>` : ''}
+          ${headerHtml}
         </header>
         <div class="login__body">
-          <h2 class="login__heading">Sign in</h2>
+          <h2 class="login__heading">${_cadetPickerMode ? 'Select your name' : 'Sign in'}</h2>
           <p class="login__hint">Select your name to continue.</p>
           <div class="login__user-list" role="list">
             ${userButtonsHtml}
           </div>
+          ${cadetBtnHtml}
         </div>
         <footer class="login__privacy">
           This system stores personnel and equipment data.
@@ -108,15 +135,28 @@ async function _renderUserPicker() {
     </div>
   `);
 
-  // Wire user-select buttons via event delegation on the list container.
-  const list = $('.login__user-list', _root);
-  if (list) {
-    list.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-user-id]');
-      if (!btn) return;
-      _selectedUserId = btn.dataset.userId;
-      _pinBuffer = '';
-      _renderPinKeypad();
+  // Wire user-select buttons and action buttons via event delegation.
+  const card = $('.login__card', _root);
+  if (card) {
+    card.addEventListener('click', (e) => {
+      const btn    = e.target.closest('[data-user-id]');
+      const action = e.target.closest('[data-action]')?.dataset.action;
+
+      if (action === 'cadet-login') {
+        _cadetPickerMode = true;
+        _renderUserPicker();
+        return;
+      }
+      if (action === 'back-to-staff') {
+        _cadetPickerMode = false;
+        _renderUserPicker();
+        return;
+      }
+      if (btn) {
+        _selectedUserId = btn.dataset.userId;
+        _pinBuffer = '';
+        _renderPinKeypad();
+      }
     });
   }
 }

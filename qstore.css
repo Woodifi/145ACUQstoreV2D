@@ -436,6 +436,16 @@ input {
   line-height: 1.5;
 }
 
+/* Cadet Login button — sits below the staff user list */
+.login__cadet-login-btn {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px 16px;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
 /* TOTP code input on the login screen */
 .login__totp-wrap {
   display: flex;

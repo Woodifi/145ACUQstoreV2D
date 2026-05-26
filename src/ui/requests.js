@@ -305,7 +305,13 @@ async function _mountPending(body) {
   if (_pendingAbort) { _pendingAbort.abort(); }
   _pendingAbort = new AbortController();
 
-  const requests = await Storage.requests.listByStatus('pending');
+  // Show both pending AND approved-but-not-yet-issued requests so the QM
+  // can issue approved requests from this tab.
+  const [pendingReqs, approvedReqs] = await Promise.all([
+    Storage.requests.listByStatus('pending'),
+    Storage.requests.listByStatus('approved'),
+  ]);
+  const requests = [...pendingReqs, ...approvedReqs];
 
   if (requests.length === 0) {
     body.innerHTML = `
@@ -316,8 +322,14 @@ async function _mountPending(body) {
     return;
   }
 
-  // Sort by oldest first (FIFO).
-  requests.sort((a, b) => (a.submittedAt > b.submittedAt ? 1 : -1));
+  // Sort: pending first (need decision), then approved (awaiting issue), oldest first within each group.
+  requests.sort((a, b) => {
+    const order = { pending: 0, approved: 1 };
+    const ga = order[a.status] ?? 2;
+    const gb = order[b.status] ?? 2;
+    if (ga !== gb) return ga - gb;
+    return (a.submittedAt > b.submittedAt ? 1 : -1);
+  });
 
   body.innerHTML = `
     <div class="req__list">
@@ -348,7 +360,7 @@ function _requestCardHtml(req, showActions) {
   const dateStr = req.submittedAt ? fmtDate(req.submittedAt.slice(0, 10)) : '—';
 
   return `
-    <div class="req__card ${req.status !== 'pending' ? 'req__card--resolved' : ''}"
+    <div class="req__card ${(req.status !== 'pending' && req.status !== 'approved') ? 'req__card--resolved' : ''}"
          data-req-id="${esc(req.id)}">
       <div class="req__card-header">
         <div class="req__card-meta">
@@ -380,9 +392,9 @@ function _requestCardHtml(req, showActions) {
         ? `<p class="req__card-loans">Loan refs: ${req.loanRefs.map(r => `<span class="req__card-loan-ref">${esc(r)}</span>`).join(' ')}</p>`
         : ''}
 
-      ${showActions && req.status === 'pending' ? `
+      ${showActions && (req.status === 'pending' || req.status === 'approved') ? `
         <div class="req__card-actions">
-          ${canManage ? `
+          ${canManage && req.status === 'pending' ? `
           <button type="button" class="btn btn--primary btn--sm"
                   data-action="approve-issue">Approve &amp; Issue</button>
           <button type="button" class="btn btn--ghost btn--sm"
@@ -392,6 +404,11 @@ function _requestCardHtml(req, showActions) {
                   title="Issue this kit list to multiple cadets">↗ Copy to cadets</button>
           <button type="button" class="btn btn--danger btn--sm"
                   data-action="deny">Deny</button>
+          ` : ''}
+          ${canManage && req.status === 'approved' ? `
+          <button type="button" class="btn btn--primary btn--sm"
+                  data-action="approve-issue"
+                  title="Issue the items for this approved request">Issue Items</button>
           ` : ''}
           <button type="button" class="btn btn--ghost btn--sm"
                   data-action="print-ab189"
@@ -636,6 +653,8 @@ async function _handleApproveAndIssue(req, body) {
               fresh.onLoan = (Number(fresh.onLoan) || 0) + qty;
               await Storage.items.put(fresh);
 
+              // Initial Issue is always a long-term loan; use 6-year engagement date.
+              const _isInitIssue = req.purpose === 'Initial Issue';
               await Storage.loans.put({
                 ref,
                 itemId:       item.id,
@@ -646,8 +665,8 @@ async function _handleApproveAndIssue(req, body) {
                 borrowerName,
                 purpose:      req.purpose,
                 issueDate:    _todayLocalIsoDate(),
-                dueDate,
-                longTermLoan: false,
+                dueDate:      _isInitIssue ? _sixYearsFromToday() : dueDate,
+                longTermLoan: _isInitIssue ? true : false,
                 unitLoan:     false,
                 nonStock:     false,
                 existingLoan,
@@ -666,6 +685,7 @@ async function _handleApproveAndIssue(req, body) {
               });
             } else {
               // Non-stock line.
+              const _isInitIssueNS = req.purpose === 'Initial Issue';
               await Storage.loans.put({
                 ref,
                 itemId:       null,
@@ -676,8 +696,8 @@ async function _handleApproveAndIssue(req, body) {
                 borrowerName,
                 purpose:      req.purpose,
                 issueDate:    _todayLocalIsoDate(),
-                dueDate,
-                longTermLoan: false,
+                dueDate:      _isInitIssueNS ? _sixYearsFromToday() : dueDate,
+                longTermLoan: _isInitIssueNS ? true : false,
                 unitLoan:     false,
                 nonStock:     true,
                 existingLoan,
@@ -1863,6 +1883,16 @@ function _statusLabel(status) {
 
 function _todayLocalIsoDate() {
   const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/** Six-year engagement date for Initial Issue loans. */
+function _sixYearsFromToday() {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() + 6);
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');

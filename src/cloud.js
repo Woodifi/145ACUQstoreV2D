@@ -147,7 +147,19 @@ export class OneDriveProvider {
       // to complete an in-flight Authorization Code Flow + PKCE exchange.
       // Omitting this is the most common cause of MSAL initialisation
       // failures and silent sign-in loops.
-      const response = await this._msal.handleRedirectPromise();
+      // no_token_request_cache_error is thrown when there is no redirect in
+      // progress — it is not a real failure, just MSAL asserting there is
+      // nothing to handle.  Any other error is a genuine problem.
+      let response = null;
+      try {
+        response = await this._msal.handleRedirectPromise();
+      } catch (err) {
+        if ((err.errorCode || '') === 'no_token_request_cache_error') {
+          response = null; // no redirect in progress — safe to ignore
+        } else {
+          throw err;
+        }
+      }
 
       if (response && response.account) {
         this._account = response.account;

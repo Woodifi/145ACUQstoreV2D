@@ -117,6 +117,13 @@ let _returnState = null;          // { svcNo, refsChecked: Set }
 // Mount / unmount
 // -----------------------------------------------------------------------------
 
+/** Allow shell.js to pre-set the All Loans filter before mounting. */
+export function setAllFilter(filter) {
+  if (['active', 'returned', 'overdue', 'all'].includes(filter)) {
+    _allFilter = filter;
+  }
+}
+
 export async function mount(rootEl) {
   AUTH.requirePermission('view');
   _root        = rootEl;
@@ -124,7 +131,9 @@ export async function mount(rootEl) {
   _allSearch   = '';
   _allBorrower = '';
   _allSelected.clear();
-  _issueState  = _freshIssueState();
+  // Preserve _issueState if the user navigated away mid-issue — only reset
+  // if there is no in-progress state (null = first mount, or explicitly reset).
+  if (!_issueState) _issueState = _freshIssueState();
   _returnState = _freshReturnState();
   _activeTab   = _firstAllowedTab();
   await _render();
@@ -257,8 +266,10 @@ async function _renderIssueTab(body) {
         <h3 class="loan__heading">3. Issue details</h3>
         ${(() => {
           const isInitIssue = _issueState.purpose === INITIAL_ISSUE;
-          // Initial Issue forces a 6-year return date; long-term toggle is irrelevant.
-          const ltlActive   = _issueState.longTermLoan && !isInitIssue;
+          // Initial Issue auto-sets long-term loan + 6-year engagement date.
+          // The long-term toggle is shown as enabled but disabled (non-interactive)
+          // while Initial Issue is selected — it cannot be turned off for this purpose.
+          const ltlActive   = isInitIssue ? true : _issueState.longTermLoan;
           const dueDefault  = isInitIssue ? _sixYearsFromToday() : _defaultDueDate();
           return `
           <div class="form__row">
@@ -490,24 +501,13 @@ function _wireIssueTab(body, activeCadets, allItems) {
     _issueState.purpose = next;
 
     if (next === INITIAL_ISSUE) {
-      // Force long-term off (re-render handles the UI state)
-      if (_issueState.longTermLoan) {
-        _issueState.longTermLoan = false;
-        _render();
-        return; // _render re-creates the form and re-runs _wireIssueTab
-      }
-      // Directly update the date input — no re-render needed (avoids losing item lines)
-      if (dueDateInput) {
-        dueDateInput.value    = _sixYearsFromToday();
-        dueDateInput.readOnly = true;
-        dueDateInput.removeAttribute('disabled');
-      }
+      // Initial Issue auto-enables long-term loan (6-year engagement period).
+      // Always re-render so the long-term toggle state and hint are correct.
+      _issueState.longTermLoan = true;
+      _render();
     } else if (prev === INITIAL_ISSUE) {
-      // Leaving Initial Issue — restore editable date
-      if (dueDateInput) {
-        dueDateInput.value    = _defaultDueDate();
-        dueDateInput.readOnly = false;
-      }
+      // Leaving Initial Issue — reset long-term loan and restore editable date
+      _issueState.longTermLoan = false;
       _render(); // re-render to re-enable long-term toggle, remove II hint
     }
   });
@@ -622,6 +622,14 @@ function _wireIssueTab(body, activeCadets, allItems) {
     } else if (action === 'issue-add-line') {
       _issueState.lines.push(_freshLine());
       await _render();
+      // Scroll the new line into view — prevents cursor jumping to top of page.
+      const newLineIdx = _issueState.lines.length - 1;
+      const newLineEl  = $(`[data-line-index="${newLineIdx}"]`, body);
+      if (newLineEl) {
+        newLineEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        const firstInput = newLineEl.querySelector('input, select, textarea');
+        if (firstInput) firstInput.focus({ preventScroll: true });
+      }
     } else if (action === 'issue-remove-line') {
       const idx = Number(e.target.closest('[data-line-index]').dataset.lineIndex);
       _issueState.lines.splice(idx, 1);
@@ -671,10 +679,13 @@ async function _submitIssue(body) {
   errEl.textContent = '';
 
   const purpose      = $('select[data-issue-field="purpose"]', body)?.value || '';
-  const dueDate      = $('input[data-issue-field="dueDate"]', body)?.value || '';
   const remarks      = $('textarea[data-issue-field="remarks"]', body)?.value || '';
-  const longTermLoan = _issueState.longTermLoan;
   const unitLoan     = _issueState.unitLoan;
+  // Initial Issue is always a long-term loan with a 6-year engagement date.
+  const longTermLoan = (purpose === INITIAL_ISSUE) ? true : _issueState.longTermLoan;
+  const dueDate      = (purpose === INITIAL_ISSUE)
+    ? _sixYearsFromToday()
+    : ($('input[data-issue-field="dueDate"]', body)?.value || '');
   const activityName = ($('input[data-issue-field="activityName"]', body)?.value || _issueState.activityName).trim();
 
   if (!purpose) { errEl.textContent = 'Purpose is required.'; return; }
@@ -703,7 +714,9 @@ async function _submitIssue(body) {
     cadet = await Storage.cadets.get(_issueState.svcNo)
          || await Storage.staff.get(_issueState.svcNo);
     if (!cadet) { errEl.textContent = 'Selected borrower no longer exists.'; return; }
-    borrowerName = `${cadet.rank} ${cadet.surname}`;
+    // Format: "Rank Surname F." — first initial appended if available.
+    const _initial = cadet.given ? ` ${cadet.given.charAt(0).toUpperCase()}.` : '';
+    borrowerName = `${cadet.rank} ${cadet.surname}${_initial}`.trim();
     borrowerSvc  = cadet.svcNo;
   }
 
@@ -1567,11 +1580,15 @@ async function _renderAllTab(body) {
         </div>
       </header>
 
-      ${canReturn && _allSelected.size > 0 ? `
-        <div class="loan__bulk-bar" role="toolbar" aria-label="Bulk return actions">
+      ${_allSelected.size > 0 ? `
+        <div class="loan__bulk-bar" role="toolbar" aria-label="Bulk loan actions">
           <span class="loan__bulk-count">${_allSelected.size} loan${_allSelected.size === 1 ? '' : 's'} selected</span>
+          ${canReturn ? `
           <button type="button" class="btn btn--primary btn--sm" data-action="bulk-return">
             ↩ Return selected (${_allSelected.size})
+          </button>` : ''}
+          <button type="button" class="btn btn--ghost btn--sm" data-action="bulk-change-purpose">
+            ✎ Change purpose…
           </button>
           <button type="button" class="btn btn--ghost btn--sm" data-action="clear-selection">
             ✕ Clear selection
@@ -1841,6 +1858,12 @@ function _wireAllTab(body, borrowerOptions = [], phantomBorrowers = []) {
     await _bulkReturnLoans([..._allSelected], body);
   });
 
+  // Bulk purpose change button.
+  $('[data-action="bulk-change-purpose"]', body)?.addEventListener('click', async () => {
+    if (_allSelected.size === 0) return;
+    await _bulkChangePurpose([..._allSelected], body);
+  });
+
   // Clear selection button.
   $('[data-action="clear-selection"]', body)?.addEventListener('click', () => {
     _allSelected.clear();
@@ -1959,15 +1982,19 @@ function _wireAllTab(body, borrowerOptions = [], phantomBorrowers = []) {
 function _updateBulkBar(body) {
   let bar = $('.loan__bulk-bar', body);
   const count = _allSelected.size;
+  const canReturn = AUTH.can('return');
   if (count === 0) {
     if (bar) bar.remove();
     return;
   }
   const barHtml = `
-    <div class="loan__bulk-bar" role="toolbar" aria-label="Bulk return actions">
+    <div class="loan__bulk-bar" role="toolbar" aria-label="Bulk loan actions">
       <span class="loan__bulk-count">${count} loan${count === 1 ? '' : 's'} selected</span>
-      <button type="button" class="btn btn--primary btn--sm" data-action="bulk-return">
+      ${canReturn ? `<button type="button" class="btn btn--primary btn--sm" data-action="bulk-return">
         ↩ Return selected (${count})
+      </button>` : ''}
+      <button type="button" class="btn btn--ghost btn--sm" data-action="bulk-change-purpose">
+        ✎ Change purpose…
       </button>
       <button type="button" class="btn btn--ghost btn--sm" data-action="clear-selection">
         ✕ Clear selection
@@ -1975,10 +2002,8 @@ function _updateBulkBar(body) {
     </div>`;
   if (bar) {
     bar.outerHTML = barHtml;
-    // Re-wire the newly replaced bar's buttons.
     bar = $('.loan__bulk-bar', body);
   } else {
-    // Insert before the meta line.
     const meta = $('.loan__meta', body);
     if (meta) meta.insertAdjacentHTML('beforebegin', barHtml);
     bar = $('.loan__bulk-bar', body);
@@ -1986,6 +2011,10 @@ function _updateBulkBar(body) {
   bar?.querySelector('[data-action="bulk-return"]')?.addEventListener('click', async () => {
     if (_allSelected.size === 0) return;
     await _bulkReturnLoans([..._allSelected], body);
+  });
+  bar?.querySelector('[data-action="bulk-change-purpose"]')?.addEventListener('click', async () => {
+    if (_allSelected.size === 0) return;
+    await _bulkChangePurpose([..._allSelected], body);
   });
   bar?.querySelector('[data-action="clear-selection"]')?.addEventListener('click', () => {
     _allSelected.clear();
@@ -2140,6 +2169,70 @@ async function _bulkReturnLoans(refs, body) {
           await _renderAllTab(body);
           _wireAllTab(body);
         }
+      });
+    },
+  });
+}
+
+/**
+ * Bulk-change the purpose field on a set of loans (by ref). Only active loans
+ * are updated; returned loans are skipped silently.
+ */
+async function _bulkChangePurpose(refs, body) {
+  AUTH.requirePermission('issue');
+  if (refs.length === 0) return;
+
+  openModal({
+    titleHtml: `Change Purpose — ${refs.length} loan${refs.length === 1 ? '' : 's'}`,
+    size: 'sm',
+    bodyHtml: `
+      <p style="margin:0 0 12px;color:var(--text-secondary);font-size:13px">
+        Set the purpose for all ${refs.length} selected loan${refs.length === 1 ? '' : 's'} to the value below.
+      </p>
+      <label class="form__field">
+        <span class="form__label">New purpose *</span>
+        <select class="form__select" id="bulk-purpose-sel">
+          ${PURPOSES.map((p) => `<option value="${esc(p)}">${esc(p)}</option>`).join('')}
+        </select>
+      </label>
+      <div class="form__error" id="bulk-purpose-err" role="alert"></div>
+      <div class="form__actions">
+        <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
+        <button type="button" class="btn btn--primary" id="bulk-purpose-ok">Apply</button>
+      </div>
+    `,
+    async onMount(panel, close) {
+      const sel    = panel.querySelector('#bulk-purpose-sel');
+      const errEl  = panel.querySelector('#bulk-purpose-err');
+      const okBtn  = panel.querySelector('#bulk-purpose-ok');
+      okBtn.addEventListener('click', async () => {
+        const newPurpose = sel.value;
+        if (!newPurpose) { errEl.textContent = 'Select a purpose.'; return; }
+        okBtn.disabled = true;
+        okBtn.textContent = 'Saving…';
+        const sessionUser = AUTH.getSession()?.name || 'unknown';
+        let updated = 0;
+        let skipped = 0;
+        for (const ref of refs) {
+          const loan = await Storage.loans.get(ref);
+          if (!loan) { skipped++; continue; }
+          if (!loan.active) { skipped++; continue; } // skip returned loans
+          await Storage.loans.put({ ...loan, purpose: newPurpose });
+          await Storage.audit.append({
+            action: 'loan_purpose_edit',
+            user:   sessionUser,
+            desc:   `${ref}: purpose changed to "${newPurpose}" (bulk edit)`,
+          });
+          updated++;
+        }
+        Sync.notifyChanged();
+        _allSelected.clear();
+        close();
+        const msg = `${updated} loan${updated !== 1 ? 's' : ''} updated` +
+          (skipped > 0 ? ` · ${skipped} skipped (returned/missing)` : '') + '.';
+        showToast(msg, 'success');
+        await _renderAllTab(body);
+        _wireAllTab(body);
       });
     },
   });
