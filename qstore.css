@@ -7733,3 +7733,200 @@ kbd {
   border-top: 1px solid var(--border);
   flex-wrap: wrap;
 }
+
+/* Due-date field inside copy-to-cadets modal */
+.ctc__due-field {
+  max-width: 220px;
+  margin-bottom: 12px;
+}
+
+/* Spacing: notes field after the issues table */
+.iss__table-wrap + .form__field {
+  margin-top: 12px;
+}
+
+/* Spacing: notes field after the add-line button in submit form */
+.req__add-line + .form__field {
+  margin-top: 12px;
+}
+
+/* =============================================================================
+ * IMS Reports page (.ims-report__*)
+ * ============================================================================= */
+
+.ims-report {
+  padding: 4px 0;
+}
+
+.ims-report__header {
+  margin-bottom: 16px;
+}
+
+.ims-report__title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--gold);
+  margin: 0;
+}
+
+/* Tab navigation */
+.ims-report__tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.ims-report__tab {
+  padding: 8px 14px;
+  font-size: 0.875rem;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+.ims-report__tab:hover { color: var(--text); }
+
+.ims-report__tab--active {
+  color: var(--gold);
+  border-bottom-color: var(--gold);
+  font-weight: 600;
+}
+
+/* Controls toolbar */
+.ims-report__controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.ims-report__ctrl-label {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.ims-report__groupby {
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 0.875rem;
+  padding: 4px 8px;
+}
+
+.ims-report__date-lbl {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* Controls bar date inputs */
+.ims-report__controls input[type="date"] {
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 0.875rem;
+  padding: 4px 8px;
+}
+
+/* Meta summary line */
+.ims-report__meta {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0 0 10px;
+}
+
+/* Section group headings (group-by reports) */
+.ims-report__group {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--gold);
+  margin: 16px 0 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Data table */
+.ims-report__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  margin-bottom: 16px;
+}
+
+.ims-report__table thead th {
+  background: var(--bg-panel);
+  padding: 7px 10px;
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.ims-report__table tbody td {
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  vertical-align: top;
+}
+
+.ims-report__table tbody tr:last-child td { border-bottom: none; }
+.ims-report__table tbody tr:hover { background: var(--bg-input); }
+.ims-report__row--overdue td { color: var(--danger); }
+
+/* Monospace / secondary text helpers */
+.ims-report__mono {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.ims-report__sub {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+.ims-report__num--danger {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* Status badges */
+.ims-report__badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.ims-report__badge--ok     { background: rgba(0,200,100,0.12);  color: #00c864; }
+.ims-report__badge--info   { background: rgba(96,165,250,0.15); color: #60a5fa; }
+.ims-report__badge--danger { background: rgba(220,38,38,0.15);  color: var(--danger); }
+
+/* Empty state */
+.ims-report__empty {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  padding: 20px 0;
+  text-align: center;
+}

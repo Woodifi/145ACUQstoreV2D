@@ -551,27 +551,32 @@ async function _openDeleteModal(svcNo) {
     titleHtml: 'Delete staff member',
     size:      'sm',
     bodyHtml: `
-      <p>Delete <strong>${esc(member.rank)} ${esc(member.surname)}</strong> (${esc(svcNo)})?</p>
-      <p class="form__hint">
-        This removes the staff record. Existing loan history is preserved — the
-        borrower name on historical loans will remain unchanged.
-      </p>
-      <label class="form__field">
-        <span class="form__label">Reason *</span>
-        <input type="text" name="reason" maxlength="200"
-               placeholder="e.g. Posted out, left unit" autocomplete="off">
-      </label>
-      <div class="form__error" role="alert"></div>
-      <div class="form__actions">
-        <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
-        <button type="button" class="btn btn--danger" data-action="confirm-delete">Delete</button>
-      </div>`,
+      <form class="form" data-form="staff-delete" autocomplete="off">
+        <p class="modal__body">
+          Delete <strong>${esc(member.rank)} ${esc(member.surname)}</strong> (${esc(svcNo)})?
+        </p>
+        <p class="form__hint">
+          This removes the staff record. Existing loan history is preserved — the
+          borrower name on historical loans will remain unchanged.
+        </p>
+        <label class="form__field">
+          <span class="form__label">Reason *</span>
+          <input type="text" name="reason" maxlength="200"
+                 placeholder="e.g. Posted out, left unit" autocomplete="off">
+        </label>
+        <div class="form__error" role="alert"></div>
+        <div class="form__actions">
+          <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
+          <button type="submit" class="btn btn--danger">Delete</button>
+        </div>
+      </form>`,
     onMount(panel, close) {
-      const errEl    = $('.form__error', panel);
-      const reasonEl = $('input[name="reason"]', panel);
-      $('[data-action="confirm-delete"]', panel).addEventListener('click', async () => {
+      const form  = $('form[data-form="staff-delete"]', panel);
+      const errEl = $('.form__error', panel);
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
         errEl.textContent = '';
-        const reason = (reasonEl.value || '').trim();
+        const reason = (new FormData(form).get('reason') || '').trim();
         if (!reason) { errEl.textContent = 'Reason is required.'; return; }
         try {
           AUTH.requirePermission('manageStaff');

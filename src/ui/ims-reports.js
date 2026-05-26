@@ -374,7 +374,7 @@ export function mount(root) {
         <div class="ims-report__body">
           ${_activeReport === 'outstanding' ? `
             <div class="ims-report__controls">
-              <label style="font-size:13px">Group by:</label>
+              <span class="ims-report__ctrl-label">Group by:</span>
               <select class="ims-report__groupby" id="ims-report-groupby">
                 <option value="borrower" ${_groupBy === 'borrower' ? 'selected' : ''}>Borrower</option>
                 <option value="item"     ${_groupBy === 'item'     ? 'selected' : ''}>Item</option>
@@ -383,7 +383,7 @@ export function mount(root) {
               <button type="button" class="btn btn--ghost btn--sm" data-action="export-outstanding">
                 ↓ CSV
               </button>
-              <button type="button" class="btn btn--ghost btn--sm" onclick="window.print()">⎙ Print</button>
+              <button type="button" class="btn btn--ghost btn--sm" data-action="print">⎙ Print</button>
             </div>
             ${_renderOutstandingLoans(_loans, _groupBy)}
           ` : ''}
@@ -393,7 +393,7 @@ export function mount(root) {
               <button type="button" class="btn btn--ghost btn--sm" data-action="export-writtenoff">
                 ↓ CSV
               </button>
-              <button type="button" class="btn btn--ghost btn--sm" onclick="window.print()">⎙ Print</button>
+              <button type="button" class="btn btn--ghost btn--sm" data-action="print">⎙ Print</button>
             </div>
             ${_renderWrittenOff(_items)}
           ` : ''}
@@ -409,7 +409,7 @@ export function mount(root) {
               <button type="button" class="btn btn--ghost btn--sm" data-action="export-history">
                 ↓ CSV
               </button>
-              <button type="button" class="btn btn--ghost btn--sm" onclick="window.print()">⎙ Print</button>
+              <button type="button" class="btn btn--ghost btn--sm" data-action="print">⎙ Print</button>
             </div>
             ${_renderIssueHistory(_loans, _fromDate, _toDate)}
           ` : ''}
@@ -419,7 +419,7 @@ export function mount(root) {
               <button type="button" class="btn btn--ghost btn--sm" data-action="export-kit">
                 ↓ CSV
               </button>
-              <button type="button" class="btn btn--ghost btn--sm" onclick="window.print()">⎙ Print</button>
+              <button type="button" class="btn btn--ghost btn--sm" data-action="print">⎙ Print</button>
             </div>
             ${_renderKitAllocation(_loans, _cadets)}
           ` : ''}
@@ -451,6 +451,10 @@ export function mount(root) {
     $('#ims-history-to', root)?.addEventListener('change', (e) => {
       _toDate = e.target.value;
       _render();
+    });
+
+    root.querySelectorAll('[data-action="print"]').forEach((btn) => {
+      btn.addEventListener('click', () => window.print());
     });
 
     $('[data-action="export-outstanding"]', root)?.addEventListener('click', () => {

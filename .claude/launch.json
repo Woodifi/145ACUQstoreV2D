@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "qstore-v2",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "-p", "5173", "-s", "dist"],
+      "port": 5173
+    }
+  ]
+}

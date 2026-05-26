@@ -445,12 +445,11 @@ async function _handleApproveAndIssue(req, body) {
   });
 
   // Build inventory datalist options (used for description auto-complete).
-  const datalistId = 'iss-inv-dl';
-  const datalistHtml = '<datalist id="' + datalistId + '">' +
-    allItems.map(function(it) {
-      return '<option value="' + esc(it.name) + '" data-nsn="' + esc(it.nsn || '') + '">';
-    }).join('') +
-    '</datalist>';
+  const datalistId   = 'iss-inv-dl';
+  const datalistHtml = `<datalist id="${datalistId}">${
+    allItems.map(it => `<option value="${esc(it.name)}" data-nsn="${esc(it.nsn || '')}">`)
+            .join('')
+  }</datalist>`;
 
   const lineActionOpts = [
     { v: 'issue',       l: 'Issue'              },
@@ -460,77 +459,75 @@ async function _handleApproveAndIssue(req, body) {
   ];
 
   function _lineRowHtml(line, idx) {
-    const selOpts = lineActionOpts.map(function(o) {
-      return '<option value="' + o.v + '"' + (line.lineAction === o.v ? ' selected' : '') + '>' + o.l + '</option>';
-    }).join('');
-    return (
-      '<tr class="iss__line" data-line-idx="' + idx + '" data-action-val="' + esc(line.lineAction) + '">' +
-        '<td class="iss__td-num">' + (idx + 1) + '</td>' +
-        '<td class="iss__td-desc">' +
-          '<input type="text" class="form__input iss__desc-inp" list="' + datalistId + '"' +
-                 ' value="' + esc(line.description) + '" data-field="description"' +
-                 ' placeholder="Description">' +
-        '</td>' +
-        '<td class="iss__td-nsn">' +
-          '<input type="text" class="form__input iss__nsn-inp" value="' + esc(line.nsn) + '"' +
-                 ' data-field="nsn" placeholder="NSN">' +
-        '</td>' +
-        '<td class="iss__td-req">' + esc(String(line.qty)) + '</td>' +
-        '<td class="iss__td-qty">' +
-          '<input type="number" class="form__input iss__qty-inp" value="' + esc(String(line.qtyIssued)) + '"' +
-                 ' data-field="qtyIssued" min="0" max="999">' +
-        '</td>' +
-        '<td class="iss__td-action">' +
-          '<select class="form__select iss__action-sel" data-field="lineAction">' + selOpts + '</select>' +
-        '</td>' +
-      '</tr>'
-    );
+    const selOpts = lineActionOpts.map(o =>
+      `<option value="${o.v}"${line.lineAction === o.v ? ' selected' : ''}>${o.l}</option>`
+    ).join('');
+    return `
+      <tr class="iss__line" data-line-idx="${idx}" data-action-val="${esc(line.lineAction)}">
+        <td class="iss__td-num">${idx + 1}</td>
+        <td class="iss__td-desc">
+          <input type="text" class="form__input iss__desc-inp" list="${datalistId}"
+                 value="${esc(line.description)}" data-field="description"
+                 placeholder="Description">
+        </td>
+        <td class="iss__td-nsn">
+          <input type="text" class="form__input iss__nsn-inp" value="${esc(line.nsn)}"
+                 data-field="nsn" placeholder="NSN">
+        </td>
+        <td class="iss__td-req">${esc(String(line.qty))}</td>
+        <td class="iss__td-qty">
+          <input type="number" class="form__input iss__qty-inp" value="${esc(String(line.qtyIssued))}"
+                 data-field="qtyIssued" min="0" max="999">
+        </td>
+        <td class="iss__td-action">
+          <select class="form__select iss__action-sel" data-field="lineAction">${selOpts}</select>
+        </td>
+      </tr>`;
   }
 
   openModal({
-    titleHtml: 'Issue Items — ' + esc(req.id),
+    titleHtml: `Issue Items — ${esc(req.id)}`,
     size: 'lg',
-    bodyHtml: (
-      datalistHtml +
-      '<div class="iss__meta">' +
-        '<div class="iss__borrower-info">' +
-          '<span class="iss__meta-label">Borrower:</span> ' +
-          '<strong>' + esc(borrowerName) + '</strong>' +
-          '<span class="iss__svc-no">' + esc(borrowerSvc) + '</span>' +
-          '<span class="iss__purpose">' + esc(req.purpose) + '</span>' +
-        '</div>' +
-        '<label class="iss__due-wrap">' +
-          '<span class="iss__meta-label">Due date</span>' +
-          '<input type="date" class="form__input iss__due-inp" id="iss-due-date"' +
-                 ' value="' + esc(defaultDue) + '" min="' + esc(_todayLocalIsoDate()) + '">' +
-        '</label>' +
-      '</div>' +
-      '<div class="iss__table-wrap">' +
-        '<table class="iss__table">' +
-          '<thead><tr>' +
-            '<th class="iss__th-num">#</th>' +
-            '<th class="iss__th-desc">Item Description</th>' +
-            '<th class="iss__th-nsn">NSN</th>' +
-            '<th class="iss__th-req" title="Requested quantity">Req</th>' +
-            '<th class="iss__th-qty" title="Quantity to issue">Qty</th>' +
-            '<th class="iss__th-action">Status</th>' +
-          '</tr></thead>' +
-          '<tbody id="iss-tbody">' +
-            editableLines.map(function(l, i) { return _lineRowHtml(l, i); }).join('') +
-          '</tbody>' +
-        '</table>' +
-      '</div>' +
-      '<label class="form__field" style="margin-top:12px">' +
-        '<span class="form__label">Issue notes <span class="form__hint">(appended to each loan remark)</span></span>' +
-        '<textarea id="iss-notes" class="form__textarea" rows="2"' +
-                  ' placeholder="e.g. Boot size 10, item exchanged&#8230;"></textarea>' +
-      '</label>' +
-      '<div class="form__error" id="iss-err" role="alert"></div>' +
-      '<div class="form__actions">' +
-        '<button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>' +
-        '<button type="button" class="btn btn--primary" id="iss-submit">Issue Items</button>' +
-      '</div>'
-    ),
+    bodyHtml: `
+      ${datalistHtml}
+      <div class="iss__meta">
+        <div class="iss__borrower-info">
+          <span class="iss__meta-label">Borrower:</span>
+          <strong>${esc(borrowerName)}</strong>
+          <span class="iss__svc-no">${esc(borrowerSvc)}</span>
+          <span class="iss__purpose">${esc(req.purpose)}</span>
+        </div>
+        <label class="iss__due-wrap">
+          <span class="iss__meta-label">Due date</span>
+          <input type="date" class="form__input iss__due-inp" id="iss-due-date"
+                 value="${esc(defaultDue)}" min="${esc(_todayLocalIsoDate())}">
+        </label>
+      </div>
+      <div class="iss__table-wrap">
+        <table class="iss__table">
+          <thead><tr>
+            <th class="iss__th-num">#</th>
+            <th class="iss__th-desc">Item Description</th>
+            <th class="iss__th-nsn">NSN</th>
+            <th class="iss__th-req" title="Requested quantity">Req</th>
+            <th class="iss__th-qty" title="Quantity to issue">Qty</th>
+            <th class="iss__th-action">Status</th>
+          </tr></thead>
+          <tbody id="iss-tbody">
+            ${editableLines.map((l, i) => _lineRowHtml(l, i)).join('')}
+          </tbody>
+        </table>
+      </div>
+      <label class="form__field">
+        <span class="form__label">Issue notes <span class="form__hint">(appended to each loan remark)</span></span>
+        <textarea id="iss-notes" class="form__textarea" rows="2"
+                  placeholder="e.g. Boot size 10, item exchanged…"></textarea>
+      </label>
+      <div class="form__error" id="iss-err" role="alert"></div>
+      <div class="form__actions">
+        <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
+        <button type="button" class="btn btn--primary" id="iss-submit">Issue Items</button>
+      </div>`,
 
     async onMount(panel, close) {
       const tbody     = panel.querySelector('#iss-tbody');
@@ -1021,11 +1018,11 @@ async function _handleCopyToCadets(req, body) {
         <ul class="ctc__kit-lines">${itemsSummary}</ul>
       </div>
 
-      <div class="ctc__due-row">
-        <label class="form__label" for="ctc-due-date">Due date</label>
+      <label class="form__field ctc__due-field">
+        <span class="form__label">Due date</span>
         <input type="date" id="ctc-due-date" class="form__input ctc__due-input"
                value="${esc(defaultDue)}" min="${esc(_todayLocalIsoDate())}">
-      </div>
+      </label>
 
       <div class="ctc__controls">
         <input type="text" class="ctc__search form__input" placeholder="Search cadets…"
@@ -1042,7 +1039,7 @@ async function _handleCopyToCadets(req, body) {
 
       <div class="form__error" id="ctc-error" role="alert"></div>
 
-      <div class="ctc__footer">
+      <div class="form__actions">
         <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
         <button type="button" class="btn btn--ghost" data-action="ctc-print" disabled>⎙ Print AB189s</button>
         <button type="button" class="btn btn--primary" data-action="ctc-issue" disabled>📋 Create pending requests</button>
@@ -1359,7 +1356,7 @@ function _renderSubmitForm(body) {
       <button type="button" class="btn btn--ghost btn--sm req__add-line"
               data-action="add-line">+ Add item</button>
 
-      <label class="form__field" style="margin-top:12px">
+      <label class="form__field">
         <span class="form__label">Notes / additional information</span>
         <textarea name="notes" class="form__textarea" rows="3"
                   placeholder="Any other details the QM should know…"></textarea>

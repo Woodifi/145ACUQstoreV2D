@@ -7742,12 +7742,209 @@ kbd {
   flex-wrap: wrap;
 }
 
+/* Due-date field inside copy-to-cadets modal */
+.ctc__due-field {
+  max-width: 220px;
+  margin-bottom: 12px;
+}
+
+/* Spacing: notes field after the issues table */
+.iss__table-wrap + .form__field {
+  margin-top: 12px;
+}
+
+/* Spacing: notes field after the add-line button in submit form */
+.req__add-line + .form__field {
+  margin-top: 12px;
+}
+
+/* =============================================================================
+ * IMS Reports page (.ims-report__*)
+ * ============================================================================= */
+
+.ims-report {
+  padding: 4px 0;
+}
+
+.ims-report__header {
+  margin-bottom: 16px;
+}
+
+.ims-report__title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--gold);
+  margin: 0;
+}
+
+/* Tab navigation */
+.ims-report__tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.ims-report__tab {
+  padding: 8px 14px;
+  font-size: 0.875rem;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+.ims-report__tab:hover { color: var(--text); }
+
+.ims-report__tab--active {
+  color: var(--gold);
+  border-bottom-color: var(--gold);
+  font-weight: 600;
+}
+
+/* Controls toolbar */
+.ims-report__controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.ims-report__ctrl-label {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.ims-report__groupby {
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 0.875rem;
+  padding: 4px 8px;
+}
+
+.ims-report__date-lbl {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* Controls bar date inputs */
+.ims-report__controls input[type="date"] {
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 0.875rem;
+  padding: 4px 8px;
+}
+
+/* Meta summary line */
+.ims-report__meta {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0 0 10px;
+}
+
+/* Section group headings (group-by reports) */
+.ims-report__group {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--gold);
+  margin: 16px 0 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Data table */
+.ims-report__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  margin-bottom: 16px;
+}
+
+.ims-report__table thead th {
+  background: var(--bg-panel);
+  padding: 7px 10px;
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.ims-report__table tbody td {
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  vertical-align: top;
+}
+
+.ims-report__table tbody tr:last-child td { border-bottom: none; }
+.ims-report__table tbody tr:hover { background: var(--bg-input); }
+.ims-report__row--overdue td { color: var(--danger); }
+
+/* Monospace / secondary text helpers */
+.ims-report__mono {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.ims-report__sub {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+.ims-report__num--danger {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* Status badges */
+.ims-report__badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.ims-report__badge--ok     { background: rgba(0,200,100,0.12);  color: #00c864; }
+.ims-report__badge--info   { background: rgba(96,165,250,0.15); color: #60a5fa; }
+.ims-report__badge--danger { background: rgba(220,38,38,0.15);  color: var(--danger); }
+
+/* Empty state */
+.ims-report__empty {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  padding: 20px 0;
+  text-align: center;
+}
+
 </style>
   <meta name="author" content="Sean Scales">
   <meta name="copyright" content="© 2025 Sean Scales. All rights reserved.">
-  <meta name="generator" content="QStore IMS Build 20260526-494C35FF">
+  <meta name="generator" content="QStore IMS Build 20260526-5D59BC57">
   <meta name="license" content="Proprietary — redistribution and modification prohibited without written consent. Contact: admin@seanscales.com.au">
-  <!-- QStore IMS v2 | Author: Sean Scales | Build: 20260526-494C35FF | Built: 2026-05-26 21:24:36 UTC | © 2025 Sean Scales. All rights reserved. Proprietary software — unauthorised copying or modification is prohibited. admin@seanscales.com.au -->
+  <!-- QStore IMS v2 | Author: Sean Scales | Build: 20260526-5D59BC57 | Built: 2026-05-26 21:50:06 UTC | © 2025 Sean Scales. All rights reserved. Proprietary software — unauthorised copying or modification is prohibited. admin@seanscales.com.au -->
 </head>
 <body>
   <div id="app">
@@ -7781,7 +7978,7 @@ var QStoreApp=(()=>{var jue=Object.create;var fv=Object.defineProperty;var que=O
 `&&(k=`
 `);var G=0,Z=!1;this.parse=function(V,ue,se){if(typeof V!="string")throw new Error("Input must be a string");var P=V.length,X=B.length,ee=k.length,le=v.length,K=I(_),M=[],Y=[],te=[],fe=G=0;if(!V)return $e();if(R||R!==!1&&V.indexOf(W)===-1){for(var he=V.split(k),be=0;be<he.length;be++){if(te=he[be],G+=te.length,be!==he.length-1)G+=k.length;else if(se)return $e();if(!v||te.substring(0,le)!==v){if(K){if(M=[],Oe(te.split(B)),Me(),Z)return $e()}else Oe(te.split(B));if(Q&&Q<=be)return M=M.slice(0,Q),$e(!0)}}return $e()}for(var ge=V.indexOf(B,G),Ne=V.indexOf(k,G),ne=new RegExp(d($)+d(W),"g"),He=V.indexOf(W,G);;)if(V[G]===W)for(He=G,G++;;){if((He=V.indexOf(W,He+1))===-1)return se||Y.push({type:"Quotes",code:"MissingQuotes",message:"Quoted field unterminated",row:M.length,index:G}),Ye();if(He===P-1)return Ye(V.substring(G,He).replace(ne,W));if(W===$&&V[He+1]===$)He++;else if(W===$||He===0||V[He-1]!==$){ge!==-1&&ge<He+1&&(ge=V.indexOf(B,He+1));var ot=Te((Ne=Ne!==-1&&Ne<He+1?V.indexOf(k,He+1):Ne)===-1?ge:Math.min(ge,Ne));if(V.substr(He+1+ot,X)===B){te.push(V.substring(G,He).replace(ne,W)),V[G=He+1+ot+X]!==W&&(He=V.indexOf(W,G)),ge=V.indexOf(B,G),Ne=V.indexOf(k,G);break}if(ot=Te(Ne),V.substring(He+1+ot,He+1+ot+ee)===k){if(te.push(V.substring(G,He).replace(ne,W)),et(He+1+ot+ee),ge=V.indexOf(B,G),He=V.indexOf(W,G),K&&(Me(),Z))return $e();if(Q&&M.length>=Q)return $e(!0);break}Y.push({type:"Quotes",code:"InvalidQuotes",message:"Trailing quote on quoted field is malformed",row:M.length,index:G}),He++}}else if(v&&te.length===0&&V.substring(G,G+le)===v){if(Ne===-1)return $e();G=Ne+ee,Ne=V.indexOf(k,G),ge=V.indexOf(B,G)}else if(ge!==-1&&(ge<Ne||Ne===-1))te.push(V.substring(G,ge)),G=ge+X,ge=V.indexOf(B,G);else{if(Ne===-1)break;if(te.push(V.substring(G,Ne)),et(Ne+ee),K&&(Me(),Z))return $e();if(Q&&M.length>=Q)return $e(!0)}return Ye();function Oe(it){M.push(it),fe=G}function Te(it){var St=0;return St=it!==-1&&(it=V.substring(He+1,it))&&it.trim()===""?it.length:St}function Ye(it){return se||(it===void 0&&(it=V.substring(G)),te.push(it),G=P,Oe(te),K&&Me()),$e()}function et(it){G=it,Oe(te),te=[],Ne=V.indexOf(k,G)}function $e(it){if(C.header&&!ue&&M.length&&!H){var St=M[0],ze=Object.create(null),vt=new Set(St);let Nt=!1;for(let xt=0;xt<St.length;xt++){let Ot=St[xt];if(ze[Ot=I(C.transformHeader)?C.transformHeader(Ot,xt):Ot]){let pt,Xt=ze[Ot];for(;pt=Ot+"_"+Xt,Xt++,vt.has(pt););vt.add(pt),St[xt]=pt,ze[Ot]++,Nt=!0,(q=q===null?{}:q)[pt]=Ot}else ze[Ot]=1,St[xt]=Ot;vt.add(Ot)}Nt&&console.warn("Duplicate headers found and renamed."),H=!0}return{data:M,errors:Y,meta:{delimiter:B,linebreak:k,aborted:Z,truncated:!!it,cursor:fe+(ue||0),renamedHeaders:q}}}function Me(){_($e()),M=[],Y=[]}},this.abort=function(){Z=!0},this.getCharIndex=function(){return G}}function p(C){var B=C.data,k=s[B.workerId],v=!1;if(B.error)k.userError(B.error,B.file);else if(B.results&&B.results.data){var _={abort:function(){v=!0,m(B.workerId,{data:[],errors:[],meta:{aborted:!0}})},pause:x,resume:x};if(I(k.userStep)){for(var Q=0;Q<B.results.data.length&&(k.userStep({data:B.results.data[Q],errors:B.results.errors,meta:B.results.meta},_),!v);Q++);delete B.results}else I(k.userChunk)&&(k.userChunk(B.results,_,B.file),delete B.results)}B.finished&&!v&&m(B.workerId,B.results)}function m(C,B){var k=s[C];I(k.userComplete)&&k.userComplete(B),k.terminate(),delete s[C]}function x(){throw new Error("Not implemented.")}function w(C){if(typeof C!="object"||C===null)return C;var B,k=Array.isArray(C)?[]:{};for(B in C)k[B]=w(C[B]);return k}function b(C,B){return function(){C.apply(B,arguments)}}function I(C){return typeof C=="function"}return o.parse=function(C,B){var k=(B=B||{}).dynamicTyping||!1;if(I(k)&&(B.dynamicTypingFunction=k,k={}),B.dynamicTyping=k,B.transform=!!I(B.transform)&&B.transform,!B.worker||!o.WORKERS_SUPPORTED)return k=null,o.NODE_STREAM_INPUT,typeof C=="string"?(C=(v=>v.charCodeAt(0)!==65279?v:v.slice(1))(C),k=new(B.download?c:f)(B)):C.readable===!0&&I(C.read)&&I(C.on)?k=new h(B):(e.File&&C instanceof File||C instanceof Object)&&(k=new A(B)),k.stream(C);(k=(()=>{var v;return!!o.WORKERS_SUPPORTED&&(v=(()=>{var _=e.URL||e.webkitURL||null,Q=n.toString();return o.BLOB_URL||(o.BLOB_URL=_.createObjectURL(new Blob(["var global = (function() { if (typeof self !== 'undefined') { return self; } if (typeof window !== 'undefined') { return window; } if (typeof global !== 'undefined') { return global; } return {}; })(); global.IS_PAPA_WORKER=true; ","(",Q,")();"],{type:"text/javascript"})))})(),(v=new e.Worker(v)).onmessage=p,v.id=a++,s[v.id]=v)})()).userStep=B.step,k.userChunk=B.chunk,k.userComplete=B.complete,k.userError=B.error,B.step=I(B.step),B.chunk=I(B.chunk),B.complete=I(B.complete),B.error=I(B.error),delete B.worker,k.postMessage({input:C,config:B,workerId:k.id})},o.unparse=function(C,B){var k=!1,v=!0,_=",",Q=`\r
 `,R='"',q=R+R,H=!1,W=null,$=!1,G=((()=>{if(typeof B=="object"){if(typeof B.delimiter!="string"||o.BAD_DELIMITERS.filter(function(ue){return B.delimiter.indexOf(ue)!==-1}).length||(_=B.delimiter),typeof B.quotes!="boolean"&&typeof B.quotes!="function"&&!Array.isArray(B.quotes)||(k=B.quotes),typeof B.skipEmptyLines!="boolean"&&typeof B.skipEmptyLines!="string"||(H=B.skipEmptyLines),typeof B.newline=="string"&&(Q=B.newline),typeof B.quoteChar=="string"&&(R=B.quoteChar),typeof B.header=="boolean"&&(v=B.header),Array.isArray(B.columns)){if(B.columns.length===0)throw new Error("Option columns is empty");W=B.columns}B.escapeChar!==void 0&&(q=B.escapeChar+R),B.escapeFormulae instanceof RegExp?$=B.escapeFormulae:typeof B.escapeFormulae=="boolean"&&B.escapeFormulae&&($=/^[=+\-@\t\r].*$/)}})(),new RegExp(d(R),"g"));if(typeof C=="string"&&(C=JSON.parse(C)),Array.isArray(C)){if(!C.length||Array.isArray(C[0]))return Z(null,C,H);if(typeof C[0]=="object")return Z(W||Object.keys(C[0]),C,H)}else if(typeof C=="object")return typeof C.data=="string"&&(C.data=JSON.parse(C.data)),Array.isArray(C.data)&&(C.fields||(C.fields=C.meta&&C.meta.fields||W),C.fields||(C.fields=Array.isArray(C.data[0])?C.fields:typeof C.data[0]=="object"?Object.keys(C.data[0]):[]),Array.isArray(C.data[0])||typeof C.data[0]=="object"||(C.data=[C.data])),Z(C.fields||[],C.data||[],H);throw new Error("Unable to serialize unrecognized input");function Z(ue,se,P){var X="",ee=(typeof ue=="string"&&(ue=JSON.parse(ue)),typeof se=="string"&&(se=JSON.parse(se)),Array.isArray(ue)&&0<ue.length),le=!Array.isArray(se[0]);if(ee&&v){for(var K=0;K<ue.length;K++)0<K&&(X+=_),X+=V(ue[K],K);0<se.length&&(X+=Q)}for(var M=0;M<se.length;M++){var Y=(ee?ue:se[M]).length,te=!1,fe=ee?Object.keys(se[M]).length===0:se[M].length===0;if(P&&!ee&&(te=P==="greedy"?se[M].join("").trim()==="":se[M].length===1&&se[M][0].length===0),P==="greedy"&&ee){for(var he=[],be=0;be<Y;be++){var ge=le?ue[be]:be;he.push(se[M][ge])}te=he.join("").trim()===""}if(!te){for(var Ne=0;Ne<Y;Ne++){0<Ne&&!fe&&(X+=_);var ne=ee&&le?ue[Ne]:Ne;X+=V(se[M][ne],Ne)}M<se.length-1&&(!P||0<Y&&!fe)&&(X+=Q)}}return X}function V(ue,se){var P,X;return ue==null?"":ue.constructor===Date?JSON.stringify(ue).slice(1,25):(X=!1,$&&typeof ue=="string"&&$.test(ue)&&(ue="'"+ue,X=!0),P=ue.toString().replace(G,q),(X=X||k===!0||typeof k=="function"&&k(ue,se)||Array.isArray(k)&&k[se]||((ee,le)=>{for(var K=0;K<le.length;K++)if(-1<ee.indexOf(le[K]))return!0;return!1})(P,o.BAD_DELIMITERS)||-1<P.indexOf(_)||P.charAt(0)===" "||P.charAt(P.length-1)===" ")?R+P+R:P)}},o.RECORD_SEP="",o.UNIT_SEP="",o.BYTE_ORDER_MARK="\uFEFF",o.BAD_DELIMITERS=["\r",`
-`,'"',o.BYTE_ORDER_MARK],o.WORKERS_SUPPORTED=!r&&!!e.Worker,o.NODE_STREAM_INPUT=1,o.LocalChunkSize=10485760,o.RemoteChunkSize=5242880,o.DefaultDelimiter=",",o.Parser=g,o.ParserHandle=u,o.NetworkStreamer=c,o.FileStreamer=A,o.StringStreamer=f,o.ReadableStreamStreamer=h,e.jQuery&&((t=e.jQuery).fn.parse=function(C){var B=C.config||{},k=[];return this.each(function(Q){if(!(t(this).prop("tagName").toUpperCase()==="INPUT"&&t(this).attr("type").toLowerCase()==="file"&&e.FileReader)||!this.files||this.files.length===0)return!0;for(var R=0;R<this.files.length;R++)k.push({file:this.files[R],inputElem:this,instanceConfig:t.extend({},B)})}),v(),this;function v(){if(k.length===0)I(C.complete)&&C.complete();else{var Q,R,q,H,W=k[0];if(I(C.before)){var $=C.before(W.file,W.inputElem);if(typeof $=="object"){if($.action==="abort")return Q="AbortError",R=W.file,q=W.inputElem,H=$.reason,void(I(C.error)&&C.error({name:Q},R,q,H));if($.action==="skip")return void _();typeof $.config=="object"&&(W.instanceConfig=t.extend(W.instanceConfig,$.config))}else if($==="skip")return void _()}var G=W.instanceConfig.complete;W.instanceConfig.complete=function(Z){I(G)&&G(Z,W.file,W.inputElem),_()},o.parse(W.file,W.instanceConfig)}}function _(){k.splice(0,1),v()}}),i&&(e.onmessage=function(C){C=C.data,o.WORKER_ID===void 0&&C&&(o.WORKER_ID=C.workerId),typeof C.input=="string"?e.postMessage({workerId:o.WORKER_ID,results:o.parse(C.input,C.config),finished:!0}):(e.File&&C.input instanceof File||C.input instanceof Object)&&(C=o.parse(C.input,C.config))&&e.postMessage({workerId:o.WORKER_ID,results:C,finished:!0})}),(c.prototype=Object.create(l.prototype)).constructor=c,(A.prototype=Object.create(l.prototype)).constructor=A,(f.prototype=Object.create(f.prototype)).constructor=f,(h.prototype=Object.create(l.prototype)).constructor=h,o})});var xNe={};fa(xNe,{boot:()=>oNe});var uv="20260526-494C35FF",bK="2026-05-26 21:24:36 UTC",Lue="Sean Scales",CK="admin@seanscales.com.au";var Pue="QStore IMS v2.2",Gue=["https://woodifi.github.io","http://localhost","http://127.0.0.1","null"];function IK(){let n="color:#c9a227;font-size:13px;font-weight:700;letter-spacing:0.05em;",e="color:#8b98a8;font-size:11px;",t="color:#e05252;font-size:11px;font-weight:600;",r="color:#d0d8e4;font-size:11px;";console.groupCollapsed("%c\u25B6 QStore IMS%c  \u2502  \xA9 Sean Scales  \u2502  Build\xA0"+uv,n,e),console.log("%cProduct  %c"+Pue,e,r),console.log("%cAuthor   %c"+Lue,e,r),console.log("%cContact  %c"+CK,e,r),console.log("%cBuild    %c"+uv,e,r),console.log("%cBuilt    %c"+bK,e,r),console.log("%cLicence  %cProprietary \u2014 All Rights Reserved",e,r),console.log("%c\u26A0 Unauthorised copying, modification or redistribution of this software is prohibited and may result in legal action.",t),console.groupEnd()}function BK(){let n=String(window.location.origin);Gue.some(t=>n===t||n.startsWith(t+"/"))||console.warn("[QStore IMS] \u26A0 This application is running from an unrecognised origin: "+n+`.
+`,'"',o.BYTE_ORDER_MARK],o.WORKERS_SUPPORTED=!r&&!!e.Worker,o.NODE_STREAM_INPUT=1,o.LocalChunkSize=10485760,o.RemoteChunkSize=5242880,o.DefaultDelimiter=",",o.Parser=g,o.ParserHandle=u,o.NetworkStreamer=c,o.FileStreamer=A,o.StringStreamer=f,o.ReadableStreamStreamer=h,e.jQuery&&((t=e.jQuery).fn.parse=function(C){var B=C.config||{},k=[];return this.each(function(Q){if(!(t(this).prop("tagName").toUpperCase()==="INPUT"&&t(this).attr("type").toLowerCase()==="file"&&e.FileReader)||!this.files||this.files.length===0)return!0;for(var R=0;R<this.files.length;R++)k.push({file:this.files[R],inputElem:this,instanceConfig:t.extend({},B)})}),v(),this;function v(){if(k.length===0)I(C.complete)&&C.complete();else{var Q,R,q,H,W=k[0];if(I(C.before)){var $=C.before(W.file,W.inputElem);if(typeof $=="object"){if($.action==="abort")return Q="AbortError",R=W.file,q=W.inputElem,H=$.reason,void(I(C.error)&&C.error({name:Q},R,q,H));if($.action==="skip")return void _();typeof $.config=="object"&&(W.instanceConfig=t.extend(W.instanceConfig,$.config))}else if($==="skip")return void _()}var G=W.instanceConfig.complete;W.instanceConfig.complete=function(Z){I(G)&&G(Z,W.file,W.inputElem),_()},o.parse(W.file,W.instanceConfig)}}function _(){k.splice(0,1),v()}}),i&&(e.onmessage=function(C){C=C.data,o.WORKER_ID===void 0&&C&&(o.WORKER_ID=C.workerId),typeof C.input=="string"?e.postMessage({workerId:o.WORKER_ID,results:o.parse(C.input,C.config),finished:!0}):(e.File&&C.input instanceof File||C.input instanceof Object)&&(C=o.parse(C.input,C.config))&&e.postMessage({workerId:o.WORKER_ID,results:C,finished:!0})}),(c.prototype=Object.create(l.prototype)).constructor=c,(A.prototype=Object.create(l.prototype)).constructor=A,(f.prototype=Object.create(f.prototype)).constructor=f,(h.prototype=Object.create(l.prototype)).constructor=h,o})});var xNe={};fa(xNe,{boot:()=>oNe});var uv="20260526-5D59BC57",bK="2026-05-26 21:50:06 UTC",Lue="Sean Scales",CK="admin@seanscales.com.au";var Pue="QStore IMS v2.2",Gue=["https://woodifi.github.io","http://localhost","http://127.0.0.1","null"];function IK(){let n="color:#c9a227;font-size:13px;font-weight:700;letter-spacing:0.05em;",e="color:#8b98a8;font-size:11px;",t="color:#e05252;font-size:11px;font-weight:600;",r="color:#d0d8e4;font-size:11px;";console.groupCollapsed("%c\u25B6 QStore IMS%c  \u2502  \xA9 Sean Scales  \u2502  Build\xA0"+uv,n,e),console.log("%cProduct  %c"+Pue,e,r),console.log("%cAuthor   %c"+Lue,e,r),console.log("%cContact  %c"+CK,e,r),console.log("%cBuild    %c"+uv,e,r),console.log("%cBuilt    %c"+bK,e,r),console.log("%cLicence  %cProprietary \u2014 All Rights Reserved",e,r),console.log("%c\u26A0 Unauthorised copying, modification or redistribution of this software is prohibited and may result in legal action.",t),console.groupEnd()}function BK(){let n=String(window.location.origin);Gue.some(t=>n===t||n.startsWith(t+"/"))||console.warn("[QStore IMS] \u26A0 This application is running from an unrecognised origin: "+n+`.
 QStore IMS is proprietary software owned by Sean Scales (admin@seanscales.com.au).
 If you did not receive this copy directly from the author, you may be using an unauthorised distribution.
 Build ID: `+uv+"  |  Built: "+bK)}var zue=["\xA9 2025 Sean Scales","admin@seanscales.com.au","Proprietary Software Licence"];function yK(){let n=document.documentElement.innerHTML,e=zue.filter(t=>!n.includes(t));e.length>0&&console.error("[QStore IMS] \u26A0 Integrity check failed \u2014 "+e.length+` copyright sentinel(s) are missing from the document.
@@ -12527,7 +12724,66 @@ startxref
                   data-action="print-ab189"
                   title="Print pre-filled AB189 for this request">\u2399 Print AB189</button>
         </div>`:""}
-    </div>`}async function rTe(n,e){let t=ln(),r=(t==null?void 0:t.name)||"unknown",i=[];try{i=await nn.list()}catch{}let s=null;try{s=await wr.get(n.requestorSvc)}catch{}let a=n.requestorSvc,o=s?s.rank+" "+s.surname:n.requestorName,l=n.requiredBy||sfe(),c=(n.lines||[]).map(function(d){return{description:d.description||"",nsn:d.nsn||"",qty:d.qty||1,qtyIssued:d.qtyIssued!=null?d.qtyIssued:d.qty||1,lineAction:d.lineAction||"issue"}}),A="iss-inv-dl",f='<datalist id="'+A+'">'+i.map(function(d){return'<option value="'+L(d.name)+'" data-nsn="'+L(d.nsn||"")+'">'}).join("")+"</datalist>",h=[{v:"issue",l:"Issue"},{v:"loan",l:"Loan (prior issue)"},{v:"backorder",l:"Backorder"},{v:"unavailable",l:"Unavailable"}];function u(d,g){let p=h.map(function(m){return'<option value="'+m.v+'"'+(d.lineAction===m.v?" selected":"")+">"+m.l+"</option>"}).join("");return'<tr class="iss__line" data-line-idx="'+g+'" data-action-val="'+L(d.lineAction)+'"><td class="iss__td-num">'+(g+1)+'</td><td class="iss__td-desc"><input type="text" class="form__input iss__desc-inp" list="'+A+'" value="'+L(d.description)+'" data-field="description" placeholder="Description"></td><td class="iss__td-nsn"><input type="text" class="form__input iss__nsn-inp" value="'+L(d.nsn)+'" data-field="nsn" placeholder="NSN"></td><td class="iss__td-req">'+L(String(d.qty))+'</td><td class="iss__td-qty"><input type="number" class="form__input iss__qty-inp" value="'+L(String(d.qtyIssued))+'" data-field="qtyIssued" min="0" max="999"></td><td class="iss__td-action"><select class="form__select iss__action-sel" data-field="lineAction">'+p+"</select></td></tr>"}Zt({titleHtml:"Issue Items \u2014 "+L(n.id),size:"lg",bodyHtml:f+'<div class="iss__meta"><div class="iss__borrower-info"><span class="iss__meta-label">Borrower:</span> <strong>'+L(o)+'</strong><span class="iss__svc-no">'+L(a)+'</span><span class="iss__purpose">'+L(n.purpose)+'</span></div><label class="iss__due-wrap"><span class="iss__meta-label">Due date</span><input type="date" class="form__input iss__due-inp" id="iss-due-date" value="'+L(l)+'" min="'+L(Cy())+'"></label></div><div class="iss__table-wrap"><table class="iss__table"><thead><tr><th class="iss__th-num">#</th><th class="iss__th-desc">Item Description</th><th class="iss__th-nsn">NSN</th><th class="iss__th-req" title="Requested quantity">Req</th><th class="iss__th-qty" title="Quantity to issue">Qty</th><th class="iss__th-action">Status</th></tr></thead><tbody id="iss-tbody">'+c.map(function(d,g){return u(d,g)}).join("")+'</tbody></table></div><label class="form__field" style="margin-top:12px"><span class="form__label">Issue notes <span class="form__hint">(appended to each loan remark)</span></span><textarea id="iss-notes" class="form__textarea" rows="2" placeholder="e.g. Boot size 10, item exchanged&#8230;"></textarea></label><div class="form__error" id="iss-err" role="alert"></div><div class="form__actions"><button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button><button type="button" class="btn btn--primary" id="iss-submit">Issue Items</button></div>',async onMount(d,g){let p=d.querySelector("#iss-tbody"),m=d.querySelector("#iss-due-date"),x=d.querySelector("#iss-notes"),w=d.querySelector("#iss-err"),b=d.querySelector("#iss-submit");function I(B){let k=Number(B.dataset.lineIdx);if(k<0||k>=c.length)return;let v=B.querySelector('[data-field="description"]'),_=B.querySelector('[data-field="nsn"]'),Q=B.querySelector('[data-field="qtyIssued"]'),R=B.querySelector('[data-field="lineAction"]');v&&(c[k].description=v.value.trim()),_&&(c[k].nsn=_.value.trim()),Q&&(c[k].qtyIssued=Math.max(0,Number(Q.value)||0)),R&&(c[k].lineAction=R.value)}function C(B){var v;let k=((v=B.querySelector('[data-field="lineAction"]'))==null?void 0:v.value)||"issue";B.dataset.actionVal=k}p.addEventListener("input",function(B){let k=B.target.closest("[data-line-idx]");if(k&&(I(k),B.target.dataset.field==="description")){let v=B.target.value.trim().toLowerCase(),_=i.find(function(Q){return Q.name.trim().toLowerCase()===v});if(_){let Q=k.querySelector('[data-field="nsn"]');Q&&!Q.value&&(Q.value=_.nsn||"",c[Number(k.dataset.lineIdx)].nsn=Q.value)}}}),p.addEventListener("change",function(B){let k=B.target.closest("[data-line-idx]");k&&(I(k),C(k))}),b.addEventListener("click",async function(){w.textContent="";let B=m.value||l,k=x.value.trim();p.querySelectorAll("[data-line-idx]").forEach(function(ee){I(ee)}),b.disabled=!0,b.textContent="Issuing\u2026";let v=new Date().toISOString(),_=[],Q=[],R=[],q=[];try{q=await nn.list()}catch{}for(let ee=0;ee<c.length;ee++){let le=c[ee],K=le.lineAction;if(K==="backorder"||K==="unavailable"){R.push({desc:le.description||"Item "+(ee+1),reason:K});continue}let M=Math.max(0,Math.floor(Number(le.qtyIssued)||0));if(M===0){R.push({desc:le.description||"Item "+(ee+1),reason:"qty 0"});continue}let Y=K==="loan",te=null;if(le.nsn&&(te=q.find(function(fe){return fe.nsn&&fe.nsn.trim()===le.nsn.trim()})||null),!te&&le.description){let fe=le.description.trim().toLowerCase();te=q.find(function(he){return he.name&&he.name.trim().toLowerCase()===fe})||null}try{let fe=await pTe();if(te){let he=await nn.get(te.id);if(!he)throw new Error('"'+te.name+'" no longer exists.');he.onLoan=(Number(he.onLoan)||0)+M,await nn.put(he);let be=n.purpose==="Initial Issue";await vr.put({ref:fe,itemId:te.id,itemName:te.name,nsn:te.nsn||"",qty:M,borrowerSvc:a,borrowerName:o,purpose:n.purpose,issueDate:Cy(),dueDate:be?efe():B,longTermLoan:!!be,unitLoan:!1,nonStock:!1,existingLoan:Y,condition:te.condition||"serviceable",remarks:"Issued from request "+n.id+(k?". "+k:""),notes:"",active:!0,issuedBy:r}),await Ht.append({action:Y?"loan_existing":"issue",user:r,desc:fe+": "+te.name+" \xD7 "+M+(Y?" [existing loan]":" issued")+" to "+o+" (from request "+n.id+")"})}else{let he=n.purpose==="Initial Issue";await vr.put({ref:fe,itemId:null,itemName:le.description,nsn:le.nsn||"",qty:M,borrowerSvc:a,borrowerName:o,purpose:n.purpose,issueDate:Cy(),dueDate:he?efe():B,longTermLoan:!!he,unitLoan:!1,nonStock:!0,existingLoan:Y,condition:"serviceable",remarks:"Issued from request "+n.id+(k?". "+k:""),notes:"",active:!0,issuedBy:r}),await Ht.append({action:Y?"loan_existing":"issue",user:r,desc:fe+": [non-stock] "+le.description+" \xD7 "+M+(Y?" [existing loan]":" issued")+" to "+o+" (from request "+n.id+")"})}_.push(fe),q=q.map(function(he){return he.id===(te&&te.id)?{...he,onLoan:he.onLoan+M}:he})}catch(fe){Q.push((le.description||"Item "+(ee+1))+": "+fe.message)}}let H=[],W=R.filter(function(ee){return ee.reason==="backorder"}),$=R.filter(function(ee){return ee.reason==="unavailable"}),G=R.filter(function(ee){return ee.reason==="qty 0"});W.length&&H.push("Backorder: "+W.map(function(ee){return ee.desc}).join(", ")),$.length&&H.push("Unavailable: "+$.map(function(ee){return ee.desc}).join(", ")),G.length&&H.push("Skipped (qty 0): "+G.map(function(ee){return ee.desc}).join(", ")),Q.length&&H.push("Errors: "+Q.join("; "));let Z=_.length>0,V=R.length>0||Q.length>0,ue=Z&&!V||Z?"issued":"approved",se=c.map(function(ee){return{description:ee.description,nsn:ee.nsn,qty:ee.qty,qtyIssued:ee.qtyIssued,lineAction:ee.lineAction}}),P={...n,lines:se,status:ue,decidedBy:r,decidedAt:v,decisionNote:H.length>0?H.join("; "):null,loanRefs:_};await ua.put(P),await Ht.append({action:"request_approved",user:r,desc:"Request "+n.id+" from "+n.requestorName+" issued. Refs: "+(_.join(", ")||"none")+(H.length?". "+H.join("; "):"")}),rr();let X=[];_.length&&X.push(_.length+" item"+(_.length!==1?"s":"")+" issued"),W.length&&X.push(W.length+" on backorder"),$.length&&X.push($.length+" unavailable"),Q.length&&X.push(Q.length+" error"+(Q.length!==1?"s":"")),_.length&&X.push("Refs: "+_.join(", ")),mt(X.join(" \xB7 ")||"No items issued.",Q.length?"warn":"success",8e3),g(),await Iy(e),await nk()})}})}async function iTe(n,e){let t=ln(),r=(t==null?void 0:t.name)||"unknown",i={...n,status:"approved",decidedBy:r,decidedAt:new Date().toISOString(),decisionNote:"Approved \u2014 QM to issue separately."};await ua.put(i),await Ht.append({action:"request_approved",user:r,desc:`Request ${n.id} from ${n.requestorName} approved (issue pending).`}),rr(),mt(`Request ${n.id} approved.`,"success"),await Iy(e),await nk()}async function sTe(n,e){Zt({titleHtml:`Deny request ${L(n.id)}`,size:"sm",bodyHtml:`
+    </div>`}async function rTe(n,e){let t=ln(),r=(t==null?void 0:t.name)||"unknown",i=[];try{i=await nn.list()}catch{}let s=null;try{s=await wr.get(n.requestorSvc)}catch{}let a=n.requestorSvc,o=s?s.rank+" "+s.surname:n.requestorName,l=n.requiredBy||sfe(),c=(n.lines||[]).map(function(d){return{description:d.description||"",nsn:d.nsn||"",qty:d.qty||1,qtyIssued:d.qtyIssued!=null?d.qtyIssued:d.qty||1,lineAction:d.lineAction||"issue"}}),A="iss-inv-dl",f=`<datalist id="${A}">${i.map(d=>`<option value="${L(d.name)}" data-nsn="${L(d.nsn||"")}">`).join("")}</datalist>`,h=[{v:"issue",l:"Issue"},{v:"loan",l:"Loan (prior issue)"},{v:"backorder",l:"Backorder"},{v:"unavailable",l:"Unavailable"}];function u(d,g){let p=h.map(m=>`<option value="${m.v}"${d.lineAction===m.v?" selected":""}>${m.l}</option>`).join("");return`
+      <tr class="iss__line" data-line-idx="${g}" data-action-val="${L(d.lineAction)}">
+        <td class="iss__td-num">${g+1}</td>
+        <td class="iss__td-desc">
+          <input type="text" class="form__input iss__desc-inp" list="${A}"
+                 value="${L(d.description)}" data-field="description"
+                 placeholder="Description">
+        </td>
+        <td class="iss__td-nsn">
+          <input type="text" class="form__input iss__nsn-inp" value="${L(d.nsn)}"
+                 data-field="nsn" placeholder="NSN">
+        </td>
+        <td class="iss__td-req">${L(String(d.qty))}</td>
+        <td class="iss__td-qty">
+          <input type="number" class="form__input iss__qty-inp" value="${L(String(d.qtyIssued))}"
+                 data-field="qtyIssued" min="0" max="999">
+        </td>
+        <td class="iss__td-action">
+          <select class="form__select iss__action-sel" data-field="lineAction">${p}</select>
+        </td>
+      </tr>`}Zt({titleHtml:`Issue Items \u2014 ${L(n.id)}`,size:"lg",bodyHtml:`
+      ${f}
+      <div class="iss__meta">
+        <div class="iss__borrower-info">
+          <span class="iss__meta-label">Borrower:</span>
+          <strong>${L(o)}</strong>
+          <span class="iss__svc-no">${L(a)}</span>
+          <span class="iss__purpose">${L(n.purpose)}</span>
+        </div>
+        <label class="iss__due-wrap">
+          <span class="iss__meta-label">Due date</span>
+          <input type="date" class="form__input iss__due-inp" id="iss-due-date"
+                 value="${L(l)}" min="${L(Cy())}">
+        </label>
+      </div>
+      <div class="iss__table-wrap">
+        <table class="iss__table">
+          <thead><tr>
+            <th class="iss__th-num">#</th>
+            <th class="iss__th-desc">Item Description</th>
+            <th class="iss__th-nsn">NSN</th>
+            <th class="iss__th-req" title="Requested quantity">Req</th>
+            <th class="iss__th-qty" title="Quantity to issue">Qty</th>
+            <th class="iss__th-action">Status</th>
+          </tr></thead>
+          <tbody id="iss-tbody">
+            ${c.map((d,g)=>u(d,g)).join("")}
+          </tbody>
+        </table>
+      </div>
+      <label class="form__field">
+        <span class="form__label">Issue notes <span class="form__hint">(appended to each loan remark)</span></span>
+        <textarea id="iss-notes" class="form__textarea" rows="2"
+                  placeholder="e.g. Boot size 10, item exchanged\u2026"></textarea>
+      </label>
+      <div class="form__error" id="iss-err" role="alert"></div>
+      <div class="form__actions">
+        <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
+        <button type="button" class="btn btn--primary" id="iss-submit">Issue Items</button>
+      </div>`,async onMount(d,g){let p=d.querySelector("#iss-tbody"),m=d.querySelector("#iss-due-date"),x=d.querySelector("#iss-notes"),w=d.querySelector("#iss-err"),b=d.querySelector("#iss-submit");function I(B){let k=Number(B.dataset.lineIdx);if(k<0||k>=c.length)return;let v=B.querySelector('[data-field="description"]'),_=B.querySelector('[data-field="nsn"]'),Q=B.querySelector('[data-field="qtyIssued"]'),R=B.querySelector('[data-field="lineAction"]');v&&(c[k].description=v.value.trim()),_&&(c[k].nsn=_.value.trim()),Q&&(c[k].qtyIssued=Math.max(0,Number(Q.value)||0)),R&&(c[k].lineAction=R.value)}function C(B){var v;let k=((v=B.querySelector('[data-field="lineAction"]'))==null?void 0:v.value)||"issue";B.dataset.actionVal=k}p.addEventListener("input",function(B){let k=B.target.closest("[data-line-idx]");if(k&&(I(k),B.target.dataset.field==="description")){let v=B.target.value.trim().toLowerCase(),_=i.find(function(Q){return Q.name.trim().toLowerCase()===v});if(_){let Q=k.querySelector('[data-field="nsn"]');Q&&!Q.value&&(Q.value=_.nsn||"",c[Number(k.dataset.lineIdx)].nsn=Q.value)}}}),p.addEventListener("change",function(B){let k=B.target.closest("[data-line-idx]");k&&(I(k),C(k))}),b.addEventListener("click",async function(){w.textContent="";let B=m.value||l,k=x.value.trim();p.querySelectorAll("[data-line-idx]").forEach(function(ee){I(ee)}),b.disabled=!0,b.textContent="Issuing\u2026";let v=new Date().toISOString(),_=[],Q=[],R=[],q=[];try{q=await nn.list()}catch{}for(let ee=0;ee<c.length;ee++){let le=c[ee],K=le.lineAction;if(K==="backorder"||K==="unavailable"){R.push({desc:le.description||"Item "+(ee+1),reason:K});continue}let M=Math.max(0,Math.floor(Number(le.qtyIssued)||0));if(M===0){R.push({desc:le.description||"Item "+(ee+1),reason:"qty 0"});continue}let Y=K==="loan",te=null;if(le.nsn&&(te=q.find(function(fe){return fe.nsn&&fe.nsn.trim()===le.nsn.trim()})||null),!te&&le.description){let fe=le.description.trim().toLowerCase();te=q.find(function(he){return he.name&&he.name.trim().toLowerCase()===fe})||null}try{let fe=await pTe();if(te){let he=await nn.get(te.id);if(!he)throw new Error('"'+te.name+'" no longer exists.');he.onLoan=(Number(he.onLoan)||0)+M,await nn.put(he);let be=n.purpose==="Initial Issue";await vr.put({ref:fe,itemId:te.id,itemName:te.name,nsn:te.nsn||"",qty:M,borrowerSvc:a,borrowerName:o,purpose:n.purpose,issueDate:Cy(),dueDate:be?efe():B,longTermLoan:!!be,unitLoan:!1,nonStock:!1,existingLoan:Y,condition:te.condition||"serviceable",remarks:"Issued from request "+n.id+(k?". "+k:""),notes:"",active:!0,issuedBy:r}),await Ht.append({action:Y?"loan_existing":"issue",user:r,desc:fe+": "+te.name+" \xD7 "+M+(Y?" [existing loan]":" issued")+" to "+o+" (from request "+n.id+")"})}else{let he=n.purpose==="Initial Issue";await vr.put({ref:fe,itemId:null,itemName:le.description,nsn:le.nsn||"",qty:M,borrowerSvc:a,borrowerName:o,purpose:n.purpose,issueDate:Cy(),dueDate:he?efe():B,longTermLoan:!!he,unitLoan:!1,nonStock:!0,existingLoan:Y,condition:"serviceable",remarks:"Issued from request "+n.id+(k?". "+k:""),notes:"",active:!0,issuedBy:r}),await Ht.append({action:Y?"loan_existing":"issue",user:r,desc:fe+": [non-stock] "+le.description+" \xD7 "+M+(Y?" [existing loan]":" issued")+" to "+o+" (from request "+n.id+")"})}_.push(fe),q=q.map(function(he){return he.id===(te&&te.id)?{...he,onLoan:he.onLoan+M}:he})}catch(fe){Q.push((le.description||"Item "+(ee+1))+": "+fe.message)}}let H=[],W=R.filter(function(ee){return ee.reason==="backorder"}),$=R.filter(function(ee){return ee.reason==="unavailable"}),G=R.filter(function(ee){return ee.reason==="qty 0"});W.length&&H.push("Backorder: "+W.map(function(ee){return ee.desc}).join(", ")),$.length&&H.push("Unavailable: "+$.map(function(ee){return ee.desc}).join(", ")),G.length&&H.push("Skipped (qty 0): "+G.map(function(ee){return ee.desc}).join(", ")),Q.length&&H.push("Errors: "+Q.join("; "));let Z=_.length>0,V=R.length>0||Q.length>0,ue=Z&&!V||Z?"issued":"approved",se=c.map(function(ee){return{description:ee.description,nsn:ee.nsn,qty:ee.qty,qtyIssued:ee.qtyIssued,lineAction:ee.lineAction}}),P={...n,lines:se,status:ue,decidedBy:r,decidedAt:v,decisionNote:H.length>0?H.join("; "):null,loanRefs:_};await ua.put(P),await Ht.append({action:"request_approved",user:r,desc:"Request "+n.id+" from "+n.requestorName+" issued. Refs: "+(_.join(", ")||"none")+(H.length?". "+H.join("; "):"")}),rr();let X=[];_.length&&X.push(_.length+" item"+(_.length!==1?"s":"")+" issued"),W.length&&X.push(W.length+" on backorder"),$.length&&X.push($.length+" unavailable"),Q.length&&X.push(Q.length+" error"+(Q.length!==1?"s":"")),_.length&&X.push("Refs: "+_.join(", ")),mt(X.join(" \xB7 ")||"No items issued.",Q.length?"warn":"success",8e3),g(),await Iy(e),await nk()})}})}async function iTe(n,e){let t=ln(),r=(t==null?void 0:t.name)||"unknown",i={...n,status:"approved",decidedBy:r,decidedAt:new Date().toISOString(),decisionNote:"Approved \u2014 QM to issue separately."};await ua.put(i),await Ht.append({action:"request_approved",user:r,desc:`Request ${n.id} from ${n.requestorName} approved (issue pending).`}),rr(),mt(`Request ${n.id} approved.`,"success"),await Iy(e),await nk()}async function sTe(n,e){Zt({titleHtml:`Deny request ${L(n.id)}`,size:"sm",bodyHtml:`
       <p class="modal__body">
         Denying equipment request from <strong>${L(n.requestorName)}</strong>
         for <em>${L(n.purpose)}</em>.
@@ -12563,11 +12819,11 @@ startxref
         <ul class="ctc__kit-lines">${o}</ul>
       </div>
 
-      <div class="ctc__due-row">
-        <label class="form__label" for="ctc-due-date">Due date</label>
+      <label class="form__field ctc__due-field">
+        <span class="form__label">Due date</span>
         <input type="date" id="ctc-due-date" class="form__input ctc__due-input"
                value="${L(s)}" min="${L(Cy())}">
-      </div>
+      </label>
 
       <div class="ctc__controls">
         <input type="text" class="ctc__search form__input" placeholder="Search cadets\u2026"
@@ -12584,7 +12840,7 @@ startxref
 
       <div class="form__error" id="ctc-error" role="alert"></div>
 
-      <div class="ctc__footer">
+      <div class="form__actions">
         <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
         <button type="button" class="btn btn--ghost" data-action="ctc-print" disabled>\u2399 Print AB189s</button>
         <button type="button" class="btn btn--primary" data-action="ctc-issue" disabled>\u{1F4CB} Create pending requests</button>
@@ -12629,7 +12885,7 @@ startxref
       <button type="button" class="btn btn--ghost btn--sm req__add-line"
               data-action="add-line">+ Add item</button>
 
-      <label class="form__field" style="margin-top:12px">
+      <label class="form__field">
         <span class="form__label">Notes / additional information</span>
         <textarea name="notes" class="form__textarea" rows="3"
                   placeholder="Any other details the QM should know\u2026"></textarea>
@@ -12981,21 +13237,25 @@ startxref
           </button>
         </div>
       </form>`,onMount(a,o){let l=Qe('form[data-form="staff"]',a),c=Qe(".form__error",a);l.addEventListener("submit",async A=>{A.preventDefault(),c.textContent="";let f;try{f=OTe(l)}catch(h){c.textContent=h.message;return}try{t?await HTe(r.svcNo,f):await MTe(f),o(),await Xd()}catch(h){c.textContent=h.message||"Save failed."}})}})}function OTe(n){let e=new FormData(n),t=String(e.get("svcNo")||"").trim(),r=String(e.get("rank")||"").trim(),i=String(e.get("surname")||"").trim().toUpperCase(),s=String(e.get("given")||"").trim(),a=String(e.get("position")||"").trim(),o=String(e.get("company")||"").trim(),l=String(e.get("email")||"").trim(),c=String(e.get("notes")||"").trim(),A=e.get("active")==="on";if(!t)throw new Error("Service number is required.");if(!r)throw new Error("Rank is required.");if(!i)throw new Error("Surname is required.");if(/\s/.test(t))throw new Error("Service number must not contain whitespace.");if(t.length>16)throw new Error("Service number is too long (max 16 chars).");let f=uf(r);if(l&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(l))throw new Error("Email is not in a valid format.");return{svcNo:t,rank:f,surname:i,given:s,position:a,company:o,personType:"staff",active:A,email:l,notes:c}}async function MTe(n){var r;Rr("manageStaff");let e=await xo.get(n.svcNo),t=await wr.get(n.svcNo);if(e||t)throw new Error(`A record with service number ${n.svcNo} already exists.`);await xo.put({...n,createdAt:new Date().toISOString()}),await Ht.append({action:"staff_add",user:((r=ln())==null?void 0:r.name)||"unknown",desc:`Added staff: ${n.rank} ${n.surname} (${n.svcNo})`}),rr()}async function HTe(n,e){var r;Rr("manageStaff");let t=await xo.get(n);if(!t)throw new Error("This staff record has been deleted in another tab. Close the modal and refresh.");await xo.put({...t,...e,svcNo:n,updatedAt:new Date().toISOString()}),await Ht.append({action:"staff_update",user:((r=ln())==null?void 0:r.name)||"unknown",desc:`Updated staff: ${e.rank} ${e.surname} (${n})`}),rr()}async function LTe(n){Rr("manageStaff");let e=await xo.get(n);if(!e){mt("That staff record has already been deleted.","warn"),await Xd();return}Zt({titleHtml:"Delete staff member",size:"sm",bodyHtml:`
-      <p>Delete <strong>${L(e.rank)} ${L(e.surname)}</strong> (${L(n)})?</p>
-      <p class="form__hint">
-        This removes the staff record. Existing loan history is preserved \u2014 the
-        borrower name on historical loans will remain unchanged.
-      </p>
-      <label class="form__field">
-        <span class="form__label">Reason *</span>
-        <input type="text" name="reason" maxlength="200"
-               placeholder="e.g. Posted out, left unit" autocomplete="off">
-      </label>
-      <div class="form__error" role="alert"></div>
-      <div class="form__actions">
-        <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
-        <button type="button" class="btn btn--danger" data-action="confirm-delete">Delete</button>
-      </div>`,onMount(t,r){let i=Qe(".form__error",t),s=Qe('input[name="reason"]',t);Qe('[data-action="confirm-delete"]',t).addEventListener("click",async()=>{var o;i.textContent="";let a=(s.value||"").trim();if(!a){i.textContent="Reason is required.";return}try{Rr("manageStaff"),await xo.delete(n),await Ht.append({action:"staff_delete",user:((o=ln())==null?void 0:o.name)||"unknown",desc:`Deleted staff: ${e.rank} ${e.surname} (${n}) \u2014 reason: ${a}`}),rr(),r(),await Xd()}catch(l){i.textContent=l.message||"Delete failed."}})}})}function By(n){if(!n)return"\u2014";let[e,t,r]=n.split("-");return`${r}/${t}/${e}`}function ok(n){let e=String(n??"");return/[,"\r\n]/.test(e)?`"${e.replace(/"/g,'""')}"`:e}function ak(n,e,t="text/csv"){let r=new Blob([n],{type:t}),i=URL.createObjectURL(r),s=document.createElement("a");s.href=i,s.download=e,document.body.appendChild(s),s.click(),document.body.removeChild(s),setTimeout(()=>URL.revokeObjectURL(i),1e4)}function ih(){return new Date().toISOString().slice(0,10)}function GTe(n,e){let t=ih(),r=n.filter(a=>a.active!==!1),i=r.filter(a=>!a.longTermLoan&&a.dueDate&&a.dueDate<t);if(r.length===0)return'<p class="ims-report__empty">No active loans.</p>';let s=`<p class="ims-report__meta">${r.length} active loan${r.length===1?"":"s"}, ${i.length} overdue</p>`;if(e==="borrower"){let a={};for(let o of r){let l=o.borrowerName||o.borrowerSvcNo||"Unknown";a[l]||(a[l]=[]),a[l].push(o)}for(let[o,l]of Object.entries(a).sort((c,A)=>c[0].localeCompare(A[0])))s+=`
+      <form class="form" data-form="staff-delete" autocomplete="off">
+        <p class="modal__body">
+          Delete <strong>${L(e.rank)} ${L(e.surname)}</strong> (${L(n)})?
+        </p>
+        <p class="form__hint">
+          This removes the staff record. Existing loan history is preserved \u2014 the
+          borrower name on historical loans will remain unchanged.
+        </p>
+        <label class="form__field">
+          <span class="form__label">Reason *</span>
+          <input type="text" name="reason" maxlength="200"
+                 placeholder="e.g. Posted out, left unit" autocomplete="off">
+        </label>
+        <div class="form__error" role="alert"></div>
+        <div class="form__actions">
+          <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
+          <button type="submit" class="btn btn--danger">Delete</button>
+        </div>
+      </form>`,onMount(t,r){let i=Qe('form[data-form="staff-delete"]',t),s=Qe(".form__error",t);i.addEventListener("submit",async a=>{var l;a.preventDefault(),s.textContent="";let o=(new FormData(i).get("reason")||"").trim();if(!o){s.textContent="Reason is required.";return}try{Rr("manageStaff"),await xo.delete(n),await Ht.append({action:"staff_delete",user:((l=ln())==null?void 0:l.name)||"unknown",desc:`Deleted staff: ${e.rank} ${e.surname} (${n}) \u2014 reason: ${o}`}),rr(),r(),await Xd()}catch(c){s.textContent=c.message||"Delete failed."}})}})}function By(n){if(!n)return"\u2014";let[e,t,r]=n.split("-");return`${r}/${t}/${e}`}function ok(n){let e=String(n??"");return/[,"\r\n]/.test(e)?`"${e.replace(/"/g,'""')}"`:e}function ak(n,e,t="text/csv"){let r=new Blob([n],{type:t}),i=URL.createObjectURL(r),s=document.createElement("a");s.href=i,s.download=e,document.body.appendChild(s),s.click(),document.body.removeChild(s),setTimeout(()=>URL.revokeObjectURL(i),1e4)}function ih(){return new Date().toISOString().slice(0,10)}function GTe(n,e){let t=ih(),r=n.filter(a=>a.active!==!1),i=r.filter(a=>!a.longTermLoan&&a.dueDate&&a.dueDate<t);if(r.length===0)return'<p class="ims-report__empty">No active loans.</p>';let s=`<p class="ims-report__meta">${r.length} active loan${r.length===1?"":"s"}, ${i.length} overdue</p>`;if(e==="borrower"){let a={};for(let o of r){let l=o.borrowerName||o.borrowerSvcNo||"Unknown";a[l]||(a[l]=[]),a[l].push(o)}for(let[o,l]of Object.entries(a).sort((c,A)=>c[0].localeCompare(A[0])))s+=`
         <h4 class="ims-report__group">${L(o)}</h4>
         ${Fz(l,t)}
       `}else if(e==="item"){let a={};for(let o of r){let l=o.itemName||o.itemId||"Unknown item";a[l]||(a[l]=[]),a[l].push(o)}for(let[o,l]of Object.entries(a).sort((c,A)=>c[0].localeCompare(A[0])))s+=`
@@ -13111,7 +13371,7 @@ startxref
         <div class="ims-report__body">
           ${t==="outstanding"?`
             <div class="ims-report__controls">
-              <label style="font-size:13px">Group by:</label>
+              <span class="ims-report__ctrl-label">Group by:</span>
               <select class="ims-report__groupby" id="ims-report-groupby">
                 <option value="borrower" ${r==="borrower"?"selected":""}>Borrower</option>
                 <option value="item"     ${r==="item"?"selected":""}>Item</option>
@@ -13120,7 +13380,7 @@ startxref
               <button type="button" class="btn btn--ghost btn--sm" data-action="export-outstanding">
                 \u2193 CSV
               </button>
-              <button type="button" class="btn btn--ghost btn--sm" onclick="window.print()">\u2399 Print</button>
+              <button type="button" class="btn btn--ghost btn--sm" data-action="print">\u2399 Print</button>
             </div>
             ${GTe(a,r)}
           `:""}
@@ -13130,7 +13390,7 @@ startxref
               <button type="button" class="btn btn--ghost btn--sm" data-action="export-writtenoff">
                 \u2193 CSV
               </button>
-              <button type="button" class="btn btn--ghost btn--sm" onclick="window.print()">\u2399 Print</button>
+              <button type="button" class="btn btn--ghost btn--sm" data-action="print">\u2399 Print</button>
             </div>
             ${KTe(o)}
           `:""}
@@ -13146,7 +13406,7 @@ startxref
               <button type="button" class="btn btn--ghost btn--sm" data-action="export-history">
                 \u2193 CSV
               </button>
-              <button type="button" class="btn btn--ghost btn--sm" onclick="window.print()">\u2399 Print</button>
+              <button type="button" class="btn btn--ghost btn--sm" data-action="print">\u2399 Print</button>
             </div>
             ${$Te(a,i,s)}
           `:""}
@@ -13156,13 +13416,13 @@ startxref
               <button type="button" class="btn btn--ghost btn--sm" data-action="export-kit">
                 \u2193 CSV
               </button>
-              <button type="button" class="btn btn--ghost btn--sm" onclick="window.print()">\u2399 Print</button>
+              <button type="button" class="btn btn--ghost btn--sm" data-action="print">\u2399 Print</button>
             </div>
             ${JTe(a,l)}
           `:""}
         </div>
       </div>
-    `),h())}function h(){var u,d,g,p,m,x,w;n.querySelectorAll("[data-report]").forEach(b=>{b.addEventListener("click",()=>{t=b.dataset.report,f()})}),(u=Qe("#ims-report-groupby",n))==null||u.addEventListener("change",b=>{r=b.target.value,f()}),(d=Qe("#ims-history-from",n))==null||d.addEventListener("change",b=>{i=b.target.value,f()}),(g=Qe("#ims-history-to",n))==null||g.addEventListener("change",b=>{s=b.target.value,f()}),(p=Qe('[data-action="export-outstanding"]',n))==null||p.addEventListener("click",()=>{try{ak(zTe(a),`qstore-outstanding-${ih()}.csv`),mt("CSV downloaded.","success")}catch(b){mt("Export failed: "+(b.message||b),"error")}}),(m=Qe('[data-action="export-writtenoff"]',n))==null||m.addEventListener("click",()=>{try{ak(VTe(o),`qstore-writtenoff-${ih()}.csv`),mt("CSV downloaded.","success")}catch(b){mt("Export failed: "+(b.message||b),"error")}}),(x=Qe('[data-action="export-history"]',n))==null||x.addEventListener("click",()=>{try{ak(WTe(a,i,s),`qstore-issue-history-${ih()}.csv`),mt("CSV downloaded.","success")}catch(b){mt("Export failed: "+(b.message||b),"error")}}),(w=Qe('[data-action="export-kit"]',n))==null||w.addEventListener("click",()=>{try{ak(YTe(a),`qstore-kit-allocation-${ih()}.csv`),mt("CSV downloaded.","success")}catch(b){mt("Export failed: "+(b.message||b),"error")}})}return c(),function(){e=!0}}var Bm=null;function hfe(){Bm&&Bm();let n=e=>ZTe(e);return document.addEventListener("keydown",n),Bm=()=>document.removeEventListener("keydown",n),Bm}function dfe(){Bm&&(Bm(),Bm=null)}function ZTe(n){var r,i;if(n.ctrlKey||n.metaKey||n.altKey||document.querySelector('.modal.is-open, .modal[aria-modal="true"]'))return;let e=(((r=n.target)==null?void 0:r.tagName)||"").toLowerCase();if(e==="input"||e==="textarea"||e==="select"||(i=n.target)!=null&&i.isContentEditable)return;switch(n.key){case"/":{let s=eNe();s&&(n.preventDefault(),s.focus(),s.select());break}case"n":case"N":{let s=tNe();s&&!s.disabled&&(n.preventDefault(),s.click());break}case"?":{n.preventDefault(),rNe();break}case"ArrowLeft":{let s=ffe();s.length>1&&(n.preventDefault(),ufe(s,-1));break}case"ArrowRight":{let s=ffe();s.length>1&&(n.preventDefault(),ufe(s,1));break}case"1":nb("dashboard");break;case"2":nb("inventory");break;case"3":nb("loans");break;case"4":nb("cadets");break;case"5":nb("audit");break;case"6":nb("settings");break}}function eNe(){return document.querySelector(".inv__search")||document.querySelector(".cad__search")||document.querySelector(".aud__search")||document.querySelector(".ord__search")||document.querySelector(".req__search")||document.querySelector('[data-shortcut="search"]')}function tNe(){let n=document.querySelector('.inv__toolbar, .cad__toolbar, .aud__toolbar, .ord__toolbar, .req__toolbar, [data-shortcut="toolbar"]');if(n){let t=n.querySelector('[data-action="add"], [data-action="add-cadet"], .btn--primary');if(t)return t}let e=document.querySelector('[data-action="tab"][data-tab="issue"]');return e||document.querySelector('[data-action="add"]')}function ffe(){return Array.from(document.querySelectorAll('[data-action="tab"]'))}function ufe(n,e){let t=n.find(s=>s.classList.contains("is-active")||s.getAttribute("aria-selected")==="true");if(!t)return;let r=n.indexOf(t),i=n[(r+e+n.length)%n.length];i&&i.click()}function nb(n){let e=document.querySelector(`[data-page="${L(n)}"], [data-nav="${L(n)}"]`);e&&e.click()}var nNe=[["/","Focus search / filter"],["n","New item / add (current page)"],["\u2190 \u2192","Switch tabs (Loans)"],["1 \u2013 6","Jump to page: Home / Inventory / Loans / Cadets / Audit / Settings"],["?","Show this keyboard shortcuts guide"],["Esc","Close modal or dismiss overlay"]];function rNe(){let n=nNe.map(([e,t])=>`
+    `),h())}function h(){var u,d,g,p,m,x,w;n.querySelectorAll("[data-report]").forEach(b=>{b.addEventListener("click",()=>{t=b.dataset.report,f()})}),(u=Qe("#ims-report-groupby",n))==null||u.addEventListener("change",b=>{r=b.target.value,f()}),(d=Qe("#ims-history-from",n))==null||d.addEventListener("change",b=>{i=b.target.value,f()}),(g=Qe("#ims-history-to",n))==null||g.addEventListener("change",b=>{s=b.target.value,f()}),n.querySelectorAll('[data-action="print"]').forEach(b=>{b.addEventListener("click",()=>window.print())}),(p=Qe('[data-action="export-outstanding"]',n))==null||p.addEventListener("click",()=>{try{ak(zTe(a),`qstore-outstanding-${ih()}.csv`),mt("CSV downloaded.","success")}catch(b){mt("Export failed: "+(b.message||b),"error")}}),(m=Qe('[data-action="export-writtenoff"]',n))==null||m.addEventListener("click",()=>{try{ak(VTe(o),`qstore-writtenoff-${ih()}.csv`),mt("CSV downloaded.","success")}catch(b){mt("Export failed: "+(b.message||b),"error")}}),(x=Qe('[data-action="export-history"]',n))==null||x.addEventListener("click",()=>{try{ak(WTe(a,i,s),`qstore-issue-history-${ih()}.csv`),mt("CSV downloaded.","success")}catch(b){mt("Export failed: "+(b.message||b),"error")}}),(w=Qe('[data-action="export-kit"]',n))==null||w.addEventListener("click",()=>{try{ak(YTe(a),`qstore-kit-allocation-${ih()}.csv`),mt("CSV downloaded.","success")}catch(b){mt("Export failed: "+(b.message||b),"error")}})}return c(),function(){e=!0}}var Bm=null;function hfe(){Bm&&Bm();let n=e=>ZTe(e);return document.addEventListener("keydown",n),Bm=()=>document.removeEventListener("keydown",n),Bm}function dfe(){Bm&&(Bm(),Bm=null)}function ZTe(n){var r,i;if(n.ctrlKey||n.metaKey||n.altKey||document.querySelector('.modal.is-open, .modal[aria-modal="true"]'))return;let e=(((r=n.target)==null?void 0:r.tagName)||"").toLowerCase();if(e==="input"||e==="textarea"||e==="select"||(i=n.target)!=null&&i.isContentEditable)return;switch(n.key){case"/":{let s=eNe();s&&(n.preventDefault(),s.focus(),s.select());break}case"n":case"N":{let s=tNe();s&&!s.disabled&&(n.preventDefault(),s.click());break}case"?":{n.preventDefault(),rNe();break}case"ArrowLeft":{let s=ffe();s.length>1&&(n.preventDefault(),ufe(s,-1));break}case"ArrowRight":{let s=ffe();s.length>1&&(n.preventDefault(),ufe(s,1));break}case"1":nb("dashboard");break;case"2":nb("inventory");break;case"3":nb("loans");break;case"4":nb("cadets");break;case"5":nb("audit");break;case"6":nb("settings");break}}function eNe(){return document.querySelector(".inv__search")||document.querySelector(".cad__search")||document.querySelector(".aud__search")||document.querySelector(".ord__search")||document.querySelector(".req__search")||document.querySelector('[data-shortcut="search"]')}function tNe(){let n=document.querySelector('.inv__toolbar, .cad__toolbar, .aud__toolbar, .ord__toolbar, .req__toolbar, [data-shortcut="toolbar"]');if(n){let t=n.querySelector('[data-action="add"], [data-action="add-cadet"], .btn--primary');if(t)return t}let e=document.querySelector('[data-action="tab"][data-tab="issue"]');return e||document.querySelector('[data-action="add"]')}function ffe(){return Array.from(document.querySelectorAll('[data-action="tab"]'))}function ufe(n,e){let t=n.find(s=>s.classList.contains("is-active")||s.getAttribute("aria-selected")==="true");if(!t)return;let r=n.indexOf(t),i=n[(r+e+n.length)%n.length];i&&i.click()}function nb(n){let e=document.querySelector(`[data-page="${L(n)}"], [data-nav="${L(n)}"]`);e&&e.click()}var nNe=[["/","Focus search / filter"],["n","New item / add (current page)"],["\u2190 \u2192","Switch tabs (Loans)"],["1 \u2013 6","Jump to page: Home / Inventory / Loans / Cadets / Audit / Settings"],["?","Show this keyboard shortcuts guide"],["Esc","Close modal or dismiss overlay"]];function rNe(){let n=nNe.map(([e,t])=>`
     <tr>
       <td class="scut__key"><kbd>${L(e)}</kbd></td>
       <td class="scut__desc">${L(t)}</td>
