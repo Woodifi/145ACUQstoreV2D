@@ -924,8 +924,8 @@ function _cloudSectionHtml(settings, status) {
         ${clientId && lastSync ? `
         <div class="form__field">
           <span class="form__label">Azure Application (client) ID</span>
-          <input type="hidden" name="clientId" value="${esc(clientId)}">
-          <div class="cloud-id-row">
+          <input type="hidden" name="clientId" value="${esc(clientId)}" data-cloud-id-hidden>
+          <div class="cloud-id-row" data-cloud-id-badge>
             <div class="cloud-id-success">
               <span class="cloud-id-success__icon">✓</span>
               <span class="cloud-id-success__label">Client ID configured</span>
@@ -933,6 +933,14 @@ function _cloudSectionHtml(settings, status) {
             <button type="button" class="btn btn--ghost btn--sm cloud-id-reveal"
                     data-action="reveal-client-id"
                     data-client-id="${esc(clientId)}">Hold to reveal</button>
+            <button type="button" class="btn btn--ghost btn--sm"
+                    data-action="change-client-id">Change</button>
+          </div>
+          <div class="form__field" data-cloud-id-edit style="display:none;margin-top:0.5rem;">
+            <input type="text" name="clientId_edit"
+                   placeholder="00000000-0000-0000-0000-000000000000"
+                   spellcheck="false">
+            <span class="form__hint">Enter new Client ID, then save below. Leave blank to keep current.</span>
           </div>
         </div>
         ` : `
@@ -1393,6 +1401,18 @@ function _wireEventListeners() {
   const revealBtn = $('[data-action="reveal-client-id"]', _root);
   if (revealBtn) _wireRevealButton(revealBtn);
 
+  const changeBtn = $('[data-action="change-client-id"]', _root);
+  if (changeBtn) {
+    changeBtn.addEventListener('click', () => {
+      const editDiv = $('[data-cloud-id-edit]', _root);
+      if (editDiv) {
+        editDiv.style.display = '';
+        const inp = editDiv.querySelector('input');
+        if (inp) inp.focus();
+      }
+    });
+  }
+
   const idleSelect = $('[data-action="save-idle-timeout"]', _root);
   if (idleSelect) idleSelect.addEventListener('change', _onIdleTimeoutChange);
 
@@ -1595,7 +1615,10 @@ async function _onSaveConfig(e) {
   errEl.textContent = '';
 
   const fd = new FormData(form);
-  const clientId = String(fd.get('clientId') || '').trim();
+  // clientId_edit is present when the user clicked "Change" on a configured ID.
+  // If it's non-empty, use it; otherwise fall back to the hidden clientId field.
+  const editedId = String(fd.get('clientId_edit') || '').trim();
+  const clientId = editedId || String(fd.get('clientId') || '').trim();
   const folder   = String(fd.get('folder')   || '').trim() || 'QStore';
   const filename = String(fd.get('filename') || '').trim() || 'qstore_data.json';
   const autoSync = fd.get('autoSync') === 'on';
