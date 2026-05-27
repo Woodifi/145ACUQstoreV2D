@@ -772,3 +772,25 @@ The old loop never found them, so "Reset sign-in state" couldn't unblock a stuck
 - `cloud.js resetAuthState()`: loop now covers both `localStorage` AND `sessionStorage`.
 
 **V2 commit:** `a85d771` — pushed to GitHub
+
+[2026-05-27T13:15:00Z] FIX — MSAL 5.x popup auth: replace handleRedirectPromise() with broadcastResponseToMainFrame()
+  Root cause identified: MSAL 5.x ships @azure/msal-browser/redirect-bridge which contains
+  broadcastResponseToMainFrame(). This is the SENDER that waitForBridgeResponse() listens for
+  on BroadcastChannel(libraryState.id). The previous implementation called handleRedirectPromise()
+  in the popup, which silently returns null for popup interactions (it validates
+  interactionType === 'redirect' and throws stateInteractionTypeMismatch for popup responses).
+  This is why loginPopup() always timed out after 60 seconds.
+
+  Changes:
+  - cloud.js: import broadcastResponseToMainFrame from @azure/msal-browser/redirect-bridge
+  - cloud.js: replace handlePopupAuth() — calls broadcastResponseToMainFrame() which posts
+    {v:1, payload} to BroadcastChannel(libraryState.id) and closes the popup window
+  - cloud.js: add _hasPopupResponseInUrl() — URL-based popup detection (parses state
+    parameter to check interactionType === 'popup'), reliable after cross-origin redirects
+    that null out window.opener
+  - cloud.js: handlePopupAuth() now returns true (handled) / false (not popup context)
+  - shell.js: simplify popup guard to `if (await Sync.handlePopupAuth()) return;`
+  - Same changes applied to V3 (QStoreV3)
+
+  V2 commit: c48faef — pushed to GitHub (https://woodifi.github.io/145ACUQstoreV2D/)
+  V3 commit: cff4828 — local only (no remote configured for V3)
