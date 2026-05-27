@@ -42,7 +42,10 @@
 // =============================================================================
 
 import * as Storage from './storage.js';
-import { getProvider } from './cloud.js';
+import { getProvider, handlePopupAuth } from './cloud.js';
+
+// Re-export so shell.js can call Sync.handlePopupAuth() without importing cloud.js directly.
+export { handlePopupAuth };
 
 const SYNC_DEBOUNCE_MS = 5000;
 

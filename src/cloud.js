@@ -233,13 +233,12 @@ export class OneDriveProvider {
       return;
     }
 
-    // Flag that a popup is in progress. The popup window shares localStorage
-    // (same origin) and reads this flag in boot() to return early without
-    // booting the full app shell — preventing it from calling
-    // handleRedirectPromise() which would compete with loginPopup() here.
-    // window.opener alone is insufficient because cross-origin redirects
-    // through login.microsoftonline.com null it out in modern browsers.
-    localStorage.setItem('qstore_popup_in_progress', '1');
+    // Store the client ID in the popup flag. The popup window reads this from
+    // localStorage (same origin) to build a minimal MSAL instance and call
+    // handleRedirectPromise() — which broadcasts the token to the main window
+    // via BroadcastChannel so loginPopup() can resolve. window.opener alone
+    // is insufficient because cross-origin redirects null it out in modern browsers.
+    localStorage.setItem('qstore_popup_in_progress', this._clientId);
     try {
       const resp = await this._msal.loginPopup(request);
       this._account = resp.account;
@@ -497,7 +496,7 @@ export class OneDriveProvider {
         // Page navigates away — code after this never executes
         throw new Error('Redirecting to refresh token. Please wait...');
       }
-      localStorage.setItem('qstore_popup_in_progress', '1');
+      localStorage.setItem('qstore_popup_in_progress', this._clientId);
       try {
         const resp = await this._msal.acquireTokenPopup(request);
         return resp.accessToken;
@@ -551,4 +550,61 @@ export function getProvider() {
 /** For tests only — replace the provider singleton. */
 export function _setProvider(p) {
   _provider = p;
+}
+
+/**
+ * Complete an MSAL popup token exchange from inside the popup window.
+ *
+ * MSAL 5.x popup flow uses BroadcastChannel: the main window's loginPopup()
+ * calls waitForBridgeResponse() which listens on a channel keyed by the
+ * interaction ID. The POPUP must call handleRedirectPromise() to process the
+ * auth code and broadcast the result — without it the main window times out.
+ *
+ * We do this with a minimal MSAL instance built from the client ID stored in
+ * localStorage by signIn()/acquireTokenPopup() — no IDB required.
+ *
+ * Call this from boot() when popup context is detected, then return without
+ * rendering the app shell. MSAL will call window.close() on the popup after
+ * broadcasting, so no manual close is needed.
+ */
+export async function handlePopupAuth() {
+  const clientId = localStorage.getItem('qstore_popup_in_progress');
+  if (!clientId) return;
+
+  try {
+    const redirectUri = window.location.origin
+      + (window.location.pathname.endsWith('/')
+          ? window.location.pathname.slice(0, -1)
+          : window.location.pathname);
+
+    const msalApp = new msal.PublicClientApplication({
+      auth: {
+        clientId,
+        authority:   'https://login.microsoftonline.com/common',
+        redirectUri,
+        postLogoutRedirectUri: redirectUri,
+      },
+      cache: { cacheLocation: 'localStorage' },
+      system: {
+        loggerOptions: {
+          loggerCallback: (level, message, containsPii) => {
+            if (!containsPii) console.debug('[MSAL-popup]', message);
+          },
+          logLevel: msal.LogLevel.Warning,
+          piiLoggingEnabled: false,
+        },
+      },
+    });
+
+    await msalApp.initialize();
+    await msalApp.handleRedirectPromise();
+    // MSAL closes the popup itself after broadcasting the result.
+    // Fallback: close manually in case MSAL doesn't for this flow.
+    setTimeout(() => { try { window.close(); } catch (_) {} }, 1000);
+  } catch (err) {
+    console.warn('[MSAL-popup] handlePopupAuth error:', err);
+    // Still close the popup so the main window gets the timeout error
+    // rather than hanging indefinitely.
+    setTimeout(() => { try { window.close(); } catch (_) {} }, 500);
+  }
 }
