@@ -2439,6 +2439,165 @@ details.totp-setup__manual-details[open] .totp-setup__manual-summary::before {
 }
 
 /* =============================================================================
+ * STAFF page — establishment list, add/edit/delete modals
+ * ============================================================================= */
+
+.stf {
+  padding: 20px 24px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.stf__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.stf__filters {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.stf__search {
+  flex: 1;
+  min-width: 220px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  padding: 9px 12px;
+  font-size: 14px;
+}
+
+.stf__inactive-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+  padding: 4px 8px;
+}
+
+.stf__inactive-toggle input { accent-color: var(--gold); }
+
+.stf__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.stf__meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.stf__meta-of { color: var(--text-dim); }
+
+.stf__table-wrap {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: auto;
+}
+
+.stf__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.stf__table thead th {
+  background: var(--bg-input);
+  color: var(--text-muted);
+  text-align: left;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.stf__table tbody td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.stf__row:hover td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* Inactive rows are visually de-emphasised — still listed for historical
+ * loan integrity, but muted text signals exclusion from active workflows. */
+.stf__row--inactive td {
+  opacity: 0.55;
+}
+
+.stf__col-rank     { width: 90px; }
+.stf__col-surname  { width: 160px; }
+.stf__col-givens   { width: 150px; }
+.stf__col-svc      { width: 100px; font-family: 'SF Mono', Consolas, monospace; }
+.stf__col-position { width: 160px; }
+.stf__col-status   { width: 90px; }
+.stf__col-actions  { width: 140px; text-align: right; }
+
+.stf__rank,
+.stf__surname {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.stf__svc {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+}
+
+.stf__row-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+/* Badge in the Status column — matches .cad__badge shape. */
+.stf__badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.stf__badge--inactive { background: rgba(136, 147, 160, 0.15); color: var(--text-muted); }
+
+.stf__empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.stf__empty p { margin: 0 0 12px; }
+
+.stf__empty-hint {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+/* The Status field in the add/edit modal is narrower than the email
+ * field next to it — constrains it to a fixed width in the flex row. */
+.stf__active-field { flex: 0 0 140px; }
+
+/* =============================================================================
  * LOANS page — tabs, issue/return forms, all-loans listing
  * ============================================================================= */
 
@@ -3476,6 +3635,11 @@ details.totp-setup__manual-details[open] .totp-setup__manual-summary::before {
   .cad__col-givens,
   .cad__col-plt { display: none; }
 
+  /* ── Staff table ─────────────────────────────────────────────────────────── */
+  /* Hide: Given names, Position.  Keep: Rank, Surname, Svc No., Status, Actions. */
+  .stf__col-givens,
+  .stf__col-position { display: none; }
+
   /* ── Modals: full-width on phones ────────────────────────────────────────── */
   .modal__panel { width: 100% !important; max-width: 100% !important; border-radius: 0; }
   .modal__overlay { align-items: flex-end; }
@@ -3494,6 +3658,9 @@ details.totp-setup__manual-details[open] .totp-setup__manual-summary::before {
 
   /* Cadets: hide Status; keep Rank + Surname + Svc + Actions */
   .cad__col-status { display: none; }
+
+  /* Staff: hide Status; keep Rank + Surname + Svc + Actions */
+  .stf__col-status { display: none; }
 
   /* QR scan viewport: full-width */
   .qrscan__viewport { height: 220px; }
@@ -7942,9 +8109,9 @@ kbd {
 </style>
   <meta name="author" content="Sean Scales">
   <meta name="copyright" content="© 2025 Sean Scales. All rights reserved.">
-  <meta name="generator" content="QStore IMS Build 20260527-7237570F">
+  <meta name="generator" content="QStore IMS Build 20260527-E79A91CC">
   <meta name="license" content="Proprietary — redistribution and modification prohibited without written consent. Contact: admin@seanscales.com.au">
-  <!-- QStore IMS v2 | Author: Sean Scales | Build: 20260527-7237570F | Built: 2026-05-27 13:13:55 UTC | © 2025 Sean Scales. All rights reserved. Proprietary software — unauthorised copying or modification is prohibited. admin@seanscales.com.au -->
+  <!-- QStore IMS v2 | Author: Sean Scales | Build: 20260527-E79A91CC | Built: 2026-05-27 21:52:57 UTC | © 2025 Sean Scales. All rights reserved. Proprietary software — unauthorised copying or modification is prohibited. admin@seanscales.com.au -->
 </head>
 <body>
   <div id="app">
@@ -7978,7 +8145,7 @@ var QStoreApp=(()=>{var Mue=Object.create;var dv=Object.defineProperty;var Lue=O
 `&&(k=`
 `);var G=0,Z=!1;this.parse=function(V,ue,se){if(typeof V!="string")throw new Error("Input must be a string");var P=V.length,X=B.length,ee=k.length,le=v.length,K=I(_),M=[],Y=[],te=[],fe=G=0;if(!V)return $e();if(R||R!==!1&&V.indexOf(W)===-1){for(var he=V.split(k),be=0;be<he.length;be++){if(te=he[be],G+=te.length,be!==he.length-1)G+=k.length;else if(se)return $e();if(!v||te.substring(0,le)!==v){if(K){if(M=[],Oe(te.split(B)),Me(),Z)return $e()}else Oe(te.split(B));if(Q&&Q<=be)return M=M.slice(0,Q),$e(!0)}}return $e()}for(var ge=V.indexOf(B,G),Ne=V.indexOf(k,G),ne=new RegExp(d($)+d(W),"g"),Le=V.indexOf(W,G);;)if(V[G]===W)for(Le=G,G++;;){if((Le=V.indexOf(W,Le+1))===-1)return se||Y.push({type:"Quotes",code:"MissingQuotes",message:"Quoted field unterminated",row:M.length,index:G}),Ye();if(Le===P-1)return Ye(V.substring(G,Le).replace(ne,W));if(W===$&&V[Le+1]===$)Le++;else if(W===$||Le===0||V[Le-1]!==$){ge!==-1&&ge<Le+1&&(ge=V.indexOf(B,Le+1));var ot=Te((Ne=Ne!==-1&&Ne<Le+1?V.indexOf(k,Le+1):Ne)===-1?ge:Math.min(ge,Ne));if(V.substr(Le+1+ot,X)===B){te.push(V.substring(G,Le).replace(ne,W)),V[G=Le+1+ot+X]!==W&&(Le=V.indexOf(W,G)),ge=V.indexOf(B,G),Ne=V.indexOf(k,G);break}if(ot=Te(Ne),V.substring(Le+1+ot,Le+1+ot+ee)===k){if(te.push(V.substring(G,Le).replace(ne,W)),et(Le+1+ot+ee),ge=V.indexOf(B,G),Le=V.indexOf(W,G),K&&(Me(),Z))return $e();if(Q&&M.length>=Q)return $e(!0);break}Y.push({type:"Quotes",code:"InvalidQuotes",message:"Trailing quote on quoted field is malformed",row:M.length,index:G}),Le++}}else if(v&&te.length===0&&V.substring(G,G+le)===v){if(Ne===-1)return $e();G=Ne+ee,Ne=V.indexOf(k,G),ge=V.indexOf(B,G)}else if(ge!==-1&&(ge<Ne||Ne===-1))te.push(V.substring(G,ge)),G=ge+X,ge=V.indexOf(B,G);else{if(Ne===-1)break;if(te.push(V.substring(G,Ne)),et(Ne+ee),K&&(Me(),Z))return $e();if(Q&&M.length>=Q)return $e(!0)}return Ye();function Oe(it){M.push(it),fe=G}function Te(it){var St=0;return St=it!==-1&&(it=V.substring(Le+1,it))&&it.trim()===""?it.length:St}function Ye(it){return se||(it===void 0&&(it=V.substring(G)),te.push(it),G=P,Oe(te),K&&Me()),$e()}function et(it){G=it,Oe(te),te=[],Ne=V.indexOf(k,G)}function $e(it){if(C.header&&!ue&&M.length&&!L){var St=M[0],ze=Object.create(null),vt=new Set(St);let Nt=!1;for(let xt=0;xt<St.length;xt++){let Ot=St[xt];if(ze[Ot=I(C.transformHeader)?C.transformHeader(Ot,xt):Ot]){let mt,Xt=ze[Ot];for(;mt=Ot+"_"+Xt,Xt++,vt.has(mt););vt.add(mt),St[xt]=mt,ze[Ot]++,Nt=!0,(j=j===null?{}:j)[mt]=Ot}else ze[Ot]=1,St[xt]=Ot;vt.add(Ot)}Nt&&console.warn("Duplicate headers found and renamed."),L=!0}return{data:M,errors:Y,meta:{delimiter:B,linebreak:k,aborted:Z,truncated:!!it,cursor:fe+(ue||0),renamedHeaders:j}}}function Me(){_($e()),M=[],Y=[]}},this.abort=function(){Z=!0},this.getCharIndex=function(){return G}}function p(C){var B=C.data,k=s[B.workerId],v=!1;if(B.error)k.userError(B.error,B.file);else if(B.results&&B.results.data){var _={abort:function(){v=!0,m(B.workerId,{data:[],errors:[],meta:{aborted:!0}})},pause:x,resume:x};if(I(k.userStep)){for(var Q=0;Q<B.results.data.length&&(k.userStep({data:B.results.data[Q],errors:B.results.errors,meta:B.results.meta},_),!v);Q++);delete B.results}else I(k.userChunk)&&(k.userChunk(B.results,_,B.file),delete B.results)}B.finished&&!v&&m(B.workerId,B.results)}function m(C,B){var k=s[C];I(k.userComplete)&&k.userComplete(B),k.terminate(),delete s[C]}function x(){throw new Error("Not implemented.")}function w(C){if(typeof C!="object"||C===null)return C;var B,k=Array.isArray(C)?[]:{};for(B in C)k[B]=w(C[B]);return k}function b(C,B){return function(){C.apply(B,arguments)}}function I(C){return typeof C=="function"}return o.parse=function(C,B){var k=(B=B||{}).dynamicTyping||!1;if(I(k)&&(B.dynamicTypingFunction=k,k={}),B.dynamicTyping=k,B.transform=!!I(B.transform)&&B.transform,!B.worker||!o.WORKERS_SUPPORTED)return k=null,o.NODE_STREAM_INPUT,typeof C=="string"?(C=(v=>v.charCodeAt(0)!==65279?v:v.slice(1))(C),k=new(B.download?c:f)(B)):C.readable===!0&&I(C.read)&&I(C.on)?k=new h(B):(e.File&&C instanceof File||C instanceof Object)&&(k=new A(B)),k.stream(C);(k=(()=>{var v;return!!o.WORKERS_SUPPORTED&&(v=(()=>{var _=e.URL||e.webkitURL||null,Q=n.toString();return o.BLOB_URL||(o.BLOB_URL=_.createObjectURL(new Blob(["var global = (function() { if (typeof self !== 'undefined') { return self; } if (typeof window !== 'undefined') { return window; } if (typeof global !== 'undefined') { return global; } return {}; })(); global.IS_PAPA_WORKER=true; ","(",Q,")();"],{type:"text/javascript"})))})(),(v=new e.Worker(v)).onmessage=p,v.id=a++,s[v.id]=v)})()).userStep=B.step,k.userChunk=B.chunk,k.userComplete=B.complete,k.userError=B.error,B.step=I(B.step),B.chunk=I(B.chunk),B.complete=I(B.complete),B.error=I(B.error),delete B.worker,k.postMessage({input:C,config:B,workerId:k.id})},o.unparse=function(C,B){var k=!1,v=!0,_=",",Q=`\r
 `,R='"',j=R+R,L=!1,W=null,$=!1,G=((()=>{if(typeof B=="object"){if(typeof B.delimiter!="string"||o.BAD_DELIMITERS.filter(function(ue){return B.delimiter.indexOf(ue)!==-1}).length||(_=B.delimiter),typeof B.quotes!="boolean"&&typeof B.quotes!="function"&&!Array.isArray(B.quotes)||(k=B.quotes),typeof B.skipEmptyLines!="boolean"&&typeof B.skipEmptyLines!="string"||(L=B.skipEmptyLines),typeof B.newline=="string"&&(Q=B.newline),typeof B.quoteChar=="string"&&(R=B.quoteChar),typeof B.header=="boolean"&&(v=B.header),Array.isArray(B.columns)){if(B.columns.length===0)throw new Error("Option columns is empty");W=B.columns}B.escapeChar!==void 0&&(j=B.escapeChar+R),B.escapeFormulae instanceof RegExp?$=B.escapeFormulae:typeof B.escapeFormulae=="boolean"&&B.escapeFormulae&&($=/^[=+\-@\t\r].*$/)}})(),new RegExp(d(R),"g"));if(typeof C=="string"&&(C=JSON.parse(C)),Array.isArray(C)){if(!C.length||Array.isArray(C[0]))return Z(null,C,L);if(typeof C[0]=="object")return Z(W||Object.keys(C[0]),C,L)}else if(typeof C=="object")return typeof C.data=="string"&&(C.data=JSON.parse(C.data)),Array.isArray(C.data)&&(C.fields||(C.fields=C.meta&&C.meta.fields||W),C.fields||(C.fields=Array.isArray(C.data[0])?C.fields:typeof C.data[0]=="object"?Object.keys(C.data[0]):[]),Array.isArray(C.data[0])||typeof C.data[0]=="object"||(C.data=[C.data])),Z(C.fields||[],C.data||[],L);throw new Error("Unable to serialize unrecognized input");function Z(ue,se,P){var X="",ee=(typeof ue=="string"&&(ue=JSON.parse(ue)),typeof se=="string"&&(se=JSON.parse(se)),Array.isArray(ue)&&0<ue.length),le=!Array.isArray(se[0]);if(ee&&v){for(var K=0;K<ue.length;K++)0<K&&(X+=_),X+=V(ue[K],K);0<se.length&&(X+=Q)}for(var M=0;M<se.length;M++){var Y=(ee?ue:se[M]).length,te=!1,fe=ee?Object.keys(se[M]).length===0:se[M].length===0;if(P&&!ee&&(te=P==="greedy"?se[M].join("").trim()==="":se[M].length===1&&se[M][0].length===0),P==="greedy"&&ee){for(var he=[],be=0;be<Y;be++){var ge=le?ue[be]:be;he.push(se[M][ge])}te=he.join("").trim()===""}if(!te){for(var Ne=0;Ne<Y;Ne++){0<Ne&&!fe&&(X+=_);var ne=ee&&le?ue[Ne]:Ne;X+=V(se[M][ne],Ne)}M<se.length-1&&(!P||0<Y&&!fe)&&(X+=Q)}}return X}function V(ue,se){var P,X;return ue==null?"":ue.constructor===Date?JSON.stringify(ue).slice(1,25):(X=!1,$&&typeof ue=="string"&&$.test(ue)&&(ue="'"+ue,X=!0),P=ue.toString().replace(G,j),(X=X||k===!0||typeof k=="function"&&k(ue,se)||Array.isArray(k)&&k[se]||((ee,le)=>{for(var K=0;K<le.length;K++)if(-1<ee.indexOf(le[K]))return!0;return!1})(P,o.BAD_DELIMITERS)||-1<P.indexOf(_)||P.charAt(0)===" "||P.charAt(P.length-1)===" ")?R+P+R:P)}},o.RECORD_SEP="",o.UNIT_SEP="",o.BYTE_ORDER_MARK="\uFEFF",o.BAD_DELIMITERS=["\r",`
-`,'"',o.BYTE_ORDER_MARK],o.WORKERS_SUPPORTED=!r&&!!e.Worker,o.NODE_STREAM_INPUT=1,o.LocalChunkSize=10485760,o.RemoteChunkSize=5242880,o.DefaultDelimiter=",",o.Parser=g,o.ParserHandle=u,o.NetworkStreamer=c,o.FileStreamer=A,o.StringStreamer=f,o.ReadableStreamStreamer=h,e.jQuery&&((t=e.jQuery).fn.parse=function(C){var B=C.config||{},k=[];return this.each(function(Q){if(!(t(this).prop("tagName").toUpperCase()==="INPUT"&&t(this).attr("type").toLowerCase()==="file"&&e.FileReader)||!this.files||this.files.length===0)return!0;for(var R=0;R<this.files.length;R++)k.push({file:this.files[R],inputElem:this,instanceConfig:t.extend({},B)})}),v(),this;function v(){if(k.length===0)I(C.complete)&&C.complete();else{var Q,R,j,L,W=k[0];if(I(C.before)){var $=C.before(W.file,W.inputElem);if(typeof $=="object"){if($.action==="abort")return Q="AbortError",R=W.file,j=W.inputElem,L=$.reason,void(I(C.error)&&C.error({name:Q},R,j,L));if($.action==="skip")return void _();typeof $.config=="object"&&(W.instanceConfig=t.extend(W.instanceConfig,$.config))}else if($==="skip")return void _()}var G=W.instanceConfig.complete;W.instanceConfig.complete=function(Z){I(G)&&G(Z,W.file,W.inputElem),_()},o.parse(W.file,W.instanceConfig)}}function _(){k.splice(0,1),v()}}),i&&(e.onmessage=function(C){C=C.data,o.WORKER_ID===void 0&&C&&(o.WORKER_ID=C.workerId),typeof C.input=="string"?e.postMessage({workerId:o.WORKER_ID,results:o.parse(C.input,C.config),finished:!0}):(e.File&&C.input instanceof File||C.input instanceof Object)&&(C=o.parse(C.input,C.config))&&e.postMessage({workerId:o.WORKER_ID,results:C,finished:!0})}),(c.prototype=Object.create(l.prototype)).constructor=c,(A.prototype=Object.create(l.prototype)).constructor=A,(f.prototype=Object.create(f.prototype)).constructor=f,(h.prototype=Object.create(l.prototype)).constructor=h,o})});var vNe={};ua(vNe,{boot:()=>dNe});var gv="20260527-7237570F",vK="2026-05-27 13:13:55 UTC",Kue="Sean Scales",EK="admin@seanscales.com.au";var Vue="QStore IMS v2.2",$ue=["https://woodifi.github.io","http://localhost","http://127.0.0.1","null"];function kK(){let n="color:#c9a227;font-size:13px;font-weight:700;letter-spacing:0.05em;",e="color:#8b98a8;font-size:11px;",t="color:#e05252;font-size:11px;font-weight:600;",r="color:#d0d8e4;font-size:11px;";console.groupCollapsed("%c\u25B6 QStore IMS%c  \u2502  \xA9 Sean Scales  \u2502  Build\xA0"+gv,n,e),console.log("%cProduct  %c"+Vue,e,r),console.log("%cAuthor   %c"+Kue,e,r),console.log("%cContact  %c"+EK,e,r),console.log("%cBuild    %c"+gv,e,r),console.log("%cBuilt    %c"+vK,e,r),console.log("%cLicence  %cProprietary \u2014 All Rights Reserved",e,r),console.log("%c\u26A0 Unauthorised copying, modification or redistribution of this software is prohibited and may result in legal action.",t),console.groupEnd()}function SK(){let n=String(window.location.origin);$ue.some(t=>n===t||n.startsWith(t+"/"))||console.warn("[QStore IMS] \u26A0 This application is running from an unrecognised origin: "+n+`.
+`,'"',o.BYTE_ORDER_MARK],o.WORKERS_SUPPORTED=!r&&!!e.Worker,o.NODE_STREAM_INPUT=1,o.LocalChunkSize=10485760,o.RemoteChunkSize=5242880,o.DefaultDelimiter=",",o.Parser=g,o.ParserHandle=u,o.NetworkStreamer=c,o.FileStreamer=A,o.StringStreamer=f,o.ReadableStreamStreamer=h,e.jQuery&&((t=e.jQuery).fn.parse=function(C){var B=C.config||{},k=[];return this.each(function(Q){if(!(t(this).prop("tagName").toUpperCase()==="INPUT"&&t(this).attr("type").toLowerCase()==="file"&&e.FileReader)||!this.files||this.files.length===0)return!0;for(var R=0;R<this.files.length;R++)k.push({file:this.files[R],inputElem:this,instanceConfig:t.extend({},B)})}),v(),this;function v(){if(k.length===0)I(C.complete)&&C.complete();else{var Q,R,j,L,W=k[0];if(I(C.before)){var $=C.before(W.file,W.inputElem);if(typeof $=="object"){if($.action==="abort")return Q="AbortError",R=W.file,j=W.inputElem,L=$.reason,void(I(C.error)&&C.error({name:Q},R,j,L));if($.action==="skip")return void _();typeof $.config=="object"&&(W.instanceConfig=t.extend(W.instanceConfig,$.config))}else if($==="skip")return void _()}var G=W.instanceConfig.complete;W.instanceConfig.complete=function(Z){I(G)&&G(Z,W.file,W.inputElem),_()},o.parse(W.file,W.instanceConfig)}}function _(){k.splice(0,1),v()}}),i&&(e.onmessage=function(C){C=C.data,o.WORKER_ID===void 0&&C&&(o.WORKER_ID=C.workerId),typeof C.input=="string"?e.postMessage({workerId:o.WORKER_ID,results:o.parse(C.input,C.config),finished:!0}):(e.File&&C.input instanceof File||C.input instanceof Object)&&(C=o.parse(C.input,C.config))&&e.postMessage({workerId:o.WORKER_ID,results:C,finished:!0})}),(c.prototype=Object.create(l.prototype)).constructor=c,(A.prototype=Object.create(l.prototype)).constructor=A,(f.prototype=Object.create(f.prototype)).constructor=f,(h.prototype=Object.create(l.prototype)).constructor=h,o})});var vNe={};ua(vNe,{boot:()=>dNe});var gv="20260527-E79A91CC",vK="2026-05-27 21:52:57 UTC",Kue="Sean Scales",EK="admin@seanscales.com.au";var Vue="QStore IMS v2.2",$ue=["https://woodifi.github.io","http://localhost","http://127.0.0.1","null"];function kK(){let n="color:#c9a227;font-size:13px;font-weight:700;letter-spacing:0.05em;",e="color:#8b98a8;font-size:11px;",t="color:#e05252;font-size:11px;font-weight:600;",r="color:#d0d8e4;font-size:11px;";console.groupCollapsed("%c\u25B6 QStore IMS%c  \u2502  \xA9 Sean Scales  \u2502  Build\xA0"+gv,n,e),console.log("%cProduct  %c"+Vue,e,r),console.log("%cAuthor   %c"+Kue,e,r),console.log("%cContact  %c"+EK,e,r),console.log("%cBuild    %c"+gv,e,r),console.log("%cBuilt    %c"+vK,e,r),console.log("%cLicence  %cProprietary \u2014 All Rights Reserved",e,r),console.log("%c\u26A0 Unauthorised copying, modification or redistribution of this software is prohibited and may result in legal action.",t),console.groupEnd()}function SK(){let n=String(window.location.origin);$ue.some(t=>n===t||n.startsWith(t+"/"))||console.warn("[QStore IMS] \u26A0 This application is running from an unrecognised origin: "+n+`.
 QStore IMS is proprietary software owned by Sean Scales (admin@seanscales.com.au).
 If you did not receive this copy directly from the author, you may be using an unauthorised distribution.
 Build ID: `+gv+"  |  Built: "+vK)}var Wue=["\xA9 2025 Sean Scales","admin@seanscales.com.au","Proprietary Software Licence"];function FK(){let n=document.documentElement.innerHTML,e=Wue.filter(t=>!n.includes(t));e.length>0&&console.error("[QStore IMS] \u26A0 Integrity check failed \u2014 "+e.length+` copyright sentinel(s) are missing from the document.
