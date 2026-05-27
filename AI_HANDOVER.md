@@ -155,7 +155,7 @@ qstore-v2-wip/
 
 - No licensing enforcement in V2 (pay/donate model)
 - Single-file HTML, no backend
-- Moving toward SaaS (see V3)
+- V3 is the commercial tier; V3 SaaS backend = **Platform Core** (see below)
 
 ---
 
@@ -168,24 +168,44 @@ qstore-v2-wip/
 
 ---
 
-## 11. Current Sprint (as of 2026-05-27)
+## 11. SaaS Backend — Platform Core
+
+The SaaS backend for this product family is **Platform Core**, located at:
+`C:\ClaudeAImemoryfolder\QStore\platform-core`
+
+It is a complete, tested system with:
+- `auth-service` (port 3001) — RS256 JWT, refresh token rotation
+- `licence-api` (port 3002) — licence issuance, validation, revocation
+- `billing-service` (port 3003) — Stripe abstraction, invoices, trial management
+- `notification-service` (port 3004) — email events
+- `portal-web` (port 3000) — self-service user portal (Next.js 14)
+- `admin-dashboard` (port 3005) — admin management (Next.js 14)
+- `@platform-core/sdk` — typed `PlatformClient` for product integration
+
+V2 does not integrate directly with Platform Core (pay/donate, no licensing enforcement). V3 will register as product slug `qstore-ims-v3` and use Platform Core for all subscription/licensing. See V3's `AI_HANDOVER.md` section 9 for the full integration plan.
+
+The marketing website should link to the Platform Core `portal-web` for unit subscriptions — do not design a custom checkout or licensing flow.
+
+---
+
+## 12. Current Sprint (as of 2026-05-27)
 
 - Fixed: export stack overflow (`_b64` spread overflow on large backups)
 - Fixed: logo not visible on new device after cloud load (mirror to localStorage after importAll)
 - Added: "Download unit copy" — embeds logo + unit config into HTML for distribution
-- Moving: toward SaaS (V3 is the commercial tier; ChatGPT handling product/marketing)
+- Clarified: SaaS backend = Platform Core (already built); V3 integration is the next milestone
 
 ---
 
-## 12. Next Sprint (planned)
+## 13. Next Sprint (planned)
 
-- V3 SaaS infrastructure (Platform Core subscription portal integration)
-- Marketing website (ChatGPT-led)
+- Register QStore IMS v3 in Platform Core (Admin Dashboard)
+- Marketing website (ChatGPT-led; links to Platform Core portal-web for subscriptions)
 - No new V2 IMS features planned; V2 is feature-complete
 
 ---
 
-## 13. Known Issues / Constraints
+## 14. Known Issues / Constraints
 
 - `file://` URLs: MSAL cloud sync requires HTTPS or localhost — not available when opened directly from filesystem
 - Chrome/Edge recommended; Firefox has stricter `crypto.subtle` restrictions on `file://`
@@ -196,13 +216,14 @@ qstore-v2-wip/
 
 ---
 
-## 14. Work Split (ChatGPT / Claude)
+## 15. Work Split (ChatGPT / Claude)
 
 | Claude | ChatGPT |
 |---|---|
 | Coding, testing, refactoring | Product strategy, feature prioritisation |
 | Database migrations | Security reviews |
-| UI & API implementation | Monetisation strategy |
-| Bug fixes | Marketing website & sales funnel |
-| — | Licensing model, documentation, user guides |
-| — | Release notes, investor/business material |
+| Platform Core → V3 integration | Monetisation strategy |
+| Bug fixes | **Marketing website & sales funnel** |
+| — | Licensing model documentation |
+| — | User guides, release notes |
+| — | Investor/business material |
