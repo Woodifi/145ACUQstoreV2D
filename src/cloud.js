@@ -47,6 +47,7 @@
 // =============================================================================
 
 import * as msal from '@azure/msal-browser';
+import { broadcastResponseToMainFrame } from '@azure/msal-browser/redirect-bridge';
 import * as Storage from './storage.js';
 
 // -----------------------------------------------------------------------------
@@ -553,58 +554,68 @@ export function _setProvider(p) {
 }
 
 /**
- * Complete an MSAL popup token exchange from inside the popup window.
+ * MSAL 5.x redirect bridge — called from shell.js boot() on every page load.
  *
- * MSAL 5.x popup flow uses BroadcastChannel: the main window's loginPopup()
- * calls waitForBridgeResponse() which listens on a channel keyed by the
- * interaction ID. The POPUP must call handleRedirectPromise() to process the
- * auth code and broadcast the result — without it the main window times out.
+ * MSAL 5.x popup flow:
+ *   1. Main window calls loginPopup() → opens a popup window → internally
+ *      calls waitForBridgeResponse(), which listens on a BroadcastChannel
+ *      keyed by the interaction state ID (libraryState.id).
+ *   2. Popup navigates to Microsoft login. User authenticates. Microsoft
+ *      redirects the popup back to our redirect URI (the app URL) with the
+ *      auth code + state in the URL hash.
+ *   3. The popup loads the app again. This function detects the popup context
+ *      by parsing the URL state (interactionType === 'popup') and calls
+ *      broadcastResponseToMainFrame() from @azure/msal-browser/redirect-bridge.
+ *   4. broadcastResponseToMainFrame() creates BroadcastChannel(libraryState.id)
+ *      and posts { v: 1, payload } — exactly what waitForBridgeResponse()
+ *      is listening for — then closes the popup window.
+ *   5. The main window's loginPopup() receives the message and resolves.
  *
- * We do this with a minimal MSAL instance built from the client ID stored in
- * localStorage by signIn()/acquireTokenPopup() — no IDB required.
+ * NOTE: handleRedirectPromise() CANNOT be used here because it validates
+ * interactionType === 'redirect' and explicitly rejects popup responses.
  *
- * Call this from boot() when popup context is detected, then return without
- * rendering the app shell. MSAL will call window.close() on the popup after
- * broadcasting, so no manual close is needed.
+ * Returns true if a popup auth response was found and broadcast (caller should
+ * stop loading the app shell). Returns false if the URL has no popup response.
  */
 export async function handlePopupAuth() {
-  const clientId = localStorage.getItem('qstore_popup_in_progress');
-  if (!clientId) return;
+  if (!_hasPopupResponseInUrl()) return false;
 
   try {
-    const redirectUri = window.location.origin
-      + (window.location.pathname.endsWith('/')
-          ? window.location.pathname.slice(0, -1)
-          : window.location.pathname);
-
-    const msalApp = new msal.PublicClientApplication({
-      auth: {
-        clientId,
-        authority:   'https://login.microsoftonline.com/common',
-        redirectUri,
-        postLogoutRedirectUri: redirectUri,
-      },
-      cache: { cacheLocation: 'localStorage' },
-      system: {
-        loggerOptions: {
-          loggerCallback: (level, message, containsPii) => {
-            if (!containsPii) console.debug('[MSAL-popup]', message);
-          },
-          logLevel: msal.LogLevel.Warning,
-          piiLoggingEnabled: false,
-        },
-      },
-    });
-
-    await msalApp.initialize();
-    await msalApp.handleRedirectPromise();
-    // MSAL closes the popup itself after broadcasting the result.
-    // Fallback: close manually in case MSAL doesn't for this flow.
-    setTimeout(() => { try { window.close(); } catch (_) {} }, 1000);
+    // broadcastResponseToMainFrame() from the MSAL redirect-bridge package
+    // posts the auth code to BroadcastChannel(libraryState.id) and calls
+    // window.close() — this is the sender that waitForBridgeResponse() waits for.
+    await broadcastResponseToMainFrame();
   } catch (err) {
-    console.warn('[MSAL-popup] handlePopupAuth error:', err);
-    // Still close the popup so the main window gets the timeout error
-    // rather than hanging indefinitely.
+    console.warn('[MSAL-popup] broadcastResponseToMainFrame error:', err);
+    // Still attempt to close so the main window times out quickly rather than
+    // hanging for the full 60-second bridge timeout.
     setTimeout(() => { try { window.close(); } catch (_) {} }, 500);
+  } finally {
+    localStorage.removeItem('qstore_popup_in_progress');
+  }
+  return true;
+}
+
+/**
+ * Returns true when the current URL contains an MSAL popup auth response
+ * (i.e. the state parameter decodes to interactionType === 'popup').
+ * Uses URL parsing rather than window.opener — which modern browsers null out
+ * after cross-origin redirects through login.microsoftonline.com.
+ */
+function _hasPopupResponseInUrl() {
+  try {
+    const hash   = window.location.hash;
+    const search = window.location.search;
+    let stateVal = null;
+    if (hash   && hash.includes('state='))   stateVal = new URLSearchParams(hash.slice(1)).get('state');
+    if (!stateVal && search && search.includes('state=')) stateVal = new URLSearchParams(search.slice(1)).get('state');
+    if (!stateVal) return false;
+    // MSAL state = base64url(JSON({id, meta:{interactionType}})) optionally
+    // followed by "|<user-state>". Decode the library portion only.
+    const libPart = decodeURIComponent(stateVal).split('|')[0];
+    const json    = JSON.parse(atob(libPart.replace(/-/g, '+').replace(/_/g, '/')));
+    return json?.meta?.interactionType === 'popup';
+  } catch {
+    return false;
   }
 }
