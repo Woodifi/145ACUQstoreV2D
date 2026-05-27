@@ -147,15 +147,31 @@ export class OneDriveProvider {
       // to complete an in-flight Authorization Code Flow + PKCE exchange.
       // Omitting this is the most common cause of MSAL initialisation
       // failures and silent sign-in loops.
-      // no_token_request_cache_error is thrown when there is no redirect in
-      // progress — it is not a real failure, just MSAL asserting there is
-      // nothing to handle.  Any other error is a genuine problem.
+      //
+      // MSAL 5.x suppressed error codes:
+      //   no_token_request_cache_error — no redirect in progress (normal)
+      //   hash_not_present             — no auth hash in URL (normal)
+      //   no_cached_authority_error    — no authority cached (normal on first load)
+      //   interaction_in_progress      — stuck state from a crashed redirect;
+      //                                  clear the cache so the user can retry
       let response = null;
       try {
         response = await this._msal.handleRedirectPromise();
       } catch (err) {
-        if ((err.errorCode || '') === 'no_token_request_cache_error') {
+        const code = err.errorCode || '';
+        const _harmless = new Set([
+          'no_token_request_cache_error',
+          'hash_not_present',
+          'no_cached_authority_error',
+        ]);
+        if (_harmless.has(code)) {
           response = null; // no redirect in progress — safe to ignore
+        } else if (code === 'interaction_in_progress') {
+          // Browser was closed mid-redirect, leaving a stuck interaction flag.
+          // Clear the MSAL cache to reset the state so the next sign-in attempt
+          // can start fresh.
+          try { await this._msal.clearCache(); } catch (_) {}
+          response = null;
         } else {
           throw err;
         }
@@ -229,10 +245,17 @@ export class OneDriveProvider {
         await this._msal.loginRedirect(request);
         return;
       }
-      // "interaction_in_progress" means a previous flow didn't complete.
-      // Most likely a stuck state in localStorage. Surface a clear message.
+      // "interaction_in_progress" means MSAL has a stuck interaction flag
+      // in localStorage from a previous flow that didn't complete cleanly
+      // (e.g. popup closed early, redirect interrupted). Clear the cache
+      // to reset the state and then retry with redirect — which is more
+      // resilient than popup for recovery situations.
       if (code === 'interaction_in_progress') {
-        throw new Error('A sign-in is already in progress. Refresh the page and try again.');
+        try { await this._msal.clearCache(); } catch (_) {}
+        // Re-initialise MSAL after clearing so the new login starts clean.
+        await this._msal.initialize();
+        await this._msal.loginRedirect(request);
+        return;
       }
       this._lastError = err.message || String(err);
       throw err;
@@ -268,6 +291,30 @@ export class OneDriveProvider {
 
   isSignedIn() {
     return Boolean(this._account);
+  }
+
+  /**
+   * Clear all MSAL cached tokens and interaction state, then sign out locally.
+   * Use when sign-in is stuck in "interaction_in_progress" or after a failed
+   * redirect. After calling this, the user must sign in again.
+   *
+   * This does NOT call logoutRedirect/logoutPopup — it only clears the local
+   * MSAL token cache. Microsoft's session on the browser remains active, so
+   * the next sign-in will be fast (account picker, not full credential entry).
+   */
+  async resetAuthState() {
+    this._account = null;
+    this._lastError = null;
+    if (this._msal) {
+      try { await this._msal.clearCache(); } catch (_) {}
+    }
+    // Clear any MSAL interaction status keys in sessionStorage —
+    // these are the flags that cause interaction_in_progress errors.
+    for (const key of Object.keys(sessionStorage)) {
+      if (key.startsWith('msal.') || key.startsWith('msal_') || key.includes('interaction.status')) {
+        try { sessionStorage.removeItem(key); } catch (_) {}
+      }
+    }
   }
 
   getAccount() {

@@ -1329,6 +1329,12 @@ function _syncActionsHtml(status) {
   }
   if (status.state === 'not-signed-in' || status.state === 'error') {
     buttons.push(`<button type="button" class="btn btn--primary" data-action="sign-in">Sign in to OneDrive</button>`);
+    // Recovery button — clears stuck MSAL interaction state. Shown alongside
+    // Sign in so users with interaction_in_progress errors have a self-service fix.
+    buttons.push(`<button type="button" class="btn btn--ghost" data-action="reset-auth-state"
+                         title="Use this if sign-in is stuck or shows an error after refreshing">
+                    Reset sign-in state
+                  </button>`);
   }
   if (status.state === 'signed-in' || status.state === 'busy') {
     buttons.push(`<button type="button" class="btn btn--primary" data-action="sync-now" ${status.busy ? 'disabled' : ''}>Sync now</button>`);
@@ -1613,10 +1619,11 @@ async function _onRootClick(e) {
   const action = e.target.closest('[data-action]')?.dataset.action;
   if (!action) return;
   switch (action) {
-    case 'sign-in':         await _doSignIn();       break;
-    case 'sign-out':        await _doSignOut();      break;
-    case 'sync-now':        await _doSyncNow();      break;
-    case 'load-from-cloud': await _doLoadFromCloud(); break;
+    case 'sign-in':           await _doSignIn();           break;
+    case 'sign-out':          await _doSignOut();          break;
+    case 'sync-now':          await _doSyncNow();          break;
+    case 'load-from-cloud':   await _doLoadFromCloud();    break;
+    case 'reset-auth-state':  await _doResetAuthState();   break;
     case 'export-data':     await _doExportData(e.target.closest('button')); break;
     case 'import-data':     await _doImportData(e.target.closest('button')); break;
     case 'import-v1':       await _doImportV1(e.target.closest('button')); break;
@@ -1891,6 +1898,18 @@ async function _onMigratePlatoons() {
         });
     },
   });
+}
+
+async function _doResetAuthState() {
+  try {
+    await getProvider().resetAuthState();
+    // Re-initialise so the provider picks up the cleared state.
+    await getProvider().init();
+    await _refreshSyncBlock(Sync.getStatus());
+    showToast('Sign-in state cleared. You can now sign in again.', 'success');
+  } catch (err) {
+    showToast('Reset failed: ' + (err.message || err), 'error');
+  }
 }
 
 async function _doSignIn() {
