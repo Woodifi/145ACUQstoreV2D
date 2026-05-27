@@ -277,8 +277,17 @@ function _unitSectionHtml(settings) {
             <button type="button" class="btn btn--ghost" data-action="logo-remove">
               Remove logo
             </button>
+            <button type="button" class="btn btn--primary" data-action="logo-download-copy">
+              Download unit copy
+            </button>
           ` : ''}
         </div>
+        ${logoDataUrl ? `
+          <p class="settings__section-hint" style="margin-top:6px">
+            "Download unit copy" creates a version of this app with your logo pre-embedded.
+            Share this file — the logo will show on first open on any device, even before sign-in.
+          </p>
+        ` : ''}
         <div class="form__error" data-target="logo-error" role="alert"></div>
       </div>
     </section>
@@ -1633,6 +1642,7 @@ async function _onRootClick(e) {
     case 'setup-2fa':            { const s = AUTH.getSession(); if (s?.userId) TotpSetup.openTotpSetup(s.userId); } break;
     case 'manage-2fa':           { const s = AUTH.getSession(); if (s?.userId) TotpSetup.openTotpManage(s.userId); } break;
     case 'logo-remove':          await _doRemoveLogo(); break;
+    case 'logo-download-copy':  await _doDownloadUnitCopy(); break;
     case 'configure-structure':  await _onConfigureStructure(); break;
     case 'clear-structure':      await _onClearStructure(e.target.closest('button')); break;
     case 'migrate-platoons':     await _onMigratePlatoons(); break;
@@ -2014,7 +2024,15 @@ async function _doLoadFromCloud() {
 // ---------------------------------------------------------------------------
 
 function _b64(buf) {
-  return btoa(String.fromCharCode(...new Uint8Array(buf)));
+  // Spread operator on large Uint8Array blows the call stack for big backups.
+  // Chunk the conversion to stay well within argument limits.
+  const bytes = new Uint8Array(buf);
+  const CHUNK = 0x8000;
+  let s = '';
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    s += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(s);
 }
 function _fromB64(s) {
   return Uint8Array.from(atob(s), c => c.charCodeAt(0));
@@ -2307,6 +2325,13 @@ async function _performImport(file, btn) {
     // Storage.importAll throws on schema mismatch; we surface that cleanly.
     await Storage.importAll(snapshot);
 
+    // Mirror logo to localStorage so splash shows it on the forced reload below.
+    try {
+      const ls = await Storage.settings.getAll();
+      if (ls.unitLogo) localStorage.setItem('qstore2_logo', ls.unitLogo);
+      else localStorage.removeItem('qstore2_logo');
+    } catch (_) {}
+
     // Log AFTER importAll because importAll wipes the audit store and
     // replaces it with the snapshot's chain. Logging before the import
     // would put the entry into a chain that's about to be discarded.
@@ -2509,6 +2534,42 @@ async function _doRemoveLogo() {
   _softUpdateHeaderLogo(null);
   await _render();
   _flashSuccess('Logo removed.');
+}
+
+async function _doDownloadUnitCopy() {
+  // Generates a version of this HTML file with the unit logo (and unit name/code)
+  // embedded as window.__UNIT_CONFIG__. When this file is opened on any device,
+  // the logo shows on the splash screen immediately — before IDB is populated.
+  try {
+    const s = await Storage.settings.getAll();
+    const logo = s.unitLogo || null;
+    if (!logo) {
+      showToast('Upload a logo first.', 'error');
+      return;
+    }
+    const config = { logo, unitName: s.unitName || '', unitCode: s.unitCode || '' };
+    // Inject config as first script in <head> so it runs before the app bundle.
+    const configScript = `<script>window.__UNIT_CONFIG__=${JSON.stringify(config)};<\/script>`;
+    const html = document.documentElement.outerHTML;
+    const injected = html.includes('</head>')
+      ? html.replace('</head>', configScript + '</head>')
+      : configScript + html;
+    const slug = (s.unitCode || s.unitName || 'unit')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'unit';
+    const filename = `qstore-${slug}-unit-copy.html`;
+    const blob = new Blob([injected], { type: 'text/html' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    _flashSuccess(`Saved as ${filename}. Share this file — logo is embedded.`);
+  } catch (err) {
+    showToast('Download failed: ' + (err.message || err), 'error');
+  }
 }
 
 async function _processLogo(file) {

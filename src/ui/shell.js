@@ -374,6 +374,12 @@ export async function boot(rootEl) {
   // Integrity check deferred briefly so the DOM is fully parsed first.
   setTimeout(checkIntegrity, 1500);
 
+  // Pre-seed localStorage from embedded unit config so the logo shows on splash
+  // immediately when opening a "unit copy" distribution on a fresh device.
+  if (window.__UNIT_CONFIG__?.logo) {
+    try { localStorage.setItem('qstore2_logo', window.__UNIT_CONFIG__.logo); } catch (_) {}
+  }
+
   // Show splash immediately — runs for at least 5 seconds in parallel with boot.
   const splash = showSplash();
 

@@ -134,6 +134,12 @@ export async function loadFromCloud() {
       throw new Error('Cloud blob is not a valid QStore snapshot.');
     }
     await Storage.importAll(snapshot);
+    // Mirror logo to localStorage so splash shows it on the caller's reload.
+    try {
+      const ls = await Storage.settings.getAll();
+      if (ls.unitLogo) localStorage.setItem('qstore2_logo', ls.unitLogo);
+      else localStorage.removeItem('qstore2_logo');
+    } catch (_) {}
     await Storage.audit.append({
       action: 'data_imported',
       user:   'cloud-sync',

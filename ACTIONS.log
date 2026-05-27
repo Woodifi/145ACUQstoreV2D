@@ -707,3 +707,18 @@ END OF LOG — append new entries above this line
 - src/ui/help.js: added cadet_viewed and staff_viewed rows to in-app audit action types table
 - Build: 20260521-BA82FFFE � clean
 - Committed: d66a24d � pushed to GitHub
+
+---
+
+## 2026-05-27 — Modal/page formatting consistency pass
+
+Changes applied to V2 (see V3 ACTIONS.log for full detail).
+
+**Staff delete modal:** `<form>` wrapper, `type="submit"` button, submit event handler
+**Requests Approve & Issue:** string concat → template literals, removed inline style
+**Requests Copy to Cadets:** `ctc__footer` → `form__actions`; `ctc__due-row` → `form__field`
+**Requests Submit form:** removed inline style from Notes field
+**IMS Reports:** `ims-report__ctrl-label` class; `data-action="print"` replaces `onclick`
+**CSS:** Added full `.ims-report__*` CSS block (was missing entirely) + spacing selectors
+
+**V2 commit:** `3c86e48` — pushed to GitHub
