@@ -700,13 +700,13 @@ END OF LOG â€” append new entries above this line
     Storage.atomic.stocktakeFinalise (items + stocktake.clear in one tx)
   Build: 20260521-E2D34F25  |  Pushed to: https://github.com/Woodifi/145ACUQstoreV2D.git (master)
 
-## 2026-05-21 — Manual & In-App Help Updates (Session close)
-- MANUAL.md §3: documented 2FA status badge column in user management table (green ? On / grey Off / amber ? Off for CO/QM)
-- MANUAL.md §10: added cadet_viewed and staff_viewed audit action type entries
+## 2026-05-21 ï¿½ Manual & In-App Help Updates (Session close)
+- MANUAL.md ï¿½3: documented 2FA status badge column in user management table (green ? On / grey Off / amber ? Off for CO/QM)
+- MANUAL.md ï¿½10: added cadet_viewed and staff_viewed audit action type entries
 - src/ui/help.js: added 2FA status column subsection under Adding Users section
 - src/ui/help.js: added cadet_viewed and staff_viewed rows to in-app audit action types table
-- Build: 20260521-BA82FFFE — clean
-- Committed: d66a24d — pushed to GitHub
+- Build: 20260521-BA82FFFE ï¿½ clean
+- Committed: d66a24d ï¿½ pushed to GitHub
 
 ---
 
@@ -752,3 +752,23 @@ To be updated after every significant change.
 **V2 commits:** `74e0263` (fix), `0a0a7a6` (handover) â€” both pushed to GitHub
 **V3 commits:** `d1024d4` (fix), `9ae1486` (handover)
 **V2 tests:** 491/491  |  **V3 tests:** 1181/1181
+
+## 2026-05-27 â€” Cloud auth fix (popup guard + resetAuthState localStorage gap)
+
+### Root causes identified
+**Problem A:** `shell.js boot()` popup guard `if (window.opener && window.opener !== window) return`
+was returning before `Storage.init()` + `Sync.init()` ran. In MSAL popup flow, the app loads
+inside the popup at the redirect URI â€” `window.opener` is set â€” so the guard fired early,
+preventing `handleRedirectPromise()` from completing the OAuth token exchange. Desktop popup
+sign-in silently failed.
+
+**Problem B:** `cloud.js resetAuthState()` only cleared `sessionStorage` MSAL keys. With
+`cacheLocation: 'localStorage'`, MSAL 5.x stores `interaction.status` lock keys in localStorage.
+The old loop never found them, so "Reset sign-in state" couldn't unblock a stuck interaction.
+
+### Fixes applied
+- `shell.js`: popup guard now runs `await Storage.init(); await Sync.init()` before returning,
+  so `handleRedirectPromise()` executes inside the popup callback window.
+- `cloud.js resetAuthState()`: loop now covers both `localStorage` AND `sessionStorage`.
+
+**V2 commit:** `a85d771` â€” pushed to GitHub
