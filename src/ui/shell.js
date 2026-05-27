@@ -362,16 +362,19 @@ function _hideLockOverlay() {
 // -----------------------------------------------------------------------------
 
 export async function boot(rootEl) {
-  // If this page was opened by MSAL as a popup redirect target, initialize
-  // storage and cloud so handleRedirectPromise() can complete the token
-  // exchange, then return without rendering the full app shell.
-  if (window.opener && window.opener !== window) {
-    try {
-      await Storage.init();
-      await Sync.init();
-    } catch (_) {}
-    return;
-  }
+  // If this page was opened by MSAL as a popup redirect target, return
+  // immediately without booting the app shell. The main window's loginPopup()
+  // call monitors the popup URL and handles the token exchange — we must not
+  // call handleRedirectPromise() here or it will compete with that.
+  //
+  // Two detection methods are needed because cross-origin redirects through
+  // login.microsoftonline.com null out window.opener in modern browsers:
+  //   1. window.opener — works when same-origin popup opens the app directly
+  //   2. qstore_popup_in_progress — set by cloud.js before loginPopup() /
+  //      acquireTokenPopup(); readable by the popup because same localStorage
+  const _isPopup = (window.opener != null && window.opener !== window)
+                || !!localStorage.getItem('qstore_popup_in_progress');
+  if (_isPopup) return;
 
   _root = rootEl;
   // Apply stored theme immediately — before any async ops — to avoid flash.

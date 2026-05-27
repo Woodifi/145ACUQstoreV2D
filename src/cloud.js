@@ -233,6 +233,13 @@ export class OneDriveProvider {
       return;
     }
 
+    // Flag that a popup is in progress. The popup window shares localStorage
+    // (same origin) and reads this flag in boot() to return early without
+    // booting the full app shell — preventing it from calling
+    // handleRedirectPromise() which would compete with loginPopup() here.
+    // window.opener alone is insufficient because cross-origin redirects
+    // through login.microsoftonline.com null it out in modern browsers.
+    localStorage.setItem('qstore_popup_in_progress', '1');
     try {
       const resp = await this._msal.loginPopup(request);
       this._account = resp.account;
@@ -242,6 +249,7 @@ export class OneDriveProvider {
       const code = err.errorCode || '';
       // Popup blocked or user closed it — fall back to redirect.
       if (code === 'popup_window_error' || code === 'user_cancelled') {
+        localStorage.removeItem('qstore_popup_in_progress');
         await this._msal.loginRedirect(request);
         return;
       }
@@ -251,6 +259,7 @@ export class OneDriveProvider {
       // to reset the state and then retry with redirect — which is more
       // resilient than popup for recovery situations.
       if (code === 'interaction_in_progress') {
+        localStorage.removeItem('qstore_popup_in_progress');
         try { await this._msal.clearCache(); } catch (_) {}
         // Re-initialise MSAL after clearing so the new login starts clean.
         await this._msal.initialize();
@@ -259,6 +268,8 @@ export class OneDriveProvider {
       }
       this._lastError = err.message || String(err);
       throw err;
+    } finally {
+      localStorage.removeItem('qstore_popup_in_progress');
     }
   }
 
@@ -486,6 +497,7 @@ export class OneDriveProvider {
         // Page navigates away — code after this never executes
         throw new Error('Redirecting to refresh token. Please wait...');
       }
+      localStorage.setItem('qstore_popup_in_progress', '1');
       try {
         const resp = await this._msal.acquireTokenPopup(request);
         return resp.accessToken;
@@ -494,6 +506,8 @@ export class OneDriveProvider {
         sessionStorage.setItem('qstore_cloud_token_refresh', '1');
         await this._msal.acquireTokenRedirect({ ...request, redirectUri: this._getRedirectUri() });
         throw new Error('Redirecting to refresh token. Please wait...');
+      } finally {
+        localStorage.removeItem('qstore_popup_in_progress');
       }
     }
   }

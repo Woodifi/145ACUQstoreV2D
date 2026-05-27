@@ -1640,7 +1640,9 @@ async function _onSaveConfig(e) {
       user:   AUTH.getSession()?.name || 'unknown',
       desc:   `Cloud config updated (clientId set: ${clientId ? 'yes' : 'no'}, folder: ${folder}, file: ${filename}, autoSync: ${autoSync}).`,
     });
-    await _refreshSyncBlock(Sync.getStatus());
+    // Re-render the full settings page so the Client ID badge reflects the
+    // newly saved ID (the badge's data-client-id is baked in at render time).
+    await _render();
     _flashSuccess('Cloud settings saved.');
   } catch (err) {
     errEl.textContent = err.message || 'Could not save settings.';
