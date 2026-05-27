@@ -308,11 +308,14 @@ export class OneDriveProvider {
     if (this._msal) {
       try { await this._msal.clearCache(); } catch (_) {}
     }
-    // Clear any MSAL interaction status keys in sessionStorage —
-    // these are the flags that cause interaction_in_progress errors.
-    for (const key of Object.keys(sessionStorage)) {
-      if (key.startsWith('msal.') || key.startsWith('msal_') || key.includes('interaction.status')) {
-        try { sessionStorage.removeItem(key); } catch (_) {}
+    // Clear any MSAL interaction status keys from BOTH localStorage and
+    // sessionStorage — cacheLocation: 'localStorage' means interaction.status
+    // keys may be in either store, and stuck keys cause interaction_in_progress.
+    for (const store of [localStorage, sessionStorage]) {
+      for (const key of Object.keys(store)) {
+        if (key.startsWith('msal.') || key.startsWith('msal_') || key.includes('interaction.status')) {
+          try { store.removeItem(key); } catch (_) {}
+        }
       }
     }
   }

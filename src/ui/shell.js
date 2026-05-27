@@ -362,9 +362,16 @@ function _hideLockOverlay() {
 // -----------------------------------------------------------------------------
 
 export async function boot(rootEl) {
-  // If this page was opened by MSAL as a popup redirect target, let MSAL
-  // handle the auth response and do not boot the full application.
-  if (window.opener && window.opener !== window) return;
+  // If this page was opened by MSAL as a popup redirect target, initialize
+  // storage and cloud so handleRedirectPromise() can complete the token
+  // exchange, then return without rendering the full app shell.
+  if (window.opener && window.opener !== window) {
+    try {
+      await Storage.init();
+      await Sync.init();
+    } catch (_) {}
+    return;
+  }
 
   _root = rootEl;
   // Apply stored theme immediately — before any async ops — to avoid flash.
