@@ -722,3 +722,33 @@ Changes applied to V2 (see V3 ACTIONS.log for full detail).
 **CSS:** Added full `.ims-report__*` CSS block (was missing entirely) + spacing selectors
 
 **V2 commit:** `3c86e48` — pushed to GitHub
+
+## 2026-05-27 — Export fix, logo embed, AI_HANDOVER.md
+
+### Export stack overflow fix
+**Root cause:** `_b64(buf)` in `settings.js` used `String.fromCharCode(...new Uint8Array(buf))`.
+Spreading a large ArrayBuffer (e.g. encrypted 2MB backup) as function arguments overflows the JS call stack.
+**Fix:** Chunked loop — 32KB chunks, `bytes.subarray(i, i + CHUNK)` spread per chunk.
+**Applies to:** Both V2 and V3.
+
+### Logo visible on new device
+**Problem A:** After cloud load or file restore, `localStorage['qstore2_logo']` was not updated.
+On the subsequent forced reload, the splash IDB read found the logo, but localStorage-dependent
+boot paths didn't benefit from the restored data until the next settings visit.
+**Fix A:** `sync.js loadFromCloud()` and `settings.js _doImportData()` now mirror `unitLogo` from IDB
+to `localStorage['qstore2_logo']` immediately after `importAll()`.
+
+**Problem B:** A fresh device opening a distribution HTML file sees no logo on splash before IDB is populated.
+**Fix B:** New "Download unit copy" button in Settings → Unit logo section. Serialises
+`document.documentElement.outerHTML` and injects `<script>window.__UNIT_CONFIG__={logo,unitName,unitCode};</script>`
+before `</head>`. Shell.js boot() reads `window.__UNIT_CONFIG__.logo` and writes to localStorage before
+showSplash(), so the logo shows immediately even on first-ever open of the file.
+
+### AI_HANDOVER.md
+Created in both V2 and V3 repo roots. Covers: tech stack, folder structure, DB schema, auth,
+APIs, licensing, deployment, current/next sprint, known issues, ChatGPT/Claude work split.
+To be updated after every significant change.
+
+**V2 commits:** `74e0263` (fix), `0a0a7a6` (handover) — both pushed to GitHub
+**V3 commits:** `d1024d4` (fix), `9ae1486` (handover)
+**V2 tests:** 491/491  |  **V3 tests:** 1181/1181
