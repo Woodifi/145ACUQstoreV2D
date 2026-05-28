@@ -794,3 +794,13 @@ The old loop never found them, so "Reset sign-in state" couldn't unblock a stuck
 
   V2 commit: c48faef â€” pushed to GitHub (https://woodifi.github.io/145ACUQstoreV2D/)
   V3 commit: cff4828 â€” local only (no remote configured for V3)
+
+## 2026-05-28 — Inventory sort by category + NSN
+- **Feature**: All inventory item lists now sorted category A-Z ? NSN alphanumeric (numeric NSNs first)
+- **Logic**: compareItems(a,b) in storage.js: cat localeCompare ? numeric NSNs first ? alpha NSNs ? no-NSN last
+- **Scope**: items.list() in storage.js applies sort at source; covers ALL consumers automatically:
+  inventory page, stocktake sheet, kit picker datalist, IMS reports, PDF stock report, QR sheet
+- **Explicit sorts updated**: inventory.js (×3) and stocktake.js (×1) ? Storage.compareItems
+- **V2**: commit 081016b, build 20260528-0332538E, pushed to GitHub
+- **V3**: commit 4bb18c0 (local only)
+- Tests: V2 15/15 suites pass (491 tests), V3 27/27 suites pass (1181 tests)
