@@ -78,9 +78,7 @@ export async function mount(rootEl) {
 
 async function _render() {
   const items   = await Storage.items.list({ category: _categoryFilter || undefined });
-  items.sort((a, b) =>
-    (a.cat  || '').localeCompare(b.cat  || '') ||
-    (a.name || '').localeCompare(b.name || ''));
+  items.sort(Storage.compareItems);
 
   const counts  = await Storage.stocktake.list();
   _countsByItem = new Map(counts.map((c) => [c.itemId, c]));

@@ -129,7 +129,7 @@ async function _render() {
     category: _categoryFilter || undefined,
     search:   _searchTerm     || undefined,
   });
-  items.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  items.sort(Storage.compareItems);
 
   const canAdd  = AUTH.can('addItem');
   const canEdit = AUTH.can('editItem');
@@ -465,7 +465,7 @@ async function _onRootClick(e) {
 }
 
 // Print the currently-filtered stock list. Storage.items.list does the
-// filtering for us; we sort by category-then-name to give the printed
+// filtering for us; we sort by category-then-NSN to give the printed
 // version a stable, scan-friendly order regardless of how the user is
 // viewing it on screen.
 async function _doPrintStock(button) {
@@ -475,9 +475,7 @@ async function _doPrintStock(button) {
       category: _categoryFilter || undefined,
       search:   _searchTerm     || undefined,
     });
-    items.sort((a, b) =>
-      (a.cat  || '').localeCompare(b.cat  || '') ||
-      (a.name || '').localeCompare(b.name || ''));
+    items.sort(Storage.compareItems);
 
     const filterParts = [];
     if (_categoryFilter) filterParts.push(`Category: ${_categoryFilter}`);
@@ -515,7 +513,7 @@ async function _doPrintAB174(button) {
 }
 
 // Print QR code labels for the currently-filtered inventory. Same filter
-// logic as _doPrintStock; sorted by category then name for a stable layout.
+// logic as _doPrintStock; sorted by category then NSN for a stable layout.
 async function _doPrintQR(button) {
   AUTH.requirePermission('qr');
   if (button) { button.disabled = true; button.textContent = 'Building PDF…'; }
@@ -524,9 +522,7 @@ async function _doPrintQR(button) {
       category: _categoryFilter || undefined,
       search:   _searchTerm     || undefined,
     });
-    items.sort((a, b) =>
-      (a.cat  || '').localeCompare(b.cat  || '') ||
-      (a.name || '').localeCompare(b.name || ''));
+    items.sort(Storage.compareItems);
     const unit   = await Storage.settings.getAll();
     const result = await generateQRSheet(items, { unit });
     downloadPdf(result);

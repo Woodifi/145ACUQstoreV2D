@@ -349,6 +349,35 @@ function _bytesToHex(bytes) {
 // Items
 // -----------------------------------------------------------------------------
 
+/**
+ * Returns true if an NSN consists only of digits and hyphens (pure numeric NSN).
+ * e.g. "8415-00-123-4567" → true,  "LOCAL-001" → false
+ */
+function _isNumericNsn(nsn) {
+  return /^[\d-]+$/.test(nsn || '');
+}
+
+/**
+ * Canonical item sort order: category A–Z, then within each category:
+ *   1. Numeric-only NSNs first (digits + hyphens), sorted alphanumerically
+ *   2. Alpha-inclusive NSNs next (contain letters), sorted alphanumerically
+ *   3. Items with no NSN last
+ * Exported so display layers (inventory, stocktake) can use the same comparator.
+ */
+export function compareItems(a, b) {
+  const catCmp = (a.cat || '').localeCompare(b.cat || '', undefined, { sensitivity: 'base' });
+  if (catCmp !== 0) return catCmp;
+  const na = a.nsn || '';
+  const nb = b.nsn || '';
+  if (!na && !nb) return 0;
+  if (!na) return 1;   // no NSN → last within category
+  if (!nb) return -1;
+  const aNum = _isNumericNsn(na);
+  const bNum = _isNumericNsn(nb);
+  if (aNum !== bNum) return aNum ? -1 : 1;   // numeric before alpha-inclusive
+  return na.localeCompare(nb, undefined, { numeric: true, sensitivity: 'base' });
+}
+
 export const items = {
   async list({ category, search } = {}) {
     let rows = await _all(STORES.ITEMS);
@@ -362,6 +391,7 @@ export const items = {
         || (i.loc  || '').toLowerCase().includes(q)
         || (i.notes || '').toLowerCase().includes(q));
     }
+    rows.sort(compareItems);
     return rows;
   },
 
