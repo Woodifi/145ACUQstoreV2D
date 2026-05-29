@@ -1325,10 +1325,9 @@ details.totp-setup__manual-details[open] .totp-setup__manual-summary::before {
   font-size: 11px;
   color: var(--text-muted);
   margin-top: 2px;
-  max-width: 300px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .inv__qty-with-bar {
