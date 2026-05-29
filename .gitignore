@@ -4,6 +4,10 @@ node_modules/
 *.log
 !ACTIONS.log
 
+# License keys — NEVER commit private key
+keys/private.key
+keys/*.key
+
 # Owner-only documents — never commit to GitHub
 DIST_LOG.md
 MANUAL_ADDENDUM_OWNER.md

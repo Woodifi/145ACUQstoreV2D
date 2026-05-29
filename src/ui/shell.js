@@ -44,6 +44,7 @@ import * as ImsReports from './ims-reports.js';
 import { openModal }  from './modal.js';
 import { esc, $, render } from './util.js';
 import { applyStoredTheme, applyTheme } from '../theme.js';
+import { getLicenseState } from '../license.js';
 import * as Shortcuts from './shortcuts.js';
 
 const PAGES = {
@@ -463,7 +464,8 @@ async function _renderShell() {
   const unitName  = settings.unitName || 'QStore IMS';
   const unitCode  = settings.unitCode || '';
   const unitLogo  = settings.unitLogo  || null;
-  const showBanner = _session.pinIsDefault === true;
+  const showBanner   = _session.pinIsDefault === true;
+  const licenseState = getLicenseState();
 
   const initialPage = _pickInitialPage();
   _currentPage = initialPage;
@@ -500,6 +502,7 @@ async function _renderShell() {
       </header>
 
       ${showBanner ? _defaultPinBannerHtml() : ''}
+      ${_licenseBannerHtml(licenseState)}
 
       <main class="shell__main" data-target="page-content">
         <div class="shell__loading">Loading…</div>
@@ -511,6 +514,7 @@ async function _renderShell() {
   _root.addEventListener('click', (e) => {
     if (e.target.closest('[data-action="logout"]')) _onLogout();
     if (e.target.closest('[data-action="help"]')) _navigateTo('help');
+    if (e.target.closest('[data-action="open-subscription-settings"]')) _navigateTo('settings');
   });
 
   const nav       = $('.shell__nav', _root);
@@ -731,6 +735,49 @@ async function _teardownCurrentPage() {
     catch (e) { console.error('page unmount error:', e); }
   }
   _currentUnmount = null;
+}
+
+// -----------------------------------------------------------------------------
+// License banners
+// -----------------------------------------------------------------------------
+
+function _licenseBannerHtml(ls) {
+  if (ls.state === 'RESTRICTED') {
+    return `
+      <div class="shell__banner shell__banner--error" role="alert">
+        <strong>Subscription expired.</strong>
+        QStore is in read-only mode — you can view records and export data, but editing is blocked.
+        <button type="button" class="shell__banner-action"
+                data-action="open-subscription-settings">Manage subscription</button>
+      </div>
+    `;
+  }
+  if (ls.state === 'GRACE') {
+    const days   = ls.graceDaysLeft ?? 0;
+    const dayStr = days === 1 ? '1 day' : `${days} days`;
+    return `
+      <div class="shell__banner shell__banner--warn" role="alert">
+        <strong>Subscription expired.</strong>
+        ${days > 0 ? `${dayStr} remaining in the grace period.` : 'Grace period ending soon.'}
+        Renew to avoid losing edit access.
+        <button type="button" class="shell__banner-action"
+                data-action="open-subscription-settings">Manage subscription</button>
+      </div>
+    `;
+  }
+  if (ls.state === 'TRIAL' && ls.trialDaysLeft !== null && ls.trialDaysLeft <= 7) {
+    const days   = ls.trialDaysLeft;
+    const dayStr = days === 1 ? '1 day' : `${days} days`;
+    return `
+      <div class="shell__banner shell__banner--warn" role="alert">
+        <strong>${dayStr} left in your free trial.</strong>
+        Activate a subscription key in Settings to continue editing after the trial ends.
+        <button type="button" class="shell__banner-action"
+                data-action="open-subscription-settings">Activate key</button>
+      </div>
+    `;
+  }
+  return '';
 }
 
 // -----------------------------------------------------------------------------

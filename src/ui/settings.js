@@ -33,6 +33,7 @@ import * as Recovery   from '../recovery.js';
 import * as Migration  from '../migration.js';
 import * as TotpSetup  from './totp-setup.js';
 import * as CsvUi      from './csv-import.js';
+import { getLicenseState, activateKey } from '../license.js';
 import { showToast }   from './toast.js';
 import * as Structure  from '../structure.js';
 import { CATEGORIES as DEFAULT_CATEGORIES } from './inventory.js';
@@ -87,6 +88,7 @@ async function _render() {
     : { exists: false, createdAt: null };
   const totpUser       = sess?.userId ? await Storage.users.get(sess.userId) : null;
   const unitStructure  = await Structure.load();
+  const licenseState   = getLicenseState();
   // Stored categories — null means "use defaults".
   const storedCats     = await Storage.settings.get('categories');
   const activeCats     = Array.isArray(storedCats) && storedCats.length > 0
@@ -106,6 +108,7 @@ async function _render() {
         ${_securitySectionHtml(settings)}
         ${_cloudSectionHtml(settings, status)}
         ${_dataSectionHtml(settings)}
+        ${_subscriptionSectionHtml(licenseState)}
         ${_aboutSectionHtml()}
       </div>
     </section>
@@ -1384,6 +1387,8 @@ function _wireEventListeners() {
   if (cloudForm) cloudForm.addEventListener('submit', _onSaveConfig);
   const unitForm = $('form[data-form="unit-config"]', _root);
   if (unitForm) unitForm.addEventListener('submit', _onSaveUnit);
+  const keyForm = $('form[data-form="activate-key"]', _root);
+  if (keyForm) keyForm.addEventListener('submit', _onActivateKey);
 
   const logoInput = $('input[data-target="logo-file-input"]', _root);
   if (logoInput) logoInput.addEventListener('change', _onLogoFileChange);
@@ -2821,6 +2826,149 @@ async function _performV1Import(file, btn) {
 
 // -----------------------------------------------------------------------------
 // About section
+// -----------------------------------------------------------------------------
+// Subscription section
+// -----------------------------------------------------------------------------
+
+function _subscriptionSectionHtml(ls) {
+  const STATE_LABELS = {
+    TRIAL:      'Free Trial',
+    ACTIVE:     'Active',
+    GRACE:      'Expired (Grace Period)',
+    RESTRICTED: 'Expired — Read-Only',
+    INVALID:    'Invalid Key',
+  };
+  const STATE_DOT = {
+    TRIAL:      'trial',
+    ACTIVE:     'active',
+    GRACE:      'grace',
+    RESTRICTED: 'restricted',
+    INVALID:    'invalid',
+  };
+
+  const stateLabel = STATE_LABELS[ls.state] ?? ls.state;
+  const dotClass   = `sub__status-dot sub__status-dot--${STATE_DOT[ls.state] ?? 'invalid'}`;
+
+  let detailHtml = '';
+  if (ls.state === 'TRIAL') {
+    const days = ls.trialDaysLeft ?? 0;
+    detailHtml = `
+      <div class="sub__detail-row">
+        <span class="sub__detail-label">Trial days remaining</span>
+        <span class="sub__detail-value">${days} day${days === 1 ? '' : 's'}</span>
+      </div>`;
+  } else if (ls.state === 'ACTIVE' || ls.state === 'GRACE') {
+    if (ls.payload?.unit) {
+      detailHtml += `
+        <div class="sub__detail-row">
+          <span class="sub__detail-label">Licensed unit</span>
+          <span class="sub__detail-value">${esc(ls.payload.unit)}</span>
+        </div>`;
+    }
+    if (ls.expiresAt) {
+      detailHtml += `
+        <div class="sub__detail-row">
+          <span class="sub__detail-label">Key expiry</span>
+          <span class="sub__detail-value">${esc(ls.expiresAt)}</span>
+        </div>`;
+    }
+    if (ls.state === 'ACTIVE' && ls.daysRemaining !== null) {
+      detailHtml += `
+        <div class="sub__detail-row">
+          <span class="sub__detail-label">Days remaining</span>
+          <span class="sub__detail-value">${ls.daysRemaining} day${ls.daysRemaining === 1 ? '' : 's'}</span>
+        </div>`;
+    }
+    if (ls.state === 'GRACE' && ls.graceDaysLeft !== null) {
+      detailHtml += `
+        <div class="sub__detail-row">
+          <span class="sub__detail-label">Grace period ends</span>
+          <span class="sub__detail-value">in ${ls.graceDaysLeft} day${ls.graceDaysLeft === 1 ? '' : 's'}</span>
+        </div>`;
+    }
+  } else if (ls.state === 'RESTRICTED' && ls.payload?.unit) {
+    detailHtml = `
+      <div class="sub__detail-row">
+        <span class="sub__detail-label">Last licensed unit</span>
+        <span class="sub__detail-value">${esc(ls.payload.unit)}</span>
+      </div>`;
+  }
+
+  const showRenew = ls.state === 'GRACE' || ls.state === 'RESTRICTED';
+  const renewHtml = showRenew
+    ? `<a href="https://qstore.seanscales.com.au/renew" target="_blank" rel="noopener"
+          class="btn btn--ghost sub__renew-btn">Renew online ↗</a>`
+    : '';
+
+  return `
+    <section class="settings__section" data-section="subscription">
+      <header class="settings__section-header">
+        <h2 class="settings__section-title">Subscription</h2>
+      </header>
+      <div class="sub__status-row">
+        <span class="${dotClass}" aria-hidden="true"></span>
+        <span class="sub__status-label">${esc(stateLabel)}</span>
+        ${renewHtml}
+      </div>
+      ${detailHtml ? `<div class="sub__details">${detailHtml}</div>` : ''}
+      <form class="form sub__key-form" data-form="activate-key" autocomplete="off">
+        <label class="form__field">
+          <span class="form__label">Subscription key</span>
+          <input type="text" name="licenseKey" class="form__input sub__key-input"
+                 placeholder="QSTRE-XXXXX-XXXXX-XXXXX-XXXXX or paste raw key"
+                 spellcheck="false" autocorrect="off" autocapitalize="characters">
+        </label>
+        <div class="form__error sub__key-error" role="alert"></div>
+        <div class="form__actions">
+          <button type="submit" class="btn btn--primary">Activate key</button>
+        </div>
+      </form>
+    </section>
+  `;
+}
+
+async function _onActivateKey(e) {
+  e.preventDefault();
+  const form  = e.currentTarget;
+  const errEl = $('.sub__key-error', _root);
+  const input = $('input[name="licenseKey"]', form);
+  const btn   = $('button[type="submit"]', form);
+  if (!errEl || !input || !btn) return;
+
+  errEl.textContent = '';
+  const raw = (input.value || '').trim();
+  if (!raw) { errEl.textContent = 'Enter a subscription key.'; return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Activating…';
+  try {
+    const result = activateKey(raw);
+    if (!result.ok) {
+      const msgs = {
+        bad_signature:    'Key signature is invalid. Check the key and try again.',
+        expired:          'Key has expired. Contact support to renew.',
+        malformed:        'Key format not recognised. Paste the full key as provided.',
+        malformed_payload:'Key format not recognised.',
+        missing_exp:      'Key is missing expiry information. Contact support.',
+        verify_error:     'Could not verify the key. Contact support.',
+        empty_key:        'No key entered.',
+      };
+      errEl.textContent = msgs[result.error] ?? `Activation failed (${result.error || 'unknown'}).`;
+      return;
+    }
+    input.value = '';
+    showToast(
+      result.state === 'ACTIVE'
+        ? `Subscription activated for ${result.payload?.unit ?? 'your unit'}.`
+        : `Key accepted (${result.state}).`,
+      'success'
+    );
+    await _render();
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Activate key'; }
+  }
+}
+
 // -----------------------------------------------------------------------------
 
 function _aboutSectionHtml() {

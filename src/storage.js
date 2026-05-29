@@ -35,6 +35,7 @@
 // =============================================================================
 
 import * as PII from './pii.js';
+import { requireEdit } from './license.js';
 
 const DEFAULT_DB_NAME = 'qstore';
 const DB_VERSION = 4;
@@ -401,6 +402,7 @@ export const items = {
   },
 
   async put(item) {
+    requireEdit();
     if (!item?.id) throw new Error('Item.id required');
     const tx = _db.transaction(STORES.ITEMS, 'readwrite');
     tx.objectStore(STORES.ITEMS).put(item);
@@ -409,6 +411,7 @@ export const items = {
 
   /** Remove an item and any associated photo. */
   async delete(id) {
+    requireEdit();
     const tx = _db.transaction([STORES.ITEMS, STORES.PHOTOS], 'readwrite');
     tx.objectStore(STORES.ITEMS).delete(id);
     tx.objectStore(STORES.PHOTOS).delete(id);
@@ -486,6 +489,7 @@ export const cadets = {
   },
 
   async put(cadet) {
+    requireEdit();
     if (!cadet?.svcNo) throw new Error('Cadet.svcNo required');
     const enc = await PII.encryptRecord(cadet, PII.PII_FIELDS_CADETS);
     const tx  = _db.transaction(STORES.CADETS, 'readwrite');
@@ -494,6 +498,7 @@ export const cadets = {
   },
 
   async delete(svcNo) {
+    requireEdit();
     const tx = _db.transaction(STORES.CADETS, 'readwrite');
     tx.objectStore(STORES.CADETS).delete(svcNo);
     await _txDone(tx);
@@ -529,6 +534,7 @@ export const loans = {
   },
 
   async put(loan) {
+    requireEdit();
     if (!loan?.ref) throw new Error('Loan.ref required');
     const enc = await PII.encryptRecord(loan, PII.PII_FIELDS_LOANS);
     const tx  = _db.transaction(STORES.LOANS, 'readwrite');
@@ -568,6 +574,7 @@ export const users = {
   },
 
   async put(user) {
+    requireEdit();
     if (!user?.id) throw new Error('User.id required');
     const enc = await PII.encryptRecord(user, PII.PII_FIELDS_USERS);
     const tx  = _db.transaction(STORES.USERS, 'readwrite');
@@ -576,6 +583,7 @@ export const users = {
   },
 
   async delete(id) {
+    requireEdit();
     const tx = _db.transaction(STORES.USERS, 'readwrite');
     tx.objectStore(STORES.USERS).delete(id);
     await _txDone(tx);
@@ -604,6 +612,7 @@ export const staff = {
   },
 
   async put(member) {
+    requireEdit();
     if (!member?.svcNo) throw new Error('Staff.svcNo required');
     const enc = await PII.encryptRecord(member, PII.PII_FIELDS_STAFF);
     const tx  = _db.transaction(STORES.STAFF, 'readwrite');
@@ -612,6 +621,7 @@ export const staff = {
   },
 
   async delete(svcNo) {
+    requireEdit();
     const tx = _db.transaction(STORES.STAFF, 'readwrite');
     tx.objectStore(STORES.STAFF).delete(svcNo);
     await _txDone(tx);

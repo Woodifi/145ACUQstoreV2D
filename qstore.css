@@ -4437,6 +4437,47 @@ details.totp-setup__manual-details[open] .totp-setup__manual-summary::before {
   text-decoration: underline;
 }
 
+/* ---- Subscription section (sub__*) ---- */
+.sub__status-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.sub__status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.sub__status-dot--active     { background: var(--good); }
+.sub__status-dot--trial      { background: var(--info); }
+.sub__status-dot--grace      { background: var(--warn); }
+.sub__status-dot--restricted { background: var(--danger); }
+.sub__status-dot--invalid    { background: var(--text-dim); }
+.sub__status-label { font-size: 14px; font-weight: 600; }
+.sub__renew-btn    { margin-left: auto; }
+.sub__details {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  margin-bottom: 16px;
+}
+.sub__detail-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+.sub__detail-row:last-child { border-bottom: none; }
+.sub__detail-label { color: var(--text-muted); }
+.sub__detail-value { font-weight: 500; }
+.sub__key-form     { margin-top: 4px; }
+.sub__key-input    { font-family: 'SF Mono', Consolas, monospace; font-size: 12px; letter-spacing: 0.02em; }
+.sub__key-error    { color: var(--danger); font-size: 13px; min-height: 1.2em; margin-top: 4px; }
+
 .about__license {
   border: 1px solid var(--border);
   border-radius: 6px;
