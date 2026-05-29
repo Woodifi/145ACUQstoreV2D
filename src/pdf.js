@@ -926,10 +926,15 @@ export async function generateStocktakeWorksheet(items, opts = {}) {
   }
 
   function drawRow(y, item, rowIdx) {
+    // Wrap item name across multiple lines if needed.
+    const nameLines = doc.splitTextToSize(item.name || '—', COLS[2].w - 2);
+    const LINE_H    = 3.8; // mm per line at 7.5pt
+    const rowH      = Math.max(ROW_H, nameLines.length * LINE_H + 3);
+
     // Alternating stripe on non-box columns.
     if (rowIdx % 2 === 1) {
       doc.setFillColor(...COL.rowFillEven);
-      doc.rect(M, y, COLS[3].x + COLS[3].w - M, ROW_H, 'F');
+      doc.rect(M, y, COLS[3].x + COLS[3].w - M, rowH, 'F');
     }
 
     // Text columns.
@@ -943,9 +948,9 @@ export async function generateStocktakeWorksheet(items, opts = {}) {
     // NSN
     doc.text(_fitText(doc, item.nsn || '—', COLS[1].w - 2), COLS[1].x + 1, y + 5);
 
-    // Item name
+    // Item name — wrapped
     doc.setFont('helvetica', 'bold');
-    doc.text(_fitText(doc, item.name || '—', COLS[2].w - 2), COLS[2].x + 1, y + 5);
+    doc.text(nameLines, COLS[2].x + 1, y + 5);
     doc.setFont('helvetica', 'normal');
 
     // Sys qty
@@ -956,13 +961,13 @@ export async function generateStocktakeWorksheet(items, opts = {}) {
     );
     doc.setTextColor(...COL.txtDark);
 
-    // Blank boxes for count columns.
+    // Blank boxes for count columns — expand with row height.
     const boxPad = 1;
     for (const c of COLS) {
       if (!c.box) continue;
       const bx = c.x + boxPad;
       const bw = c.w - boxPad * 2;
-      const bh = ROW_H - 2;
+      const bh = rowH - 2;
       doc.setDrawColor(...c.boxColor);
       doc.setLineWidth(c.totalCol ? 0.5 : 0.3);
       doc.setFillColor(255, 255, 255);
@@ -972,7 +977,8 @@ export async function generateStocktakeWorksheet(items, opts = {}) {
     // Light horizontal rule at row bottom for legibility.
     doc.setDrawColor(...COL.borderDim);
     doc.setLineWidth(0.15);
-    doc.line(M, y + ROW_H, M + PAGE.CW, y + ROW_H);
+    doc.line(M, y + rowH, M + PAGE.CW, y + rowH);
+    return rowH;
   }
 
   function drawSigBlock(y) {
@@ -1005,8 +1011,8 @@ export async function generateStocktakeWorksheet(items, opts = {}) {
       y = drawHeader(PAGE.MARGIN);
       y = drawColHeader(y);
     }
-    drawRow(y, items[i], i);
-    y += ROW_H;
+    const usedH = drawRow(y, items[i], i);
+    y += usedH;
   }
 
   // Signature block — only if there's room; otherwise a fresh page.
@@ -1855,22 +1861,25 @@ export async function generateCadetKitChecklist(loans, opts = {}) {
   } else {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
-    const ROW_H = 6.5;
+    const ROW_H_MIN = 6.5;
+    const LINE_H_KIT = 3.6;
     for (let i = 0; i < loans.length; i++) {
       const l = loans[i];
+      const nameLines = doc.splitTextToSize(String(l.itemName || '—'), COL_NAME.w - 2);
+      const rowH = Math.max(ROW_H_MIN, nameLines.length * LINE_H_KIT + 2);
+
       const fill = i % 2 === 0 ? [248, 246, 240] : [255, 255, 255];
       doc.setFillColor(...fill);
-      doc.rect(PAGE.MARGIN, y, PAGE.CW, ROW_H, 'F');
+      doc.rect(PAGE.MARGIN, y, PAGE.CW, rowH, 'F');
 
       doc.setTextColor(...COL.txtDark);
-      // Tick box
+      // Tick box — centred vertically in row
       doc.setDrawColor(...COL.tan);
       doc.setLineWidth(0.4);
-      doc.rect(COL_CHK.x + 2, y + 1.5, 4, 4);
+      doc.rect(COL_CHK.x + 2, y + (rowH - 4) / 2, 4, 4);
       // Data
-      doc.text(String(l.nsn || '—').slice(0, 18),  COL_NSN.x + 1,  y + 4.5);
-      const itemTrunc = String(l.itemName || '—').slice(0, 40);
-      doc.text(itemTrunc, COL_NAME.x + 1, y + 4.5);
+      doc.text(_fitText(doc, String(l.nsn || '—'), COL_NSN.w - 2), COL_NSN.x + 1, y + 4.5);
+      doc.text(nameLines, COL_NAME.x + 1, y + 4.5);
       doc.text(String(l.qty || 1),         COL_QTY.x + 1,  y + 4.5);
       doc.text(String(l.issueDate || '—'), COL_ISS.x + 1,  y + 4.5);
       const dueLabel = l.longTermLoan ? 'Long-term' : (l.dueDate || '—');
@@ -1878,8 +1887,8 @@ export async function generateCadetKitChecklist(loans, opts = {}) {
 
       // Row bottom border
       doc.setLineWidth(0.2);
-      doc.line(PAGE.MARGIN, y + ROW_H, PAGE.MARGIN + PAGE.CW, y + ROW_H);
-      y += ROW_H;
+      doc.line(PAGE.MARGIN, y + rowH, PAGE.MARGIN + PAGE.CW, y + rowH);
+      y += rowH;
     }
     y += 3;
   }
@@ -1999,26 +2008,29 @@ export async function generateBoardOfSurvey(items, opts = {}) {
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
-  const ROW_H = 7;
+  const ROW_H_MIN_174 = 7;
+  const LINE_H_174    = 3.6;
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     const woQty = Number(item.qtyWrittenOff || item.writtenOff) || 0;
+    const nameLines   = doc.splitTextToSize(String(item.name  || '—'), COL_NAME.w - 2);
+    const reasonLines = doc.splitTextToSize(String(item.notes || '—'), COL_REASON.w - 2);
+    const rowH = Math.max(ROW_H_MIN_174,
+      Math.max(nameLines.length, reasonLines.length) * LINE_H_174 + 2.5);
     const fill = i % 2 === 0 ? [248, 246, 240] : [255, 255, 255];
     doc.setFillColor(...fill);
-    doc.rect(PAGE.MARGIN, y, PAGE.CW, ROW_H, 'F');
+    doc.rect(PAGE.MARGIN, y, PAGE.CW, rowH, 'F');
     doc.setTextColor(...COL.txtDark);
-    doc.text(String(i + 1), COL_NUM.x + 4,    y + 4.5, { align: 'right' });
-    doc.text(String(item.nsn || '—').slice(0, 18), COL_NSN.x + 1, y + 4.5);
-    doc.text(String(item.name || '—').slice(0, 35), COL_NAME.x + 1, y + 4.5);
+    doc.text(String(i + 1), COL_NUM.x + 4, y + 4.5, { align: 'right' });
+    doc.text(_fitText(doc, String(item.nsn || '—'), COL_NSN.w - 2), COL_NSN.x + 1, y + 4.5);
+    doc.text(nameLines, COL_NAME.x + 1, y + 4.5);
     doc.text(String(woQty), COL_QTY.x + 6, y + 4.5, { align: 'right' });
     doc.text('Written off', COL_COND.x + 1, y + 4.5);
-    // Reason line (abbreviated from item notes)
-    const reason = String(item.notes || '—').slice(0, 20);
-    doc.text(reason, COL_REASON.x + 1, y + 4.5);
+    doc.text(reasonLines, COL_REASON.x + 1, y + 4.5);
     doc.setDrawColor(...COL.borderLight);
     doc.setLineWidth(0.2);
-    doc.line(PAGE.MARGIN, y + ROW_H, PAGE.MARGIN + PAGE.CW, y + ROW_H);
-    y += ROW_H;
+    doc.line(PAGE.MARGIN, y + rowH, PAGE.MARGIN + PAGE.CW, y + rowH);
+    y += rowH;
   }
   y += 4;
 
