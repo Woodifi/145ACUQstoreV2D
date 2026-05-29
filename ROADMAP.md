@@ -22,6 +22,7 @@ All planned IMS features are shipped. Focus is now on licensing, commercial infr
 | ✅ | First lifetime key issued (422 ACU StMichaels College) |
 | ✅ | Distro builds → unit subdirectories |
 | ✅ | PDF worksheets wrap long item names |
+| ✅ | **V2L Learning Edition** — sandboxed training build pre-loaded with sample AAC data |
 
 ---
 
@@ -61,6 +62,19 @@ See `platform-core/docs/ONBOARDING_NEW_PRODUCT.md` for the 6-step integration pr
 | 💡 | Photo cloud sync | Currently excluded (too large); would need chunked upload |
 | 💡 | Offline PWA wrapper | Service worker for true PWA install |
 | 💡 | Unit-to-unit transfer receipts | PDF documentation for equipment transfers between units |
+
+---
+
+## V2L — Learning Edition Rebuild Policy
+
+**V2L is not rebuilt as part of routine V2 updates.** It is rebuilt only when:
+- A **critical security fix** is backported to V2 (e.g. auth bypass, data corruption)
+- A **major usability bug** is identified that would hinder cadet learning
+- The seed data needs updating (new realistic data, corrected NSNs, etc.)
+
+To rebuild: `node V2L/build-v2l.mjs` → output to `V2L/dist/v2l.html`
+
+V2L does **not** receive: feature additions, UI tweaks, cosmetic fixes, minor bug patches.
 
 ---
 
