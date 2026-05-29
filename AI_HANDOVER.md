@@ -1,16 +1,21 @@
-# QStore IMS — AI Handover Document
+# QStore IMS v2 — AI Handover Document
 
-> **Purpose:** Concise orientation for any AI assistant reviewing or extending this project.
-> **Last updated:** 2026-05-27 (auto-maintained — update after every significant change)
+> **Purpose:** Concise orientation for any AI assistant (Claude or ChatGPT) reviewing or extending this project.
+> **Last updated:** 2026-05-29 (auto-maintained — update after every significant change)
 
 ---
 
 ## 1. Product Name & Tier
 
 **QStore IMS v2** — inventory management system for Australian Army Cadet (AAC) unit Q-Stores.
-- Tier: Pay/donate (free to use; donation requested)
-- Tier above: QStore V3 (commercial SaaS, separate repo)
-- Distribution: single self-contained HTML file (no server required)
+
+| | |
+|---|---|
+| **Tier** | Paid Tier 1 — subscription-based, 30-day free trial |
+| **Tier above** | QStore V3 (Paid Tier 2 — IMS + Accounting, commercial SaaS, separate repo) |
+| **Tier below** | QStore V1 (legacy, free, no longer maintained — not in this directory) |
+| **Distribution** | Single self-contained HTML file (no server required, works offline) |
+| **Licensing** | Ed25519-signed subscription keys; trial/grace/restricted enforcement |
 
 ---
 
@@ -20,10 +25,11 @@
 |---|---|
 | Language | Vanilla ES modules (no framework) |
 | Bundler | esbuild → single-file HTML |
-| Storage | IndexedDB (all persistent data) |
+| Storage | IndexedDB (all persistent data, DB_VERSION 3) |
 | Auth | argon2id PIN, optional TOTP 2FA (RFC 6238), AES-256-GCM PII encryption |
+| Licensing | Ed25519 signed keys (`src/license.js`), `@noble/curves` |
 | Cloud sync | OneDrive via MSAL 5.x (last-write-wins snapshot) |
-| PDF | jsPDF (custom) |
+| PDF | jsPDF (custom generators) |
 | QR | qrcode-generator |
 | PDF parse | pdfjs-dist (FakeWorker) for AAC Orders import |
 | Build output | `dist/qstore.html` + `docs/index.html` (GitHub Pages) |
@@ -35,9 +41,9 @@
 - **Path:** `C:\ClaudeAImemoryfolder\QStore\qstore-v2-wip\`
 - **Remote:** `https://github.com/Woodifi/145ACUQstoreV2D.git` (branch: `master`)
 - **Build:** `node build.js` → `dist/qstore.html` + `docs/index.html`
-- **Dist:** `node build.js --dist --recipient="Unit Name"` → named single-file HTML (never overwrites docs/)
-- **Tests:** `for t in test-ranks test-unit-branding test-export-import test-recovery test-cadets test-loans test-audit test-pdf test-cloud-disable test-v1-import test-inventory test-csv-import test-stocktake test-qr test-ab189; do node "$t.mjs"; done`
-- **Test count:** 491 across 15 suites
+- **Dist:** `node build.js --dist --recipient="Unit Name"` → `dist/<unit-slug>/qstore-<slug>-<buildid>.html`
+- **Tests:** 16 suites (test-ranks, test-unit-branding, test-export-import, test-recovery, test-cadets, test-loans, test-audit, test-pdf, test-ab189, test-cloud-disable, test-v1-import, test-inventory, test-csv-import, test-stocktake, test-qr, test-license)
+- **Test count:** 522 across 16 suites
 
 ---
 
@@ -49,7 +55,8 @@ qstore-v2-wip/
 │   ├── auth.js            # argon2id PIN, TOTP, session, lockout
 │   ├── cloud.js           # MSAL 5.x OneDrive sync provider
 │   ├── sync.js            # LWW snapshot sync orchestrator
-│   ├── storage.js         # IndexedDB layer (all stores)
+│   ├── storage.js         # IndexedDB layer (requireEdit() on all writes)
+│   ├── license.js         # Ed25519 subscription key validation + enforcement
 │   ├── pii.js             # AES-256-GCM field-level PII encryption
 │   ├── totp.js            # RFC 6238 TOTP implementation
 │   ├── pdf.js             # All PDF generators (jsPDF)
@@ -57,9 +64,9 @@ qstore-v2-wip/
 │   ├── structure.js       # Company/Platoon/Section helpers
 │   ├── order-parser.js    # AAC Orders PDF parser (pdfjs)
 │   └── ui/
-│       ├── shell.js       # App boot, session, nav, idle lock
+│       ├── shell.js       # App boot, session, nav, idle lock, license banner
 │       ├── login.js       # Login picker, PIN keypad, TOTP step
-│       ├── settings.js    # All settings (unit, sync, data, security)
+│       ├── settings.js    # All settings including Subscription section
 │       ├── inventory.js   # Inventory CRUD, stocktake, reports
 │       ├── loans.js       # Issue, return, all-loans, bulk actions
 │       ├── cadets.js      # Cadet management, equipment profile
@@ -73,17 +80,22 @@ qstore-v2-wip/
 │       ├── ims-reports.js # IMS reports hub
 │       ├── reference.js   # Uniform sizing reference
 │       └── ...
+├── keys/
+│   ├── generate-key.mjs   # License key generator (requires private.key)
+│   └── private.key        # GITIGNORED — Ed25519 private key (keep secure)
 ├── test-*.mjs             # Test suites (node, no browser)
 ├── build.js               # esbuild bundler + dist packaging
 ├── MANUAL.md              # User manual (public)
 ├── TECHNICAL.md           # Developer technical reference
 ├── AI_HANDOVER.md         # This file
+├── ROADMAP.md             # Product roadmap
+├── CHANGELOG.md           # Version history
 └── ACTIONS.log            # Autonomous action log
 ```
 
 ---
 
-## 5. Database Schema (IndexedDB — DB_VERSION 4)
+## 5. Database Schema (IndexedDB — DB_VERSION 3)
 
 | Store | Key | PII Encrypted Fields | Purpose |
 |---|---|---|---|
@@ -104,126 +116,132 @@ qstore-v2-wip/
 
 ---
 
-## 6. Authentication
+## 6. Authentication & Licensing
 
-- **PINs:** argon2id (memoryCost=19456, timeCost=2, parallelism=1), 4–8 digits
-- **Lockout:** 5 failures → 15 min, 10 → 30 min, 15+ → 60 min (localStorage, per-user)
-- **Roles:** `oc` (full access), `qm` (operational, no user management), `viewer` (read-only), `cadet` (own data only)
-- **TOTP 2FA:** RFC 6238 TOTP, QR code enrolment, SHA-256 hashed backup codes, replay guard
-- **Auto-lock:** 5–60 min idle (default 15), visibilitychange sleep/wake detection, suspends session token on lock
-- **PII encryption:** AES-256-GCM per-field, device-specific piiKey (never exported)
-- **Export encryption:** Optional AES-256-GCM with PBKDF2-SHA256 310k iterations on `.qstore` files
+**Auth:**
+- PINs: argon2id (memoryCost=19456, timeCost=2, parallelism=1), 4–8 digits
+- Lockout: 5 failures → 15 min, 10 → 30 min, 15+ → 60 min
+- Roles: `oc` (full), `qm` (operational), `viewer` (read-only), `cadet` (own data only)
+- TOTP 2FA: RFC 6238, QR code enrolment, SHA-256 hashed backup codes, replay guard
+- Auto-lock: 5–60 min idle, sleep/wake detection, session suspended on lock
+- PII: AES-256-GCM per-field, device-specific piiKey (never exported)
+
+**Licensing (added 2026-05-29):**
+- 30-day free trial on first launch
+- 14-day grace period on expiry
+- RESTRICTED state = read-only (view, export, print still work)
+- Keys: Ed25519-signed, `QSTRE-XXXXX-XXXXX-...` human format
+- V2 public key: `eb72334df2894f576a922de348a7fd28842857ee8b2ca9f93ea1ba895624339e`
+- Private key: `keys/private.key` (gitignored — back up securely)
+- Generate new key: `node keys/generate-key.mjs --unit="Unit Name" --tier=lifetime`
+- Settings → Subscription shows status + activate form
 
 ---
 
-## 7. Current Functionality (v2.3.0)
+## 7. Current Functionality (v2.3.0+)
 
-**Inventory:** CRUD, NSN, category, location, photos, condition breakdown (Svc/U/S/Repr/Cal/W/O), low/zero stock badges, maintenance notes log, QR codes, AB174 Board of Survey PDF
+**Inventory:** CRUD, NSN, category, location, photos, condition breakdown (Svc/U/S/Repr/Cal/W/O), low/zero stock badges, maintenance notes log, QR codes, AB174 Board of Survey PDF, inventory sort by category→NSN
 
 **Loans:** Issue (standard/non-stock/existing/unit), return, all-loans view, quick return, bulk return, bulk purpose change, overdue tracking, long-term loans, Initial Issue (6-year), borrower sub-unit grouping
 
-**Cadets:** CRUD, sub-unit structure (Coy/Plt/Sec), equipment profile, discharge recall, cadet data isolation (cadets see only own records)
+**Cadets:** CRUD, sub-unit structure (Coy/Plt/Sec), equipment profile, discharge recall, cadet data isolation, kit checklist PDF
 
-**Staff:** Separate module, CRUD, staff borrowers in loans
+**Staff:** Separate module, CRUD, staff as loan borrowers
 
-**Requests:** AB189 workflow — cadet submit, QM approve/issue/deny, editable issue items modal, copy to cadets, print AB189
+**Requests:** AB189 workflow — cadet submit, QM approve/issue/deny, editable issue modal, copy to cadets, print AB189
 
-**Orders:** AAC supply order PDF import (pdfjs), receive with qty adjustment, post-receive accounting prompt
+**Orders:** AAC supply order PDF import (pdfjs), receive with qty adjustment
 
-**Stocktake:** Count + condition breakdown, draft management, finalise (atomic IDB transaction)
+**Stocktake:** Count + condition breakdown, draft management, atomic IDB finalise
 
-**Reports:** IMS reports hub (outstanding loans, written-off items, issue history, kit allocation), CSV export, print
+**Reports:** IMS reports hub, CSV export, print; PDF worksheets now wrap long item names
 
-**Security:** All above + cloud sync (OneDrive), export/import backup, HMAC audit chain
+**Security:** TOTP 2FA, HMAC audit chain, PII encryption, auto-lock, export encryption
 
-**Settings:** Unit profile, logo upload + "Download unit copy" (embeds logo in HTML for new-device distribution), cloud sync, data backup/restore, user management, 2FA, recovery codes, auto-lock, theme, categories, sub-structure, loan defaults
-
----
-
-## 8. APIs / Key Exports
-
-- `Storage.*` — all IDB operations (items, loans, cadets, staff, users, audit, settings, etc.)
-- `AUTH.*` — login, logout, session, PIN verify, TOTP, lockout, isCadet()
-- `Sync.*` — notifyChanged, syncNow, loadFromCloud, addStatusListener
-- `Cloud.*` — MSAL sign-in/out, read/write, resetAuthState
-- `PII.*` — encrypt, decrypt, encryptRecord, decryptRecord, decryptAll
-- `Storage.atomic.*` — issue(loan, item), return(loan, item), stocktakeFinalise(items[])
+**Settings:** Full unit profile, logo, cloud sync, backup/restore, user management, 2FA, recovery codes, auto-lock, theme (dark/light/system), categories, sub-structure, loan defaults, **Subscription** (license key activation)
 
 ---
 
-## 9. Licensing / Subscriptions
+## 8. Licensing Key Management
 
-- No licensing enforcement in V2 (pay/donate model)
-- Single-file HTML, no backend
-- V3 is the commercial tier; V3 SaaS backend = **Platform Core** (see below)
+```
+# Generate new keypair (first time only — already done, DON'T RUN again)
+node keys/generate-key.mjs --generate-keypair
+
+# Generate a key for a new unit
+node keys/generate-key.mjs --unit="Unit Name" --tier=lifetime
+
+# Generate an annual key
+node keys/generate-key.mjs --unit="Unit Name" --tier=annual --exp=2027-05-31
+```
+
+**CRITICAL:** Back up `keys/private.key` outside the repo. If lost, no new keys can be signed.
 
 ---
 
-## 10. Deployment
+## 9. Distribution
 
-- **Development:** Open `dist/qstore.html` in browser (Chromium/Edge recommended)
-- **GitHub Pages:** `docs/index.html` is served at the repo's Pages URL
-- **Distribution:** `node build.js --dist --recipient="Unit Name"` → standalone HTML
-- **Unit copy with embedded logo:** Settings → Upload logo → "Download unit copy" button
+```
+# Standard build (source + GitHub Pages update)
+node build.js
+
+# Named distro for a specific unit
+node build.js --dist --recipient="422 ACU StMichaels College"
+# → dist/422-acu-stmichaels-college/qstore-422-acu-stmichaels-college-YYYYMMDD-XXXXXXXX.html
+```
+
+- Recipient distro files are local only — NEVER pushed to GitHub
+- Each recipient gets their own subdirectory under `dist/`
+- Previous builds for the same recipient are auto-deleted on new build
 
 ---
 
-## 11. SaaS Backend — Platform Core
+## 10. SaaS Backend — Platform Core
 
 The SaaS backend for this product family is **Platform Core**, located at:
 `C:\ClaudeAImemoryfolder\QStore\platform-core`
 
-It is a complete, tested system with:
-- `auth-service` (port 3001) — RS256 JWT, refresh token rotation
-- `licence-api` (port 3002) — licence issuance, validation, revocation
-- `billing-service` (port 3003) — Stripe abstraction, invoices, trial management
-- `notification-service` (port 3004) — email events
-- `portal-web` (port 3000) — self-service user portal (Next.js 14)
-- `admin-dashboard` (port 3005) — admin management (Next.js 14)
-- `@platform-core/sdk` — typed `PlatformClient` for product integration
-
-V2 does not integrate directly with Platform Core (pay/donate, no licensing enforcement). V3 will register as product slug `qstore-ims-v3` and use Platform Core for all subscription/licensing. See V3's `AI_HANDOVER.md` section 9 for the full integration plan.
-
-The marketing website should link to the Platform Core `portal-web` for unit subscriptions — do not design a custom checkout or licensing flow.
+All 8 phases complete. Provides auth, licensing, billing, subscriptions, user portal, admin dashboard.
+V2 integration with Platform Core is a future milestone.
 
 ---
 
-## 12. Current Sprint (as of 2026-05-27)
+## 11. Current State (as of 2026-05-29)
 
-- Fixed: export stack overflow (`_b64` spread overflow on large backups)
-- Fixed: logo not visible on new device after cloud load (mirror to localStorage after importAll)
-- Added: "Download unit copy" — embeds logo + unit config into HTML for distribution
-- Clarified: SaaS backend = Platform Core (already built); V3 integration is the next milestone
-
----
-
-## 13. Next Sprint (planned)
-
-- Register QStore IMS v3 in Platform Core (Admin Dashboard)
-- Marketing website (ChatGPT-led; links to Platform Core portal-web for subscriptions)
-- No new V2 IMS features planned; V2 is feature-complete
+- ✅ Ed25519 licensing system added (30-day trial, grace, restricted enforcement)
+- ✅ Lifetime key issued for 422 ACU StMichaels College
+- ✅ PDF worksheets wrap long item descriptions (no more ellipsis truncation)
+- ✅ Inventory item notes wrap in table (no more truncation)
+- ✅ Recipient distros go to unit subdirectories
+- ✅ 522/522 tests passing (16 suites)
 
 ---
 
-## 14. Known Issues / Constraints
+## 12. Next Steps
 
-- `file://` URLs: MSAL cloud sync requires HTTPS or localhost — not available when opened directly from filesystem
+- Register QStore IMS v2 as a product in Platform Core
+- Marketing website (ChatGPT-led)
+- Platform Core → V2 license validation API integration (replace local Ed25519 with SDK)
+
+---
+
+## 13. Known Issues / Constraints
+
+- `file://` URLs: MSAL cloud sync requires HTTPS or localhost
 - Chrome/Edge recommended; Firefox has stricter `crypto.subtle` restrictions on `file://`
-- PII encryption is device-bound — a raw IDB file copied to another device is unreadable (by design)
-- Session token in localStorage can be read by any JS running in the same origin (documented limitation)
+- PII encryption is device-bound — raw IDB copy to another device is unreadable (by design)
 - Cloud sync is last-write-wins snapshot — no conflict resolution; concurrent edits from two devices will lose one
-- Photos are stored as Blobs in IDB — not included in cloud sync (too large); included in local backup exports
+- Photos stored as Blobs in IDB — not included in cloud sync; included in local backup exports
 
 ---
 
-## 15. Work Split (ChatGPT / Claude)
+## 14. Work Split (ChatGPT / Claude)
 
 | Claude | ChatGPT |
 |---|---|
-| Coding, testing, refactoring | Product strategy, feature prioritisation |
-| Database migrations | Security reviews |
-| Platform Core → V3 integration | Monetisation strategy |
-| Bug fixes | **Marketing website & sales funnel** |
-| — | Licensing model documentation |
-| — | User guides, release notes |
-| — | Investor/business material |
+| All coding, testing, refactoring | Product strategy, feature prioritisation |
+| Database migrations | Monetisation strategy |
+| License key generation | **Marketing website & sales funnel** |
+| Bug fixes | User guides, release notes |
+| IMS feature development | Investor/business material |
+| Platform Core → V2 integration | Licensing model documentation |
