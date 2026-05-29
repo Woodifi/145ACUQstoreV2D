@@ -804,3 +804,9 @@ The old loop never found them, so "Reset sign-in state" couldn't unblock a stuck
 - **V2**: commit 081016b, build 20260528-0332538E, pushed to GitHub
 - **V3**: commit 4bb18c0 (local only)
 - Tests: V2 15/15 suites pass (491 tests), V3 27/27 suites pass (1181 tests)
+
+[2026-05-29] FIX — Inventory item notes now wrap instead of truncate
+  qstore.css .inv__notes: removed max-width:300px, overflow:hidden, text-overflow:ellipsis, white-space:nowrap
+  Replaced with white-space:normal + overflow-wrap/word-break:break-word
+  V2 commit: 174f01a — pushed to GitHub | V3 commit: b1c477b
+  Tests: V2 15/15, V3 27/27
