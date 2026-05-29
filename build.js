@@ -132,22 +132,26 @@ async function buildOnce() {
   await mkdir(DIST_DIR, { recursive: true });
 
   if (isDist) {
-    // Distribution build — write a uniquely-named file to dist/, never touch docs/.
+    // Distribution build — write to dist/<unit-slug>/, never touch docs/.
     const slug = RECIPIENT
       ? RECIPIENT.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
       : 'unit';
 
+    // Each recipient gets its own subdirectory under dist/.
+    const unitDir = join(DIST_DIR, slug);
+    await mkdir(unitDir, { recursive: true });
+
     // Remove any previous dist builds for this recipient before writing the new one.
     try {
-      const existing = (await readdir(DIST_DIR))
+      const existing = (await readdir(unitDir))
         .filter(f => f.startsWith(`qstore-${slug}-`) && f.endsWith('.html'));
       for (const f of existing) {
-        await unlink(join(DIST_DIR, f));
+        await unlink(join(unitDir, f));
         console.log(`  removed old: ${f}`);
       }
-    } catch { /* dist dir may not exist yet — mkdir below handles it */ }
+    } catch { /* unit dir may not exist yet — handled above */ }
 
-    const distFile = join(DIST_DIR, `qstore-${slug}-${BUILD_ID}.html`);
+    const distFile = join(unitDir, `qstore-${slug}-${BUILD_ID}.html`);
     await writeFile(distFile, html);
     await _appendDistLog(distFile, slug);
     console.log(`✓ ${distFile}`);
