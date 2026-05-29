@@ -9,7 +9,7 @@
 // synchronously on the next boot (before IndexedDB is ready) to avoid flash.
 // =============================================================================
 
-const LS_KEY = 'qstore2_theme';
+const LS_KEY = (typeof __V2L_THEME_KEY__ !== 'undefined') ? __V2L_THEME_KEY__ : 'qstore2_theme';
 
 /**
  * Apply a theme value immediately.

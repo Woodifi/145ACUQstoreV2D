@@ -124,6 +124,10 @@ let _cachedState = null;
 let _testPubKey  = null;
 
 export function getLicenseState() {
+  // V2L sandbox — always active, no key required.
+  if (typeof __V2L_SANDBOX__ !== 'undefined' && __V2L_SANDBOX__) {
+    return { state: 'ACTIVE', payload: { unit: 'Learning Edition', tier: 'v2l' }, daysRemaining: 9999, trialDaysLeft: null, expiresAt: null };
+  }
   if (IS_DEV) {
     return { state: 'ACTIVE', payload: { unit: 'Development', tier: 'v2' }, daysRemaining: 365, trialDaysLeft: null, expiresAt: null };
   }
@@ -189,6 +193,7 @@ export function clearKey() {
 // -----------------------------------------------------------------------------
 
 export function requireEdit() {
+  if (typeof __V2L_SANDBOX__ !== 'undefined' && __V2L_SANDBOX__) return;
   if (IS_DEV) return;
   const { state } = getLicenseState();
   if (state === 'RESTRICTED') throw new LicenseRestrictedError();

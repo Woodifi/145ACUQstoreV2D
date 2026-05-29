@@ -69,6 +69,8 @@ let _busy = false;
  * after Storage.init.
  */
 export async function init() {
+  // V2L sandbox — cloud sync is disabled to prevent interaction with real units.
+  if (typeof __V2L_SANDBOX__ !== 'undefined' && __V2L_SANDBOX__) { _emitStatus(); return; }
   _lastError = null;
   await getProvider().init();
   _emitStatus();
@@ -83,6 +85,7 @@ export async function init() {
  * — the actual upload happens later, asynchronously.
  */
 export async function notifyChanged() {
+  if (typeof __V2L_SANDBOX__ !== 'undefined' && __V2L_SANDBOX__) return;
   if (!await _shouldAutoSync()) return;
   if (_debounceTimer) clearTimeout(_debounceTimer);
   _debounceTimer = setTimeout(() => {

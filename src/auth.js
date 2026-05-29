@@ -74,7 +74,8 @@ export const PERMS = Object.freeze({
   ro:    ['view', 'requestIssue', 'reports'],
 });
 
-const SESSION_STORAGE_KEY    = 'qstore_session';
+// V2L sandbox: separate session key prevents login state bleed.
+const SESSION_STORAGE_KEY    = (typeof __V2L_SESSION_KEY__ !== 'undefined') ? __V2L_SESSION_KEY__ : 'qstore_session';
 const SETTING_INVALIDATED_AT = 'session.invalidatedAt';
 
 const ARGON_PARAMS = {

@@ -396,6 +396,11 @@ export async function boot(rootEl) {
     await Storage.init();
     await Storage.requestPersistence();
 
+    // V2L sandbox: seed sample data on very first launch.
+    if (typeof __V2L_SANDBOX__ !== 'undefined' && __V2L_SANDBOX__) {
+      await _v2lSeedIfNeeded();
+    }
+
     // Restore logo from localStorage mirror if IndexedDB has lost it.
     // This helps when the HTML file is upgraded at the same origin/path
     // (GitHub Pages update, or overwriting a local file at the same path).
@@ -501,6 +506,7 @@ async function _renderShell() {
         </button>
       </header>
 
+      ${(typeof __V2L_SANDBOX__ !== 'undefined' && __V2L_SANDBOX__) ? _v2lSandboxBannerHtml() : ''}
       ${showBanner ? _defaultPinBannerHtml() : ''}
       ${_licenseBannerHtml(licenseState)}
 
@@ -735,6 +741,48 @@ async function _teardownCurrentPage() {
     catch (e) { console.error('page unmount error:', e); }
   }
   _currentUnmount = null;
+}
+
+// -----------------------------------------------------------------------------
+// V2L Sandbox — banner + seed data injection
+// -----------------------------------------------------------------------------
+
+function _v2lSandboxBannerHtml() {
+  return `
+    <div class="shell__banner" style="background:rgba(107,176,255,0.12);border-bottom:2px solid var(--info);color:var(--info);" role="alert">
+      <strong>⚡ QStore IMS V2L — Learning Edition</strong>
+      &nbsp;This is a sandboxed training environment. Data is isolated and cloud sync is disabled.
+      No changes here will affect any real unit.
+    </div>
+  `;
+}
+
+async function _v2lSeedIfNeeded() {
+  const seed = (typeof __V2L_SEED__ !== 'undefined') ? __V2L_SEED__ : null;
+  if (!seed) return;
+  try {
+    const count = await Storage.items.count();
+    if (count > 0) return;   // already seeded — don't overwrite
+
+    for (const [k, v] of Object.entries(seed.settings || {})) {
+      await Storage.settings.set(k, v);
+    }
+    for (const item of seed.items || []) {
+      await Storage.items.put(item);
+    }
+    for (const cadet of seed.cadets || []) {
+      await Storage.cadets.put(cadet);
+    }
+    for (const member of seed.staff || []) {
+      await Storage.staff.put(member);
+    }
+    for (const loan of seed.loans || []) {
+      await Storage.loans.put(loan);
+    }
+    console.info('[V2L] Sample data seeded successfully.');
+  } catch (err) {
+    console.warn('[V2L] Seed failed (non-fatal):', err);
+  }
 }
 
 // -----------------------------------------------------------------------------

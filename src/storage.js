@@ -37,7 +37,8 @@
 import * as PII from './pii.js';
 import { requireEdit } from './license.js';
 
-const DEFAULT_DB_NAME = 'qstore';
+// V2L sandbox: use a separate DB so learning data never touches production IDB.
+const DEFAULT_DB_NAME = (typeof __V2L_DB_NAME__ !== 'undefined') ? __V2L_DB_NAME__ : 'qstore';
 const DB_VERSION = 4;
 
 let _dbName = DEFAULT_DB_NAME;
