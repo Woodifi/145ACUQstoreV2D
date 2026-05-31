@@ -19,3 +19,5 @@ dist/qstore-*-????????.html
 
 admin/.env
 admin/issued-keys.log
+
+V2L/dist/
