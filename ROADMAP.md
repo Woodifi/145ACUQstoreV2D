@@ -30,7 +30,7 @@ All planned IMS features are shipped. Focus is now on licensing, commercial infr
 
 | Priority | Item | Notes |
 |---|---|---|
-| High | **Register V2 as product in Platform Core** | Product slug `qstore-ims-v2`; plans: annual, lifetime |
+| High | **Register V2 as product in Platform Core** | Product slug `qstore-ims-v2`; plan: `v2-annual` ($180/yr, $90 first year) |
 | High | **Replace local Ed25519 with Platform Core SDK** | `platform.licensing.validate()` replaces `src/license.js` |
 | High | **Marketing website** | ChatGPT-led; links to Platform Core `portal-web` for subscriptions |
 | Medium | **Online key activation portal** | Unit OCs subscribe online → key auto-generated → download |
@@ -43,7 +43,7 @@ All planned IMS features are shipped. Focus is now on licensing, commercial infr
 When Platform Core is deployed to production:
 
 1. Register product `qstore-ims-v2` in Admin Dashboard
-2. Create plans: `v2-annual` (12-month), `v2-lifetime` (perpetual)
+2. Create plan: `v2-annual` (12-month, $180/yr — $90 first year intro offer)
 3. Install `@platform-core/sdk` in V2
 4. Replace `src/license.js` Ed25519 local validation with `platform.licensing.validate(unitId)`
 5. Map TRIAL/ACTIVE/GRACE/RESTRICTED → Platform Core licence states

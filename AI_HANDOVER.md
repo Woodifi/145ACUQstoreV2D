@@ -1,7 +1,7 @@
 # QStore IMS v2 — AI Handover Document
 
 > **Purpose:** Concise orientation for any AI assistant (Claude or ChatGPT) reviewing or extending this project.
-> **Last updated:** 2026-05-29 (auto-maintained — update after every significant change)
+> **Last updated:** 2026-05-31 (auto-maintained — update after every significant change)
 
 ---
 
@@ -11,7 +11,7 @@
 
 | | |
 |---|---|
-| **Tier** | Paid Tier 1 — subscription-based, 30-day free trial |
+| **Tier** | Paid Tier 1 — $180/yr annual subscription (50% off first year: $90); 30-day free trial |
 | **Tier above** | QStore V3 (Paid Tier 2 — IMS + Accounting, commercial SaaS, separate repo) |
 | **Tier below** | QStore V1 (legacy, free, no longer maintained — not in this directory) |
 | **Distribution** | Single self-contained HTML file (no server required, works offline) |
@@ -43,7 +43,7 @@
 - **Build:** `node build.js` → `dist/qstore.html` + `docs/index.html`
 - **Dist:** `node build.js --dist --recipient="Unit Name"` → `dist/<unit-slug>/qstore-<slug>-<buildid>.html`
 - **Tests:** 16 suites (test-ranks, test-unit-branding, test-export-import, test-recovery, test-cadets, test-loans, test-audit, test-pdf, test-ab189, test-cloud-disable, test-v1-import, test-inventory, test-csv-import, test-stocktake, test-qr, test-license)
-- **Test count:** 522 across 16 suites
+- **Test count:** 522 across 16 suites (all passing as of 2026-05-29)
 
 ---
 

@@ -9,12 +9,12 @@ node build.js --dev                                  # dev build (no minificatio
 node build.js --dist --recipient="Unit Name"         # dist/qstore-UNIT-DATE-ID.html (no docs touch)
 ```
 
-## Tests — 491 across 15 suites
+## Tests — 522 across 16 suites
 Run all (PowerShell, from project root):
 ```powershell
 cd "C:\ClaudeAImemoryfolder\QStore\qstore-v2-wip"
 $pass=0; $fail=0
-foreach ($t in @("test-ranks","test-unit-branding","test-export-import","test-recovery","test-cadets","test-loans","test-audit","test-pdf","test-ab189","test-cloud-disable","test-v1-import","test-inventory","test-csv-import","test-stocktake","test-qr")) {
+foreach ($t in @("test-ranks","test-unit-branding","test-export-import","test-recovery","test-cadets","test-loans","test-audit","test-pdf","test-ab189","test-cloud-disable","test-v1-import","test-inventory","test-csv-import","test-stocktake","test-qr","test-license")) {
   $out = node "$t.mjs" 2>&1; $r = ($out -split "`n" | Select-String "pass|fail" | Select-Object -Last 1)
   if ($r -match "fail") { $fail++; Write-Host "FAIL: $t — $r" } else { $pass++; Write-Host "ok: $t" }
 }
