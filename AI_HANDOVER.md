@@ -11,7 +11,7 @@
 
 | | |
 |---|---|
-| **Tier** | Paid Tier 1 — $180/yr annual subscription (50% off first year: $90); 30-day free trial |
+| **Tier** | Paid Tier 1 — annual subscription; 30-day free trial (pricing on marketing site) |
 | **Tier above** | QStore V3 (Paid Tier 2 — IMS + Accounting, commercial SaaS, separate repo) |
 | **Tier below** | QStore V1 (legacy, free, no longer maintained — not in this directory) |
 | **Distribution** | Single self-contained HTML file (no server required, works offline) |
