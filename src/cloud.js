@@ -2,15 +2,16 @@
 // QStore IMS v2 — Cloud sync (OneDrive + MSAL)
 // =============================================================================
 // Provides a CloudProvider interface and one implementation: OneDriveProvider
-// using @azure/msal-browser 2.38.x. v2.0 ships only OneDrive; the interface
+// using @azure/msal-browser 5.x. v2.0 ships only OneDrive; the interface
 // exists so we can drop in Google Drive or Dropbox later without changing
 // sync.js or any UI code.
 //
-// MSAL VERSION CHOICE
-//   We pin MSAL Browser 2.38.3 — the same version v1 uses. Microsoft's CDN
-//   for MSAL is fully deprecated as of v3.0, so we MUST bundle from npm
-//   regardless. Pinning v2 minimises divergence from v1's well-tested setup.
-//   Upgrading to MSAL 5.x is in the v2.1 backlog as a focused task.
+// MSAL VERSION
+//   @azure/msal-browser 5.x (upgraded from 2.38.3 in v2.3). Key v3+ change:
+//   PublicClientApplication requires an explicit async initialize() call
+//   before any other MSAL API. Also: storeAuthStateInCookie and
+//   navigateToLoginRequestUrl were removed from configuration in v5, and
+//   error handling should use err.errorCode rather than err.message.
 //
 // AUTH FLOW
 //   OAuth 2.0 Authorization Code Flow with PKCE — MSAL handles all of it.
@@ -46,6 +47,7 @@
 // =============================================================================
 
 import * as msal from '@azure/msal-browser';
+import { broadcastResponseToMainFrame } from '@azure/msal-browser/redirect-bridge';
 import * as Storage from './storage.js';
 
 // -----------------------------------------------------------------------------
@@ -118,15 +120,13 @@ export class OneDriveProvider {
     try {
       this._msal = new msal.PublicClientApplication({
         auth: {
-          clientId:                  this._clientId,
-          authority:                 'https://login.microsoftonline.com/common',
-          redirectUri:               this._getRedirectUri(),
-          postLogoutRedirectUri:     this._getRedirectUri(),
-          navigateToLoginRequestUrl: true,
+          clientId:              this._clientId,
+          authority:             'https://login.microsoftonline.com/common',
+          redirectUri:           this._getRedirectUri(),
+          postLogoutRedirectUri: this._getRedirectUri(),
         },
         cache: {
-          cacheLocation:          'localStorage',
-          storeAuthStateInCookie: false,
+          cacheLocation: 'localStorage',
         },
         system: {
           loggerOptions: {
@@ -139,11 +139,44 @@ export class OneDriveProvider {
         },
       });
 
+      // CRITICAL (v3+) — initialize() must be called before any other MSAL
+      // API. In v2 the constructor was synchronous and ready immediately;
+      // v3+ deferred this work into an async initialize() step.
+      await this._msal.initialize();
+
       // CRITICAL — handleRedirectPromise() must be called on every page load
       // to complete an in-flight Authorization Code Flow + PKCE exchange.
       // Omitting this is the most common cause of MSAL initialisation
       // failures and silent sign-in loops.
-      const response = await this._msal.handleRedirectPromise();
+      //
+      // MSAL 5.x suppressed error codes:
+      //   no_token_request_cache_error — no redirect in progress (normal)
+      //   hash_not_present             — no auth hash in URL (normal)
+      //   no_cached_authority_error    — no authority cached (normal on first load)
+      //   interaction_in_progress      — stuck state from a crashed redirect;
+      //                                  clear the cache so the user can retry
+      let response = null;
+      try {
+        response = await this._msal.handleRedirectPromise();
+      } catch (err) {
+        const code = err.errorCode || '';
+        const _harmless = new Set([
+          'no_token_request_cache_error',
+          'hash_not_present',
+          'no_cached_authority_error',
+        ]);
+        if (_harmless.has(code)) {
+          response = null; // no redirect in progress — safe to ignore
+        } else if (code === 'interaction_in_progress') {
+          // Browser was closed mid-redirect, leaving a stuck interaction flag.
+          // Clear the MSAL cache to reset the state so the next sign-in attempt
+          // can start fresh.
+          try { await this._msal.clearCache(); } catch (_) {}
+          response = null;
+        } else {
+          throw err;
+        }
+      }
 
       if (response && response.account) {
         this._account = response.account;
@@ -201,25 +234,42 @@ export class OneDriveProvider {
       return;
     }
 
+    // Store the client ID in the popup flag. The popup window reads this from
+    // localStorage (same origin) to build a minimal MSAL instance and call
+    // handleRedirectPromise() — which broadcasts the token to the main window
+    // via BroadcastChannel so loginPopup() can resolve. window.opener alone
+    // is insufficient because cross-origin redirects null it out in modern browsers.
+    localStorage.setItem('qstore_popup_in_progress', this._clientId);
     try {
       const resp = await this._msal.loginPopup(request);
       this._account = resp.account;
       this._msal.setActiveAccount(this._account);
       this._lastError = null;
     } catch (err) {
-      const msg = err.message || String(err);
-      // Popup blocked — fall back to redirect.
-      if (msg.includes('popup_window_error') || msg.includes('user_cancelled')) {
+      const code = err.errorCode || '';
+      // Popup blocked or user closed it — fall back to redirect.
+      if (code === 'popup_window_error' || code === 'user_cancelled') {
+        localStorage.removeItem('qstore_popup_in_progress');
         await this._msal.loginRedirect(request);
         return;
       }
-      // "interaction_in_progress" means a previous flow didn't complete.
-      // Most likely a stuck state in localStorage. Surface a clear message.
-      if (msg.includes('interaction_in_progress')) {
-        throw new Error('A sign-in is already in progress. Refresh the page and try again.');
+      // "interaction_in_progress" means MSAL has a stuck interaction flag
+      // in localStorage from a previous flow that didn't complete cleanly
+      // (e.g. popup closed early, redirect interrupted). Clear the cache
+      // to reset the state and then retry with redirect — which is more
+      // resilient than popup for recovery situations.
+      if (code === 'interaction_in_progress') {
+        localStorage.removeItem('qstore_popup_in_progress');
+        try { await this._msal.clearCache(); } catch (_) {}
+        // Re-initialise MSAL after clearing so the new login starts clean.
+        await this._msal.initialize();
+        await this._msal.loginRedirect(request);
+        return;
       }
-      this._lastError = msg;
+      this._lastError = err.message || String(err);
       throw err;
+    } finally {
+      localStorage.removeItem('qstore_popup_in_progress');
     }
   }
 
@@ -252,6 +302,33 @@ export class OneDriveProvider {
 
   isSignedIn() {
     return Boolean(this._account);
+  }
+
+  /**
+   * Clear all MSAL cached tokens and interaction state, then sign out locally.
+   * Use when sign-in is stuck in "interaction_in_progress" or after a failed
+   * redirect. After calling this, the user must sign in again.
+   *
+   * This does NOT call logoutRedirect/logoutPopup — it only clears the local
+   * MSAL token cache. Microsoft's session on the browser remains active, so
+   * the next sign-in will be fast (account picker, not full credential entry).
+   */
+  async resetAuthState() {
+    this._account = null;
+    this._lastError = null;
+    if (this._msal) {
+      try { await this._msal.clearCache(); } catch (_) {}
+    }
+    // Clear any MSAL interaction status keys from BOTH localStorage and
+    // sessionStorage — cacheLocation: 'localStorage' means interaction.status
+    // keys may be in either store, and stuck keys cause interaction_in_progress.
+    for (const store of [localStorage, sessionStorage]) {
+      for (const key of Object.keys(store)) {
+        if (key.startsWith('msal.') || key.startsWith('msal_') || key.includes('interaction.status')) {
+          try { store.removeItem(key); } catch (_) {}
+        }
+      }
+    }
   }
 
   getAccount() {
@@ -420,6 +497,7 @@ export class OneDriveProvider {
         // Page navigates away — code after this never executes
         throw new Error('Redirecting to refresh token. Please wait...');
       }
+      localStorage.setItem('qstore_popup_in_progress', this._clientId);
       try {
         const resp = await this._msal.acquireTokenPopup(request);
         return resp.accessToken;
@@ -428,20 +506,26 @@ export class OneDriveProvider {
         sessionStorage.setItem('qstore_cloud_token_refresh', '1');
         await this._msal.acquireTokenRedirect({ ...request, redirectUri: this._getRedirectUri() });
         throw new Error('Redirecting to refresh token. Please wait...');
+      } finally {
+        localStorage.removeItem('qstore_popup_in_progress');
       }
     }
   }
 
   _formatInitError(err) {
-    const msg = err.message || String(err);
-    if (msg.includes('redirect_uri_mismatch') || msg.includes('AADSTS50011')) {
+    // In MSAL v5, err.message returns a documentation link rather than a
+    // description. Use err.errorCode for MSAL-defined codes, err.errorMessage
+    // for server-returned content (AADSTS codes), and err.name for class type.
+    const code    = err.errorCode    || '';
+    const errMsg  = err.errorMessage || err.message || String(err);
+    if (code === 'redirect_uri_mismatch' || errMsg.includes('AADSTS50011')) {
       const uri = this._getRedirectUri();
       return `Azure registration mismatch. Add this URI in the Azure Portal under App registrations → Authentication → Single-page application: ${uri}`;
     }
-    if (msg.includes('ClientAuthError') || msg.includes('client_id')) {
+    if (err.name === 'ClientAuthError' || code.includes('client_id') || code === 'invalid_client') {
       return 'Invalid Client ID. Check the Azure portal and confirm the app registration exists.';
     }
-    return msg;
+    return errMsg;
   }
 }
 
@@ -467,4 +551,71 @@ export function getProvider() {
 /** For tests only — replace the provider singleton. */
 export function _setProvider(p) {
   _provider = p;
+}
+
+/**
+ * MSAL 5.x redirect bridge — called from shell.js boot() on every page load.
+ *
+ * MSAL 5.x popup flow:
+ *   1. Main window calls loginPopup() → opens a popup window → internally
+ *      calls waitForBridgeResponse(), which listens on a BroadcastChannel
+ *      keyed by the interaction state ID (libraryState.id).
+ *   2. Popup navigates to Microsoft login. User authenticates. Microsoft
+ *      redirects the popup back to our redirect URI (the app URL) with the
+ *      auth code + state in the URL hash.
+ *   3. The popup loads the app again. This function detects the popup context
+ *      by parsing the URL state (interactionType === 'popup') and calls
+ *      broadcastResponseToMainFrame() from @azure/msal-browser/redirect-bridge.
+ *   4. broadcastResponseToMainFrame() creates BroadcastChannel(libraryState.id)
+ *      and posts { v: 1, payload } — exactly what waitForBridgeResponse()
+ *      is listening for — then closes the popup window.
+ *   5. The main window's loginPopup() receives the message and resolves.
+ *
+ * NOTE: handleRedirectPromise() CANNOT be used here because it validates
+ * interactionType === 'redirect' and explicitly rejects popup responses.
+ *
+ * Returns true if a popup auth response was found and broadcast (caller should
+ * stop loading the app shell). Returns false if the URL has no popup response.
+ */
+export async function handlePopupAuth() {
+  if (!_hasPopupResponseInUrl()) return false;
+
+  try {
+    // broadcastResponseToMainFrame() from the MSAL redirect-bridge package
+    // posts the auth code to BroadcastChannel(libraryState.id) and calls
+    // window.close() — this is the sender that waitForBridgeResponse() waits for.
+    await broadcastResponseToMainFrame();
+  } catch (err) {
+    console.warn('[MSAL-popup] broadcastResponseToMainFrame error:', err);
+    // Still attempt to close so the main window times out quickly rather than
+    // hanging for the full 60-second bridge timeout.
+    setTimeout(() => { try { window.close(); } catch (_) {} }, 500);
+  } finally {
+    localStorage.removeItem('qstore_popup_in_progress');
+  }
+  return true;
+}
+
+/**
+ * Returns true when the current URL contains an MSAL popup auth response
+ * (i.e. the state parameter decodes to interactionType === 'popup').
+ * Uses URL parsing rather than window.opener — which modern browsers null out
+ * after cross-origin redirects through login.microsoftonline.com.
+ */
+function _hasPopupResponseInUrl() {
+  try {
+    const hash   = window.location.hash;
+    const search = window.location.search;
+    let stateVal = null;
+    if (hash   && hash.includes('state='))   stateVal = new URLSearchParams(hash.slice(1)).get('state');
+    if (!stateVal && search && search.includes('state=')) stateVal = new URLSearchParams(search.slice(1)).get('state');
+    if (!stateVal) return false;
+    // MSAL state = base64url(JSON({id, meta:{interactionType}})) optionally
+    // followed by "|<user-state>". Decode the library portion only.
+    const libPart = decodeURIComponent(stateVal).split('|')[0];
+    const json    = JSON.parse(atob(libPart.replace(/-/g, '+').replace(/_/g, '/')));
+    return json?.meta?.interactionType === 'popup';
+  } catch {
+    return false;
+  }
 }

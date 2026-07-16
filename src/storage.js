@@ -34,8 +34,12 @@
 //   as the supported browsers.
 // =============================================================================
 
-const DEFAULT_DB_NAME = 'qstore';
-const DB_VERSION = 1;
+import * as PII from './pii.js';
+import { requireEdit } from './license.js';
+
+// V2L sandbox: use a separate DB so learning data never touches production IDB.
+const DEFAULT_DB_NAME = (typeof __V2L_DB_NAME__ !== 'undefined') ? __V2L_DB_NAME__ : 'qstore';
+const DB_VERSION = 4;
 
 let _dbName = DEFAULT_DB_NAME;
 
@@ -50,12 +54,16 @@ export const STORES = Object.freeze({
   AUDIT:     'audit',
   USERS:     'users',
   REQUESTS:  'pendingRequests',
-  STOCKTAKE: 'stocktakeCounts',
+  STOCKTAKE:     'stocktakeCounts',
+  KITS:          'kits',
+  SUPPLY_ORDERS: 'supplyOrders',
+  STAFF:         'staff',
 });
 
 let _db = null;
 let _auditKey = null;     // CryptoKey for HMAC, cached after init
 let _initPromise = null;  // de-dupe concurrent init() calls
+// PII CryptoKey is held inside pii.js — no local reference needed.
 
 // -----------------------------------------------------------------------------
 // Lifecycle
@@ -95,6 +103,7 @@ export async function init({ dbName } = {}) {
     _db = await _openDB();
     await _ensureMeta();
     _auditKey = await _loadAuditKey();
+    await _loadOrGenPiiKey();
     return _db;
   })();
   try {
@@ -154,6 +163,21 @@ function _runSchemaMigrations(db, oldVersion) {
 
     db.createObjectStore(STORES.STOCKTAKE, { keyPath: 'itemId' });
   }
+  if (oldVersion < 2) {
+    db.createObjectStore(STORES.KITS, { keyPath: 'id' });
+  }
+  if (oldVersion < 3) {
+    const orders = db.createObjectStore(STORES.SUPPLY_ORDERS, { keyPath: 'id' });
+    orders.createIndex('docType',   'docType',   { unique: false });
+    orders.createIndex('status',    'status',    { unique: false });
+    orders.createIndex('importedAt','importedAt',{ unique: false });
+  }
+  if (oldVersion < 4) {
+    // Staff — separate entity from cadets (officers, NCOs, DAHs).
+    const staff = db.createObjectStore(STORES.STAFF, { keyPath: 'svcNo' });
+    staff.createIndex('surname',    'surname',    { unique: false });
+    staff.createIndex('personType', 'personType', { unique: false });
+  }
   // Future schema upgrades go here. Bump DB_VERSION above and add a new
   // `if (oldVersion < N)` block. NEVER remove old blocks — users on older
   // versions still need to walk the full upgrade path.
@@ -166,12 +190,15 @@ async function _ensureMeta() {
   const installId     = _uuid();
   const auditKeyBytes = crypto.getRandomValues(new Uint8Array(32));
   const auditKeyB64   = _bytesToB64(auditKeyBytes);
+  const piiKeyBytes   = crypto.getRandomValues(new Uint8Array(32));
+  const piiKeyB64     = _bytesToB64(piiKeyBytes);
 
   const tx = _db.transaction(STORES.META, 'readwrite');
   const store = tx.objectStore(STORES.META);
   store.put({ key: 'schemaVersion', value: DB_VERSION });
   store.put({ key: 'installId',     value: installId });
   store.put({ key: 'auditKey',      value: auditKeyB64 });
+  store.put({ key: 'piiKey',        value: piiKeyB64 });
   store.put({ key: 'createdAt',     value: new Date().toISOString() });
   await _txDone(tx);
 }
@@ -185,6 +212,50 @@ async function _loadAuditKey() {
     { name: 'HMAC', hash: 'SHA-256' },
     false, ['sign']
   );
+}
+
+async function _loadOrGenPiiKey() {
+  let b64 = await _kvGet(STORES.META, 'piiKey');
+  if (!b64) {
+    // Existing install upgraded — generate piiKey now (existing records are
+    // plaintext and will be encrypted transparently on next write).
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    b64 = _bytesToB64(bytes);
+    const tx = _db.transaction(STORES.META, 'readwrite');
+    tx.objectStore(STORES.META).put({ key: 'piiKey', value: b64 });
+    await _txDone(tx);
+  }
+  // Initialise the PII module with the raw base-64 key so it can perform
+  // field-level AES-GCM encryption/decryption throughout the storage layer.
+  await PII.init(b64);
+  // One-time migration: encrypt any cadet records that pre-date PII encryption
+  // (i.e. records where PII fields are still stored as plain text).
+  await _migratePlainTextCadets();
+}
+
+async function _migratePlainTextCadets() {
+  try {
+    const tx    = _db.transaction(STORES.CADETS, 'readwrite');
+    const store = tx.objectStore(STORES.CADETS);
+    const rows  = await _reqDone(store.getAll());
+    let   count = 0;
+    for (const row of rows) {
+      // A field is plain-text when it is a non-empty string not starting with '~enc:'
+      const needsEnc = PII.PII_FIELDS_CADETS.some(
+        f => typeof row[f] === 'string' && row[f].length > 0 && !row[f].startsWith('~enc:')
+      );
+      if (needsEnc) {
+        const enc = await PII.encryptRecord(row, PII.PII_FIELDS_CADETS);
+        store.put(enc);
+        count++;
+      }
+    }
+    await _txDone(tx);
+    if (count > 0) console.info(`[storage] Migrated ${count} cadet record(s) to PII encryption.`);
+  } catch (err) {
+    console.warn('[storage] Cadet PII migration error:', err);
+    // Non-fatal — records will still be encrypted on their next write.
+  }
 }
 
 /**
@@ -280,6 +351,35 @@ function _bytesToHex(bytes) {
 // Items
 // -----------------------------------------------------------------------------
 
+/**
+ * Returns true if an NSN consists only of digits and hyphens (pure numeric NSN).
+ * e.g. "8415-00-123-4567" → true,  "LOCAL-001" → false
+ */
+function _isNumericNsn(nsn) {
+  return /^[\d-]+$/.test(nsn || '');
+}
+
+/**
+ * Canonical item sort order: category A–Z, then within each category:
+ *   1. Numeric-only NSNs first (digits + hyphens), sorted alphanumerically
+ *   2. Alpha-inclusive NSNs next (contain letters), sorted alphanumerically
+ *   3. Items with no NSN last
+ * Exported so display layers (inventory, stocktake) can use the same comparator.
+ */
+export function compareItems(a, b) {
+  const catCmp = (a.cat || '').localeCompare(b.cat || '', undefined, { sensitivity: 'base' });
+  if (catCmp !== 0) return catCmp;
+  const na = a.nsn || '';
+  const nb = b.nsn || '';
+  if (!na && !nb) return 0;
+  if (!na) return 1;   // no NSN → last within category
+  if (!nb) return -1;
+  const aNum = _isNumericNsn(na);
+  const bNum = _isNumericNsn(nb);
+  if (aNum !== bNum) return aNum ? -1 : 1;   // numeric before alpha-inclusive
+  return na.localeCompare(nb, undefined, { numeric: true, sensitivity: 'base' });
+}
+
 export const items = {
   async list({ category, search } = {}) {
     let rows = await _all(STORES.ITEMS);
@@ -287,10 +387,13 @@ export const items = {
     if (search) {
       const q = search.toLowerCase();
       rows = rows.filter(i =>
-        (i.name || '').toLowerCase().includes(q)
+        (i.name  || '').toLowerCase().includes(q)
         || (i.nsn  || '').toLowerCase().includes(q)
-        || (i.cat  || '').toLowerCase().includes(q));
+        || (i.cat  || '').toLowerCase().includes(q)
+        || (i.loc  || '').toLowerCase().includes(q)
+        || (i.notes || '').toLowerCase().includes(q));
     }
+    rows.sort(compareItems);
     return rows;
   },
 
@@ -300,6 +403,7 @@ export const items = {
   },
 
   async put(item) {
+    requireEdit();
     if (!item?.id) throw new Error('Item.id required');
     const tx = _db.transaction(STORES.ITEMS, 'readwrite');
     tx.objectStore(STORES.ITEMS).put(item);
@@ -308,6 +412,7 @@ export const items = {
 
   /** Remove an item and any associated photo. */
   async delete(id) {
+    requireEdit();
     const tx = _db.transaction([STORES.ITEMS, STORES.PHOTOS], 'readwrite');
     tx.objectStore(STORES.ITEMS).delete(id);
     tx.objectStore(STORES.PHOTOS).delete(id);
@@ -369,25 +474,32 @@ export const photos = {
 };
 
 // -----------------------------------------------------------------------------
-// Cadets / Personnel
+// Cadets / Personnel  (PII-encrypted: surname, given, email, notes)
 // -----------------------------------------------------------------------------
 
 export const cadets = {
-  list: () => _all(STORES.CADETS),
+  async list() {
+    const rows = await _all(STORES.CADETS);
+    return PII.decryptAll(rows, PII.PII_FIELDS_CADETS);
+  },
 
   async get(svcNo) {
-    const tx = _db.transaction(STORES.CADETS, 'readonly');
-    return (await _reqDone(tx.objectStore(STORES.CADETS).get(svcNo))) || null;
+    const tx  = _db.transaction(STORES.CADETS, 'readonly');
+    const row = (await _reqDone(tx.objectStore(STORES.CADETS).get(svcNo))) || null;
+    return row ? PII.decryptRecord(row, PII.PII_FIELDS_CADETS) : null;
   },
 
   async put(cadet) {
+    requireEdit();
     if (!cadet?.svcNo) throw new Error('Cadet.svcNo required');
-    const tx = _db.transaction(STORES.CADETS, 'readwrite');
-    tx.objectStore(STORES.CADETS).put(cadet);
+    const enc = await PII.encryptRecord(cadet, PII.PII_FIELDS_CADETS);
+    const tx  = _db.transaction(STORES.CADETS, 'readwrite');
+    tx.objectStore(STORES.CADETS).put(enc);
     await _txDone(tx);
   },
 
   async delete(svcNo) {
+    requireEdit();
     const tx = _db.transaction(STORES.CADETS, 'readwrite');
     tx.objectStore(STORES.CADETS).delete(svcNo);
     await _txDone(tx);
@@ -395,62 +507,84 @@ export const cadets = {
 };
 
 // -----------------------------------------------------------------------------
-// Loans
+// Loans  (PII-encrypted: borrowerName, remarks)
 // -----------------------------------------------------------------------------
 
 export const loans = {
-  list: () => _all(STORES.LOANS),
+  async list() {
+    const rows = await _all(STORES.LOANS);
+    return PII.decryptAll(rows, PII.PII_FIELDS_LOANS);
+  },
 
   async listActive() {
-    const all = await _all(STORES.LOANS);
+    const all = await this.list();
     return all.filter(l => l.active);
   },
 
   async listForCadet(svcNo) {
-    const tx = _db.transaction(STORES.LOANS, 'readonly');
-    const idx = tx.objectStore(STORES.LOANS).index('borrowerSvc');
-    return _reqDone(idx.getAll(svcNo));
+    const tx   = _db.transaction(STORES.LOANS, 'readonly');
+    const idx  = tx.objectStore(STORES.LOANS).index('borrowerSvc');
+    const rows = await _reqDone(idx.getAll(svcNo));
+    return PII.decryptAll(rows, PII.PII_FIELDS_LOANS);
   },
 
   async get(ref) {
-    const tx = _db.transaction(STORES.LOANS, 'readonly');
-    return (await _reqDone(tx.objectStore(STORES.LOANS).get(ref))) || null;
+    const tx  = _db.transaction(STORES.LOANS, 'readonly');
+    const row = (await _reqDone(tx.objectStore(STORES.LOANS).get(ref))) || null;
+    return row ? PII.decryptRecord(row, PII.PII_FIELDS_LOANS) : null;
   },
 
   async put(loan) {
+    requireEdit();
     if (!loan?.ref) throw new Error('Loan.ref required');
+    const enc = await PII.encryptRecord(loan, PII.PII_FIELDS_LOANS);
+    const tx  = _db.transaction(STORES.LOANS, 'readwrite');
+    tx.objectStore(STORES.LOANS).put(enc);
+    await _txDone(tx);
+  },
+
+  async remove(ref) {
+    if (!ref) throw new Error('Loan.ref required');
     const tx = _db.transaction(STORES.LOANS, 'readwrite');
-    tx.objectStore(STORES.LOANS).put(loan);
+    tx.objectStore(STORES.LOANS).delete(ref);
     await _txDone(tx);
   },
 };
 
 // -----------------------------------------------------------------------------
-// Users
+// Users  (PII-encrypted: name, svcNo; username left plain — login credential)
 // -----------------------------------------------------------------------------
 
 export const users = {
-  list: () => _all(STORES.USERS),
+  async list() {
+    const rows = await _all(STORES.USERS);
+    return PII.decryptAll(rows, PII.PII_FIELDS_USERS);
+  },
 
   async get(id) {
-    const tx = _db.transaction(STORES.USERS, 'readonly');
-    return (await _reqDone(tx.objectStore(STORES.USERS).get(id))) || null;
+    const tx  = _db.transaction(STORES.USERS, 'readonly');
+    const row = (await _reqDone(tx.objectStore(STORES.USERS).get(id))) || null;
+    return row ? PII.decryptRecord(row, PII.PII_FIELDS_USERS) : null;
   },
 
   async getByUsername(username) {
-    const tx = _db.transaction(STORES.USERS, 'readonly');
+    const tx  = _db.transaction(STORES.USERS, 'readonly');
     const idx = tx.objectStore(STORES.USERS).index('username');
-    return (await _reqDone(idx.get(username))) || null;
+    const row = (await _reqDone(idx.get(username))) || null;
+    return row ? PII.decryptRecord(row, PII.PII_FIELDS_USERS) : null;
   },
 
   async put(user) {
+    requireEdit();
     if (!user?.id) throw new Error('User.id required');
-    const tx = _db.transaction(STORES.USERS, 'readwrite');
-    tx.objectStore(STORES.USERS).put(user);
+    const enc = await PII.encryptRecord(user, PII.PII_FIELDS_USERS);
+    const tx  = _db.transaction(STORES.USERS, 'readwrite');
+    tx.objectStore(STORES.USERS).put(enc);
     await _txDone(tx);
   },
 
   async delete(id) {
+    requireEdit();
     const tx = _db.transaction(STORES.USERS, 'readwrite');
     tx.objectStore(STORES.USERS).delete(id);
     await _txDone(tx);
@@ -459,6 +593,39 @@ export const users = {
   async count() {
     const tx = _db.transaction(STORES.USERS, 'readonly');
     return _reqDone(tx.objectStore(STORES.USERS).count());
+  },
+};
+
+// -----------------------------------------------------------------------------
+// Staff  (PII-encrypted: surname, given, email, notes)
+// -----------------------------------------------------------------------------
+
+export const staff = {
+  async list() {
+    const rows = await _all(STORES.STAFF);
+    return PII.decryptAll(rows, PII.PII_FIELDS_STAFF);
+  },
+
+  async get(svcNo) {
+    const tx  = _db.transaction(STORES.STAFF, 'readonly');
+    const row = (await _reqDone(tx.objectStore(STORES.STAFF).get(svcNo))) || null;
+    return row ? PII.decryptRecord(row, PII.PII_FIELDS_STAFF) : null;
+  },
+
+  async put(member) {
+    requireEdit();
+    if (!member?.svcNo) throw new Error('Staff.svcNo required');
+    const enc = await PII.encryptRecord(member, PII.PII_FIELDS_STAFF);
+    const tx  = _db.transaction(STORES.STAFF, 'readwrite');
+    tx.objectStore(STORES.STAFF).put(enc);
+    await _txDone(tx);
+  },
+
+  async delete(svcNo) {
+    requireEdit();
+    const tx = _db.transaction(STORES.STAFF, 'readwrite');
+    tx.objectStore(STORES.STAFF).delete(svcNo);
+    await _txDone(tx);
   },
 };
 
@@ -482,6 +649,7 @@ export const requests = {
 
   async put(req) {
     if (!req?.id) throw new Error('Request.id required');
+    if (!Array.isArray(req.lines)) throw new Error('Request.lines must be an array');
     const tx = _db.transaction(STORES.REQUESTS, 'readwrite');
     tx.objectStore(STORES.REQUESTS).put(req);
     await _txDone(tx);
@@ -533,6 +701,96 @@ export const stocktake = {
     const tx = _db.transaction(STORES.STOCKTAKE, 'readwrite');
     tx.objectStore(STORES.STOCKTAKE).clear();
     await _txDone(tx);
+  },
+};
+
+// -----------------------------------------------------------------------------
+// Issue Kits (named item templates for batch issue)
+// -----------------------------------------------------------------------------
+//
+// Kit schema:
+//   id          string  PK ('kit-<uuid>')
+//   name        string  Display name, e.g. "Initial Issue — Male Cadet"
+//   description string  Optional one-liner
+//   lines       Array   [{ itemId, qty }] — ids only; names resolved at use-time
+//   createdAt   string  ISO timestamp
+//   updatedAt   string  ISO timestamp
+
+export const kits = {
+  list: () => _all(STORES.KITS),
+
+  async get(id) {
+    const tx = _db.transaction(STORES.KITS, 'readonly');
+    return (await _reqDone(tx.objectStore(STORES.KITS).get(id))) || null;
+  },
+
+  async put(kit) {
+    if (!kit?.id) throw new Error('Kit.id required');
+    const tx = _db.transaction(STORES.KITS, 'readwrite');
+    tx.objectStore(STORES.KITS).put(kit);
+    await _txDone(tx);
+  },
+
+  async delete(id) {
+    const tx = _db.transaction(STORES.KITS, 'readwrite');
+    tx.objectStore(STORES.KITS).delete(id);
+    await _txDone(tx);
+  },
+};
+
+// -----------------------------------------------------------------------------
+// Supply Orders (AAC QStore import tracking)
+// -----------------------------------------------------------------------------
+//
+// Order schema:
+//   id             string  PK ('order-<uuid>')
+//   orderId        string  AAC order number, e.g. "21922"
+//   orderCategory  string  "uniform" | "equipment" | "general"
+//   docType        string  "request" | "issue"
+//   orderStatus    string  Raw status string from PDF
+//   status         string  "pending" | "approved" | "received"
+//   date           string  ISO date "2026-04-05"
+//   dateRaw        string  Human-readable date from PDF
+//   requestorName  string
+//   requestorRank  string
+//   requestorSvcNo string
+//   unit           string
+//   items          Array   [{ nsn, description, qtyRequired, qtyRequisitioned, qtyReceived }]
+//   importedAt     string  ISO timestamp of when QM imported the PDF
+//   approvedAt     string  ISO timestamp if approved
+//   approvedBy     string  User who approved
+//   notes          string  Optional QM notes
+
+export const orders = {
+  list: () => _all(STORES.SUPPLY_ORDERS),
+
+  async listByDocType(docType) {
+    const tx = _db.transaction(STORES.SUPPLY_ORDERS, 'readonly');
+    const idx = tx.objectStore(STORES.SUPPLY_ORDERS).index('docType');
+    return _reqDone(idx.getAll(docType));
+  },
+
+  async get(id) {
+    const tx = _db.transaction(STORES.SUPPLY_ORDERS, 'readonly');
+    return (await _reqDone(tx.objectStore(STORES.SUPPLY_ORDERS).get(id))) || null;
+  },
+
+  async put(order) {
+    if (!order?.id) throw new Error('Order.id required');
+    const tx = _db.transaction(STORES.SUPPLY_ORDERS, 'readwrite');
+    tx.objectStore(STORES.SUPPLY_ORDERS).put(order);
+    await _txDone(tx);
+  },
+
+  async delete(id) {
+    const tx = _db.transaction(STORES.SUPPLY_ORDERS, 'readwrite');
+    tx.objectStore(STORES.SUPPLY_ORDERS).delete(id);
+    await _txDone(tx);
+  },
+
+  async count() {
+    const tx = _db.transaction(STORES.SUPPLY_ORDERS, 'readonly');
+    return _reqDone(tx.objectStore(STORES.SUPPLY_ORDERS).count());
   },
 };
 
@@ -735,6 +993,62 @@ export const meta = {
 };
 
 // -----------------------------------------------------------------------------
+// Atomic multi-store writes — issue, return, and stocktake use IDB transactions
+// to prevent partial-write corruption on crash between paired writes.
+// PII encryption happens before the transaction opens (async crypto, not IDB).
+// -----------------------------------------------------------------------------
+
+export const atomic = {
+  /**
+   * Issue a loan and update item onLoan in one IDB transaction.
+   * @param {object} loan - plaintext loan record (ref required)
+   * @param {object} updatedItem - item with onLoan already incremented (id required)
+   */
+  async issue(loan, updatedItem) {
+    if (!loan?.ref)        throw new Error('Loan.ref required');
+    if (!updatedItem?.id)  throw new Error('Item.id required');
+    const encLoan = await PII.encryptRecord(loan, PII.PII_FIELDS_LOANS);
+    const tx = _db.transaction([STORES.ITEMS, STORES.LOANS], 'readwrite');
+    tx.objectStore(STORES.ITEMS).put(updatedItem);
+    tx.objectStore(STORES.LOANS).put(encLoan);
+    await _txDone(tx);
+  },
+
+  /**
+   * Mark a loan returned and update the item in one IDB transaction.
+   * @param {object} loan - plaintext loan record (ref required, active=false)
+   * @param {object} updatedItem - item with onHand/onLoan already updated (id required)
+   */
+  async return(loan, updatedItem) {
+    if (!loan?.ref)        throw new Error('Loan.ref required');
+    if (!updatedItem?.id)  throw new Error('Item.id required');
+    const encLoan = await PII.encryptRecord(loan, PII.PII_FIELDS_LOANS);
+    const tx = _db.transaction([STORES.ITEMS, STORES.LOANS], 'readwrite');
+    tx.objectStore(STORES.ITEMS).put(updatedItem);
+    tx.objectStore(STORES.LOANS).put(encLoan);
+    await _txDone(tx);
+  },
+
+  /**
+   * Finalise a stocktake: write all updated items and clear the stocktake
+   * draft store in one IDB transaction.
+   * @param {object[]} itemUpdates - array of updated item records (id required each)
+   */
+  async stocktakeFinalise(itemUpdates) {
+    if (!Array.isArray(itemUpdates)) throw new Error('itemUpdates must be an array');
+    const tx = _db.transaction([STORES.ITEMS, STORES.STOCKTAKE], 'readwrite');
+    const itemsStore     = tx.objectStore(STORES.ITEMS);
+    const stocktakeStore = tx.objectStore(STORES.STOCKTAKE);
+    for (const item of itemUpdates) {
+      if (!item?.id) throw new Error('Each item update must have an id');
+      itemsStore.put(item);
+    }
+    stocktakeStore.clear();
+    await _txDone(tx);
+  },
+};
+
+// -----------------------------------------------------------------------------
 // Maintenance: export, import, wipe
 // -----------------------------------------------------------------------------
 
@@ -757,6 +1071,8 @@ export async function exportAll() {
     users:           await _all(STORES.USERS),
     pendingRequests: await _all(STORES.REQUESTS),
     stocktakeCounts: await _all(STORES.STOCKTAKE),
+    kits:            await _all(STORES.KITS),
+    supplyOrders:    await _all(STORES.SUPPLY_ORDERS),
   };
 
   const photoRows = await _all(STORES.PHOTOS);
@@ -803,16 +1119,19 @@ function _b64ToBlob(b64, contentType) {
  *   across devices. If you change it, the audit chain will break.
  */
 export async function importAll(snapshot) {
-  if (!snapshot || snapshot.schemaVersion !== DB_VERSION) {
-    throw new Error('Snapshot schema mismatch — expected v' + DB_VERSION
-      + ', got v' + (snapshot?.schemaVersion ?? '?'));
+  if (!snapshot || !snapshot.schemaVersion) {
+    throw new Error('Not a valid QStore backup (missing schemaVersion).');
+  }
+  if (snapshot.schemaVersion > DB_VERSION) {
+    throw new Error('Backup is from a newer version of QStore (v' + snapshot.schemaVersion
+      + '). Update the app before restoring.');
   }
   await wipe({ keepMeta: true });
 
   const stores = [
     STORES.META, STORES.SETTINGS, STORES.COUNTERS, STORES.ITEMS, STORES.CADETS,
     STORES.LOANS, STORES.AUDIT, STORES.USERS, STORES.REQUESTS,
-    STORES.STOCKTAKE, STORES.PHOTOS,
+    STORES.STOCKTAKE, STORES.PHOTOS, STORES.KITS, STORES.SUPPLY_ORDERS,
   ];
   const tx = _db.transaction(stores, 'readwrite');
   const put = (name, rows) => {
@@ -833,7 +1152,9 @@ export async function importAll(snapshot) {
   put(STORES.AUDIT,     snapshot.audit);
   put(STORES.USERS,     snapshot.users);
   put(STORES.REQUESTS,  snapshot.pendingRequests);
-  put(STORES.STOCKTAKE, snapshot.stocktakeCounts);
+  put(STORES.STOCKTAKE,     snapshot.stocktakeCounts);
+  put(STORES.KITS,          snapshot.kits);
+  put(STORES.SUPPLY_ORDERS, snapshot.supplyOrders);
 
   const photoStore = tx.objectStore(STORES.PHOTOS);
   for (const p of snapshot.photos || []) {
@@ -867,7 +1188,7 @@ export async function wipe({ keepMeta = true, keepUsers = true } = {}) {
   const targets = [
     STORES.SETTINGS, STORES.COUNTERS, STORES.ITEMS, STORES.PHOTOS,
     STORES.CADETS, STORES.LOANS, STORES.AUDIT, STORES.REQUESTS,
-    STORES.STOCKTAKE,
+    STORES.STOCKTAKE, STORES.KITS, STORES.SUPPLY_ORDERS,
   ];
   if (!keepUsers) targets.push(STORES.USERS);
   if (!keepMeta)  targets.push(STORES.META);

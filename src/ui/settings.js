@@ -22,25 +22,38 @@
 //   The page shows the exact value to paste into Azure's portal.
 // =============================================================================
 
-import * as Storage from '../storage.js';
-import * as AUTH    from '../auth.js';
-import * as Sync    from '../sync.js';
+import * as Storage   from '../storage.js';
+import * as AUTH      from '../auth.js';
+import * as Sync      from '../sync.js';
 import { getProvider } from '../cloud.js';
 import { openModal }   from './modal.js';
 import { esc, $, $$, render, fmtDate } from './util.js';
 import { STAFF_RANKS_CANONICAL, CADET_RANKS } from '../ranks.js';
-import * as Recovery from '../recovery.js';
-import * as Migration from '../migration.js';
-import * as CsvUi from './csv-import.js';
+import * as Recovery   from '../recovery.js';
+import * as Migration  from '../migration.js';
+import * as TotpSetup  from './totp-setup.js';
+import * as CsvUi      from './csv-import.js';
+import { getLicenseState, activateKey, deviceActivate } from '../license.js';
+import { showToast }   from './toast.js';
+import * as Structure  from '../structure.js';
+import { CATEGORIES as DEFAULT_CATEGORIES } from './inventory.js';
+import { INITIAL_ISSUE } from './loans.js';
+import { applyTheme }   from '../theme.js';
 
-let _root = null;
+let _root           = null;
+let _controller     = null;  // AbortController — cleaned up on unmount
 let _statusListener = null;
 
 export async function mount(rootEl) {
-  _root = rootEl;
+  _root       = rootEl;
+  _controller = new AbortController();
   AUTH.requireCO();
 
   await _render();
+
+  // Wire root click once here — not inside _wireEventListeners()/_render()
+  // to prevent accumulation across re-renders.
+  _root.addEventListener('click', _onRootClick, { signal: _controller.signal });
 
   // Listen for sync status changes so the page reflects sign-in/out, busy,
   // and error states without a full re-render.
@@ -48,6 +61,8 @@ export async function mount(rootEl) {
   Sync.addStatusListener(_statusListener);
 
   return function unmount() {
+    _controller.abort();
+    _controller = null;
     if (_statusListener) {
       Sync.removeStatusListener(_statusListener);
       _statusListener = null;
@@ -71,14 +86,30 @@ async function _render() {
   const recoveryStatus = sess?.userId
     ? await Recovery.statusForUser(sess.userId)
     : { exists: false, createdAt: null };
+  const totpUser       = sess?.userId ? await Storage.users.get(sess.userId) : null;
+  const unitStructure  = await Structure.load();
+  const licenseState   = getLicenseState();
+  // Stored categories — null means "use defaults".
+  const storedCats     = await Storage.settings.get('categories');
+  const activeCats     = Array.isArray(storedCats) && storedCats.length > 0
+    ? storedCats
+    : DEFAULT_CATEGORIES;
 
   render(_root, `
     <section class="settings">
       <div class="settings__column">
         ${_unitSectionHtml(settings)}
+        ${_structureSectionHtml(unitStructure)}
+        ${_categoriesSectionHtml(activeCats)}
+        ${_loanSettingsSectionHtml(settings)}
+        ${_appearanceSectionHtml(settings)}
         ${_recoverySectionHtml(recoveryStatus)}
+        ${_totpSectionHtml(totpUser)}
+        ${_securitySectionHtml(settings)}
         ${_cloudSectionHtml(settings, status)}
         ${_dataSectionHtml(settings)}
+        ${_subscriptionSectionHtml(licenseState)}
+        ${_aboutSectionHtml()}
       </div>
     </section>
   `);
@@ -126,14 +157,15 @@ async function _render() {
 const AU_STATES = ['ACT', 'NSW', 'NT', 'QLD', 'SA', 'TAS', 'VIC', 'WA'];
 
 function _unitSectionHtml(settings) {
-  const unitName = settings.unitName || '';
-  const unitCode = settings.unitCode || '';
-  const state    = settings.state    || '';
-  const qmName   = settings.qmName   || '';
-  const qmRank   = settings.qmRank   || '';
-  const qmEmail  = settings.qmEmail  || '';
-  const coName   = settings.coName   || '';
-  const coEmail  = settings.coEmail  || '';
+  const unitName   = settings.unitName  || '';
+  const unitCode   = settings.unitCode  || '';
+  const state      = settings.state     || '';
+  const qmName     = settings.qmName    || '';
+  const qmRank     = settings.qmRank    || '';
+  const qmEmail    = settings.qmEmail   || '';
+  const coName     = settings.coName    || '';
+  const coEmail    = settings.coEmail   || '';
+  const logoDataUrl = settings.unitLogo || null;
 
   const stateOptions = ['', ...AU_STATES].map((code) => {
     const label = code || '— Select —';
@@ -147,10 +179,17 @@ function _unitSectionHtml(settings) {
     `<option value="${esc(r)}">`
   ).join('');
 
+  const isFirstSetup = !unitName.trim();
+
   return `
-    <section class="settings__section" data-section="unit">
+    <section class="settings__section settings__section--unit-details" data-section="unit">
       <header class="settings__section-header">
-        <h2 class="settings__section-title">Unit details</h2>
+        <h2 class="settings__section-title">
+          Unit details
+          ${isFirstSetup
+            ? `<span class="settings__setup-badge">⬅ Start here</span>`
+            : ''}
+        </h2>
         <p class="settings__section-hint">
           These fields appear in the app header, on the login screen, and on
           generated AB189 forms and reports. Only the OC can edit them.
@@ -217,6 +256,43 @@ function _unitSectionHtml(settings) {
           <button type="submit" class="btn btn--primary">Save unit details</button>
         </div>
       </form>
+
+      <div class="settings__logo">
+        <h3 class="settings__logo-title">Unit logo</h3>
+        <p class="settings__section-hint">
+          Displayed in the app header at top-left. PNG or SVG recommended
+          (preserves transparency). Resized to fit the header automatically.
+          Max 5 MB.
+        </p>
+        ${logoDataUrl ? `
+          <div class="settings__logo-preview-wrap">
+            <img class="settings__logo-preview" src="${esc(logoDataUrl)}" alt="Current unit logo">
+          </div>
+        ` : `
+          <p class="settings__section-hint" style="margin-top:8px">No logo set.</p>
+        `}
+        <div class="form__actions" style="margin-top:8px">
+          <label class="btn btn--ghost settings__logo-upload-label">
+            ${logoDataUrl ? 'Replace logo' : 'Upload logo'}
+            <input type="file" accept="image/*" data-target="logo-file-input" hidden>
+          </label>
+          ${logoDataUrl ? `
+            <button type="button" class="btn btn--ghost" data-action="logo-remove">
+              Remove logo
+            </button>
+            <button type="button" class="btn btn--primary" data-action="logo-download-copy">
+              Download unit copy
+            </button>
+          ` : ''}
+        </div>
+        ${logoDataUrl ? `
+          <p class="settings__section-hint" style="margin-top:6px">
+            "Download unit copy" creates a version of this app with your logo pre-embedded.
+            Share this file — the logo will show on first open on any device, even before sign-in.
+          </p>
+        ` : ''}
+        <div class="form__error" data-target="logo-error" role="alert"></div>
+      </div>
     </section>
   `;
 }
@@ -238,6 +314,468 @@ function _unitSectionHtml(settings) {
 // would require storing it reversibly, which would mean the recovery
 // code has weaker protection at rest than the PIN it recovers. Not an
 // acceptable trade.
+
+// -----------------------------------------------------------------------------
+// Unit sub-structure section
+// -----------------------------------------------------------------------------
+// The CO defines the unit's hierarchy: Companies → Platoons → Sections.
+// When configured, cadets can be assigned to a company/platoon/section
+// via cascading dropdowns in the Cadets add/edit form. The nominal roll
+// groups and demarcates cadets by this hierarchy.
+// If not configured the Cadets page falls back to the legacy free-text
+// platoon field.
+
+function _structureSectionHtml(structure) {
+  const configured = structure.length > 0;
+  const summary = configured
+    ? structure.map((co) => {
+        const plts = (co.platoons || []).length;
+        return `<li>${esc(co.name)} — ${plts} platoon${plts === 1 ? '' : 's'}</li>`;
+      }).join('')
+    : '';
+
+  return `
+    <section class="settings__section" data-section="structure">
+      <header class="settings__section-header">
+        <h2 class="settings__section-title">Unit sub-structure</h2>
+        <p class="settings__section-hint">
+          Define companies, platoons, and sections. When configured, cadets can
+          be assigned to a company → platoon → section hierarchy and the nominal
+          roll groups them with demarcation headers. Leave unconfigured to use
+          the original free-text platoon field.
+        </p>
+      </header>
+      ${configured
+        ? `<ul class="struct__summary">${summary}</ul>`
+        : `<p class="settings__section-hint">Not configured — using free-text platoon field.</p>`
+      }
+      <div class="settings__actions">
+        <button type="button" class="btn btn--ghost" data-action="configure-structure">
+          ${configured ? 'Edit structure' : 'Configure structure'}
+        </button>
+        ${configured ? `
+          <button type="button" class="btn btn--ghost" data-action="migrate-platoons"
+                  title="Map existing free-text platoon values to the configured company/platoon/section hierarchy">
+            ↝ Migrate platoon data
+          </button>
+          <button type="button" class="btn btn--danger btn--sm" data-action="clear-structure">Clear structure</button>
+        ` : ''}
+      </div>
+    </section>
+  `;
+}
+
+// -----------------------------------------------------------------------------
+// Category management section
+// -----------------------------------------------------------------------------
+
+function _categoriesSectionHtml(categories) {
+  const isCustom = JSON.stringify(categories) !== JSON.stringify(DEFAULT_CATEGORIES);
+  return `
+    <section class="settings__section" data-section="categories">
+      <header class="settings__section-header">
+        <h2 class="settings__section-title">Item categories</h2>
+        <p class="settings__section-hint">
+          Manage the category list shown in the inventory add/edit form and
+          the category filter. ${isCustom
+            ? 'Custom list active.'
+            : 'Using default list — customise below to add or remove categories.'}
+        </p>
+      </header>
+      <ul class="cat__list">
+        ${categories.map(c => `
+          <li class="cat__item">
+            <span class="cat__name">${esc(c)}</span>
+          </li>
+        `).join('')}
+      </ul>
+      <div class="settings__actions">
+        <button type="button" class="btn btn--ghost" data-action="manage-categories">
+          Manage categories
+        </button>
+        ${isCustom
+          ? `<button type="button" class="btn btn--ghost btn--sm" data-action="reset-categories">
+               Reset to defaults
+             </button>`
+          : ''}
+      </div>
+    </section>
+  `;
+}
+
+async function _onManageCategories() {
+  const storedRaw = await Storage.settings.get('categories');
+  const current   = Array.isArray(storedRaw) && storedRaw.length > 0
+    ? storedRaw
+    : [...DEFAULT_CATEGORIES];
+
+  // Draft is a mutable copy.
+  let draft = [...current];
+
+  // Build the <ul> contents only — the scroll container is persistent in the DOM.
+  function buildListHtml(d) {
+    if (d.length === 0) {
+      return `<p class="settings__section-hint" style="padding:8px 12px;margin:0">
+        No categories — add one below.
+      </p>`;
+    }
+    return `<ul class="cat__editor-list">` +
+      d.map((c, i) => `
+        <li class="cat__editor-item" data-idx="${i}" draggable="true">
+          <span class="cat__editor-drag-handle" title="Drag to reorder" aria-hidden="true">⠿</span>
+          <span class="cat__editor-name">${esc(c)}</span>
+          <div class="cat__editor-btns">
+            <button type="button" class="btn btn--ghost btn--sm" data-cat-action="up"
+                    data-idx="${i}" ${i === 0 ? 'disabled' : ''}
+                    title="Move up (Shift+click: move to top)">↑</button>
+            <button type="button" class="btn btn--ghost btn--sm" data-cat-action="down"
+                    data-idx="${i}" ${i === d.length - 1 ? 'disabled' : ''}
+                    title="Move down (Shift+click: move to bottom)">↓</button>
+            <button type="button" class="btn btn--danger btn--sm"
+                    data-cat-action="remove" data-idx="${i}" title="Remove">✕</button>
+          </div>
+        </li>
+      `).join('') + `</ul>`;
+  }
+
+  openModal({
+    titleHtml: 'Manage item categories',
+    size:      'sm',
+    bodyHtml:  `
+      <div class="cat__editor-wrap">
+        <div class="cat__editor-scroll" data-target="cat-list">${buildListHtml(draft)}</div>
+        <div class="cat__editor-add">
+          <input type="text" class="cat__editor-input" placeholder="New category name…"
+                 maxlength="60" aria-label="New category">
+          <button type="button" class="btn btn--ghost" data-cat-action="add">+ Add</button>
+        </div>
+      </div>
+      <div class="cat__editor-footer">
+        <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
+        <button type="button" class="btn btn--primary" data-cat-action="save">Save</button>
+      </div>
+    `,
+    onMount(panel, close) {
+      const listEl   = panel.querySelector('[data-target="cat-list"]');
+      const addInput = panel.querySelector('.cat__editor-input');
+
+      function refresh() {
+        listEl.innerHTML = buildListHtml(draft);
+      }
+
+      // ── Click handler: up/down (with Shift-click to jump), remove, add, save ──
+      panel.addEventListener('click', async (e) => {
+        const catAction = e.target.dataset.catAction;
+        const idx = e.target.dataset.idx != null ? parseInt(e.target.dataset.idx, 10) : -1;
+
+        if (catAction === 'up' && idx > 0) {
+          if (e.shiftKey) {
+            // Shift+↑ → jump to top
+            const [moved] = draft.splice(idx, 1);
+            draft.unshift(moved);
+          } else {
+            [draft[idx - 1], draft[idx]] = [draft[idx], draft[idx - 1]];
+          }
+          refresh();
+        } else if (catAction === 'down' && idx < draft.length - 1) {
+          if (e.shiftKey) {
+            // Shift+↓ → jump to bottom
+            const [moved] = draft.splice(idx, 1);
+            draft.push(moved);
+          } else {
+            [draft[idx], draft[idx + 1]] = [draft[idx + 1], draft[idx]];
+          }
+          refresh();
+        } else if (catAction === 'remove' && idx >= 0) {
+          // "Initial Issue" is a protected loan purpose — prevent accidental removal
+          // even if it somehow appears in the custom category list.
+          if (draft[idx]?.toLowerCase() === INITIAL_ISSUE.toLowerCase()) {
+            showToast(`"${INITIAL_ISSUE}" is a protected loan purpose and cannot be removed.`, 'warn');
+            return;
+          }
+          draft.splice(idx, 1);
+          refresh();
+        } else if (catAction === 'add') {
+          const name = addInput.value.trim();
+          if (!name) { addInput.focus(); return; }
+          if (draft.includes(name)) {
+            showToast(`"${name}" is already in the list.`, 'warn');
+            return;
+          }
+          draft.push(name);
+          addInput.value = '';
+          refresh();
+          // Scroll new item into view
+          listEl.scrollTop = listEl.scrollHeight;
+          addInput.focus();
+        } else if (catAction === 'save') {
+          if (draft.length === 0) {
+            showToast('Category list must not be empty.', 'warn');
+            return;
+          }
+          await Storage.settings.set('categories', draft);
+          Sync.notifyChanged();
+          close();
+          showToast('Categories saved.', 'success');
+          await _render();
+        }
+      });
+
+      // Allow pressing Enter in the add input.
+      addInput?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          panel.querySelector('[data-cat-action="add"]')?.click();
+        }
+      });
+
+      // ── Drag-and-drop reordering ──────────────────────────────────────────────
+      let _dragIdx = -1;
+
+      listEl.addEventListener('dragstart', (e) => {
+        const li = e.target.closest('.cat__editor-item');
+        if (!li) return;
+        _dragIdx = parseInt(li.dataset.idx, 10);
+        e.dataTransfer.effectAllowed = 'move';
+        // Defer class add so the drag ghost renders cleanly before the row fades.
+        setTimeout(() => li.classList.add('cat__editor-item--dragging'), 0);
+      });
+
+      listEl.addEventListener('dragend', () => {
+        $$('.cat__editor-item--dragging', listEl)
+          .forEach((el) => el.classList.remove('cat__editor-item--dragging'));
+        $$('.cat__editor-item--drag-over', listEl)
+          .forEach((el) => el.classList.remove('cat__editor-item--drag-over'));
+        _dragIdx = -1;
+      });
+
+      listEl.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const li = e.target.closest('.cat__editor-item');
+        if (!li) return;
+        const overIdx = parseInt(li.dataset.idx, 10);
+        if (overIdx === _dragIdx) return;
+        $$('.cat__editor-item--drag-over', listEl)
+          .forEach((el) => el.classList.remove('cat__editor-item--drag-over'));
+        li.classList.add('cat__editor-item--drag-over');
+      });
+
+      listEl.addEventListener('dragleave', (e) => {
+        // Only clear highlight when the pointer truly leaves the list container.
+        if (!listEl.contains(e.relatedTarget)) {
+          $$('.cat__editor-item--drag-over', listEl)
+            .forEach((el) => el.classList.remove('cat__editor-item--drag-over'));
+        }
+      });
+
+      listEl.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const li = e.target.closest('.cat__editor-item');
+        if (!li || _dragIdx < 0) return;
+        const dropIdx = parseInt(li.dataset.idx, 10);
+        if (dropIdx === _dragIdx) { _dragIdx = -1; return; }
+        const [moved] = draft.splice(_dragIdx, 1);
+        draft.splice(dropIdx, 0, moved);
+        _dragIdx = -1;
+        refresh();
+      });
+    },
+  });
+}
+
+async function _onResetCategories() {
+  openModal({
+    titleHtml: 'Reset categories to defaults?',
+    size:      'sm',
+    bodyHtml:  `
+      <p class="modal__body">
+        This will replace your custom category list with the built-in defaults.
+        Existing items keep their category values — only the selectable list changes.
+      </p>
+      <div class="form__actions">
+        <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
+        <button type="button" class="btn btn--danger" data-action="confirm-reset-cats">Reset to defaults</button>
+      </div>
+    `,
+    onMount(panel, close) {
+      panel.querySelector('[data-action="confirm-reset-cats"]')
+        ?.addEventListener('click', async () => {
+          await Storage.settings.delete('categories');
+          Sync.notifyChanged();
+          close();
+          showToast('Categories reset to defaults.', 'success');
+          await _render();
+        });
+    },
+  });
+}
+
+function _openStructureModal(existingStructure) {
+  // Deep-clone so edits don't mutate the passed-in array until Save.
+  let draft = JSON.parse(JSON.stringify(existingStructure.length > 0
+    ? existingStructure
+    : []));
+
+  function buildTreeHtml(d) {
+    if (d.length === 0) {
+      return `<p class="struct__empty-hint">No companies added yet. Click "+ Add company" below.</p>`;
+    }
+    return d.map((co, ci) => `
+      <div class="struct__company">
+        <div class="struct__company-header">
+          <input type="text" class="struct__name-input" placeholder="Company name, e.g. A Coy"
+                 value="${esc(co.name)}" data-path="co.${ci}.name" aria-label="Company name">
+          <button type="button" class="btn btn--danger btn--sm struct__remove"
+                  data-path="co.${ci}">✕</button>
+        </div>
+        <div class="struct__platoons">
+          ${(co.platoons || []).map((plt, pi) => `
+            <div class="struct__platoon">
+              <div class="struct__platoon-header">
+                <input type="text" class="struct__name-input" placeholder="Platoon name, e.g. 1 Plt"
+                       value="${esc(plt.name)}" data-path="plt.${ci}.${pi}.name" aria-label="Platoon name">
+                <button type="button" class="btn btn--danger btn--sm struct__remove"
+                        data-path="plt.${ci}.${pi}">✕</button>
+              </div>
+              <div class="struct__sections">
+                ${(plt.sections || []).map((sec, si) => `
+                  <div class="struct__section">
+                    <input type="text" class="struct__name-input struct__name-input--sm"
+                           placeholder="Section, e.g. 1 Sec"
+                           value="${esc(sec)}" data-path="sec.${ci}.${pi}.${si}" aria-label="Section name">
+                    <button type="button" class="btn btn--danger btn--sm struct__remove"
+                            data-path="sec.${ci}.${pi}.${si}">✕</button>
+                  </div>
+                `).join('')}
+                <button type="button" class="btn btn--ghost btn--sm struct__add-btn"
+                        data-add="sec.${ci}.${pi}">+ Add section</button>
+              </div>
+            </div>
+          `).join('')}
+          <button type="button" class="btn btn--ghost btn--sm struct__add-btn"
+                  data-add="plt.${ci}">+ Add platoon</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  openModal({
+    titleHtml: 'Configure unit sub-structure',
+    size:      'md',
+    persistent: true,
+    bodyHtml:  `
+      <p class="modal__body">
+        Add companies, then platoons within each company, then sections within each platoon.
+        Sections are optional — leave them out if your unit doesn't use section-level grouping.
+      </p>
+      <div class="struct__tree" data-target="structure-tree">
+        ${buildTreeHtml(draft)}
+      </div>
+      <div class="struct__tree-actions">
+        <button type="button" class="btn btn--ghost btn--sm struct__add-btn" data-add="co">+ Add company</button>
+      </div>
+      <div class="form__error" role="alert"></div>
+      <div class="form__actions">
+        <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
+        <button type="button" class="btn btn--primary" data-action="save-structure">Save structure</button>
+      </div>
+    `,
+    onMount(panel, close) {
+      const treeEl = panel.querySelector('[data-target="structure-tree"]');
+      const errEl  = panel.querySelector('.form__error');
+
+      function rerender() {
+        treeEl.innerHTML = buildTreeHtml(draft);
+      }
+
+      // Flush text inputs into draft before any add/remove action.
+      function flushInputs() {
+        panel.querySelectorAll('input[data-path]').forEach((input) => {
+          const parts = input.dataset.path.split('.');
+          const [type, ...indices] = parts;
+          const [ci, pi, si] = indices.map(Number);
+          if (type === 'co') draft[ci].name = input.value;
+          else if (type === 'plt') draft[ci].platoons[pi].name = input.value;
+          else if (type === 'sec') draft[ci].platoons[pi].sections[si] = input.value;
+        });
+      }
+
+      panel.addEventListener('click', (e) => {
+        const addBtn = e.target.closest('[data-add]');
+        const removeBtn = e.target.closest('.struct__remove[data-path]');
+        const saveBtn = e.target.closest('[data-action="save-structure"]');
+        if (!addBtn && !removeBtn && !saveBtn) return;
+
+        flushInputs();
+
+        if (addBtn) {
+          const spec = addBtn.dataset.add;
+          const parts = spec.split('.');
+          if (parts[0] === 'co') {
+            draft.push({ name: '', platoons: [] });
+          } else if (parts[0] === 'plt') {
+            const ci = Number(parts[1]);
+            draft[ci].platoons.push({ name: '', sections: [] });
+          } else if (parts[0] === 'sec') {
+            const [, ci, pi] = parts.map(Number);
+            draft[ci].platoons[pi].sections.push('');
+          }
+          rerender();
+          return;
+        }
+
+        if (removeBtn) {
+          const spec  = removeBtn.dataset.path;
+          const parts = spec.split('.');
+          if (parts[0] === 'co') {
+            draft.splice(Number(parts[1]), 1);
+          } else if (parts[0] === 'plt') {
+            const [, ci, pi] = parts.map(Number);
+            draft[ci].platoons.splice(pi, 1);
+          } else if (parts[0] === 'sec') {
+            const [, ci, pi, si] = parts.map(Number);
+            draft[ci].platoons[pi].sections.splice(si, 1);
+          }
+          rerender();
+          return;
+        }
+
+        if (saveBtn) {
+          flushInputs();
+          // Validate: all named companies/platoons must have non-empty names.
+          for (const co of draft) {
+            if (!co.name.trim()) {
+              errEl.textContent = 'All companies must have a name.';
+              return;
+            }
+            for (const plt of co.platoons || []) {
+              if (!plt.name.trim()) {
+                errEl.textContent = `All platoons in "${co.name}" must have a name.`;
+                return;
+              }
+            }
+          }
+          // Clean up: remove empty section strings from all platoons.
+          const cleaned = draft.map((co) => ({
+            name:     co.name.trim(),
+            platoons: (co.platoons || []).map((plt) => ({
+              name:     plt.name.trim(),
+              sections: (plt.sections || []).map((s) => s.trim()).filter(Boolean),
+            })),
+          }));
+          Structure.save(cleaned).then(() => {
+            close();
+            showToast('Unit structure saved.', 'success');
+            _render();
+          }).catch((err) => {
+            errEl.textContent = err.message || 'Save failed.';
+          });
+        }
+      });
+    },
+  });
+}
 
 function _recoverySectionHtml(recoveryStatus) {
   const exists = recoveryStatus.exists;
@@ -272,6 +810,53 @@ function _recoverySectionHtml(recoveryStatus) {
         <button type="button" class="btn btn--primary"
                 data-action="recovery-generate">${esc(buttonLabel)}</button>
       </div>
+    </section>
+  `;
+}
+
+// -----------------------------------------------------------------------------
+// Two-factor authentication section
+// -----------------------------------------------------------------------------
+
+function _totpSectionHtml(user) {
+  const enabled  = user?.totpEnabled === true;
+  const backups  = enabled ? (user?.totpHashedBackups || []).length : 0;
+
+  const statusBlock = enabled ? `
+    <div class="settings__status-block settings__status-block--ok">
+      <span class="badge badge--success">Enabled</span>
+      Two-factor authentication is active on your account.
+      Backup codes remaining: <strong>${backups}</strong>.
+    </div>
+    <div class="form__actions">
+      <button type="button" class="btn btn--outline" data-action="manage-2fa">
+        Manage 2FA (disable / regenerate backup codes)
+      </button>
+    </div>
+  ` : `
+    <div class="settings__status-block settings__status-block--warn">
+      <span class="badge badge--neutral">Not enabled</span>
+      Your account is protected by PIN only. Enabling 2FA adds a time-based
+      code from an authenticator app as a second sign-in step.
+    </div>
+    <div class="form__actions">
+      <button type="button" class="btn btn--primary" data-action="setup-2fa">
+        Set up two-factor authentication
+      </button>
+    </div>
+  `;
+
+  return `
+    <section class="settings__section" data-section="2fa">
+      <header class="settings__section-header">
+        <h2 class="settings__section-title">Two-factor authentication (2FA)</h2>
+        <p class="settings__section-hint">
+          When enabled, signing in requires both your PIN and a 6-digit code
+          from an authenticator app (Google Authenticator, Microsoft Authenticator,
+          Authy, etc.). Works fully offline — no internet required.
+        </p>
+      </header>
+      ${statusBlock}
     </section>
   `;
 }
@@ -339,6 +924,29 @@ function _cloudSectionHtml(settings, status) {
       </div>
 
       <form class="form" data-form="cloud-config" autocomplete="off">
+        ${clientId && lastSync ? `
+        <div class="form__field">
+          <span class="form__label">Azure Application (client) ID</span>
+          <input type="hidden" name="clientId" value="${esc(clientId)}" data-cloud-id-hidden>
+          <div class="cloud-id-row" data-cloud-id-badge>
+            <div class="cloud-id-success">
+              <span class="cloud-id-success__icon">✓</span>
+              <span class="cloud-id-success__label">Client ID configured</span>
+            </div>
+            <button type="button" class="btn btn--ghost btn--sm cloud-id-reveal"
+                    data-action="reveal-client-id"
+                    data-client-id="${esc(clientId)}">Hold to reveal</button>
+            <button type="button" class="btn btn--ghost btn--sm"
+                    data-action="change-client-id">Change</button>
+          </div>
+          <div class="form__field" data-cloud-id-edit style="display:none;margin-top:0.5rem;">
+            <input type="text" name="clientId_edit"
+                   placeholder="00000000-0000-0000-0000-000000000000"
+                   spellcheck="false">
+            <span class="form__hint">Enter new Client ID, then save below. Leave blank to keep current.</span>
+          </div>
+        </div>
+        ` : `
         <label class="form__field">
           <span class="form__label">Azure Application (client) ID</span>
           <input type="text" name="clientId" value="${esc(clientId)}"
@@ -346,6 +954,7 @@ function _cloudSectionHtml(settings, status) {
                  spellcheck="false">
           <span class="form__hint">From Azure Portal → App registrations → Overview → Application (client) ID</span>
         </label>
+        `}
 
         <div class="form__row">
           <label class="form__field form__field--grow">
@@ -424,6 +1033,137 @@ function _cloudUnavailableFileProtocolHtml() {
 // -----------------------------------------------------------------------------
 // Data backup section — manual export/import
 // -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
+// Loan settings — default due date
+// -----------------------------------------------------------------------------
+
+function _loanSettingsSectionHtml(settings) {
+  const stored = parseInt(settings['loans.defaultDueDays'], 10);
+  // Default: 7 days. 0 means "leave due date blank".
+  const current = isNaN(stored) ? 7 : stored;
+
+  const opts = [
+    { value: 0,   label: 'No default (leave blank)' },
+    { value: 1,   label: 'Next day' },
+    { value: 3,   label: '3 days' },
+    { value: 7,   label: '1 week' },
+    { value: 14,  label: '2 weeks' },
+    { value: 30,  label: '1 month' },
+    { value: 90,  label: '3 months' },
+    { value: 180, label: '6 months' },
+  ].map(({ value, label }) =>
+    `<option value="${value}"${value === current ? ' selected' : ''}>${esc(label)}</option>`
+  ).join('');
+
+  return `
+    <section class="settings__section" data-section="loan-settings">
+      <header class="settings__section-header">
+        <h2 class="settings__section-title">Loan defaults</h2>
+        <p class="settings__section-hint">
+          Pre-fill the due date when issuing items. The QM can always change
+          the date on any individual issue. "Initial Issue" always uses
+          a 6-year return date regardless of this setting.
+        </p>
+      </header>
+
+      <div class="form__row form__row--align-center">
+        <label class="form__label" for="default-due-days-select">Default loan duration</label>
+        <select id="default-due-days-select" class="form__select"
+                data-action="save-default-due-days">
+          ${opts}
+        </select>
+      </div>
+      <p class="form__hint" data-loan-default-hint>
+        ${current === 0
+          ? 'Due date field will start blank — QM must enter it manually.'
+          : `New loans will default to <strong>${current} day${current === 1 ? '' : 's'}</strong> from today.`
+        }
+      </p>
+    </section>
+  `;
+}
+
+// Security section — auto-lock idle timeout
+// -----------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------
+// Appearance — theme toggle (dark / light / system)
+// -----------------------------------------------------------------------------
+
+function _appearanceSectionHtml(settings) {
+  const current = settings['ui.theme'] || 'dark';
+  const opts = [
+    { value: 'dark',   label: 'Dark (default)' },
+    { value: 'light',  label: 'Light' },
+    { value: 'system', label: 'Follow system preference' },
+  ].map(({ value, label }) =>
+    `<option value="${value}"${value === current ? ' selected' : ''}>${esc(label)}</option>`
+  ).join('');
+
+  return `
+    <section class="settings__section" data-section="appearance">
+      <header class="settings__section-header">
+        <h2 class="settings__section-title">Appearance</h2>
+        <p class="settings__section-hint">
+          Choose a colour theme. "Follow system preference" switches automatically
+          with your device's light/dark mode setting.
+        </p>
+      </header>
+
+      <div class="form__row form__row--align-center">
+        <label class="form__label" for="theme-select">Colour theme</label>
+        <select id="theme-select" class="form__select settings__theme-select"
+                data-action="save-theme">
+          ${opts}
+        </select>
+      </div>
+    </section>
+  `;
+}
+
+function _securitySectionHtml(settings) {
+  const stored = parseInt(settings['security.idleTimeoutMinutes'], 10);
+  // Enforce minimum 5 min — 0 (disabled) is not permitted on security grounds.
+  const current = (!isNaN(stored) && stored >= 5) ? stored : 15;
+
+  const opts = [
+    { value: 5,  label: '5 minutes' },
+    { value: 10, label: '10 minutes' },
+    { value: 15, label: '15 minutes' },
+    { value: 30, label: '30 minutes' },
+    { value: 60, label: '1 hour' },
+  ].map(({ value, label }) =>
+    `<option value="${value}"${value === current ? ' selected' : ''}>${esc(label)}</option>`
+  ).join('');
+
+  return `
+    <section class="settings__section" data-section="security">
+      <header class="settings__section-header">
+        <h2 class="settings__section-title">Security</h2>
+        <p class="settings__section-hint">
+          Auto-lock the session after a period of inactivity. The screen is
+          locked and a PIN is required to resume — useful on shared devices
+          such as a duty computer or parade-night tablet.
+        </p>
+      </header>
+
+      <div class="form__row form__row--align-center">
+        <label class="form__label" for="idle-timeout-select">Auto-lock after idle</label>
+        <select id="idle-timeout-select" class="form__select settings__idle-select"
+                data-action="save-idle-timeout">
+          ${opts}
+        </select>
+      </div>
+      <p class="form__hint">
+        Any mouse, keyboard, or touch activity resets the timer. The lock also
+        triggers immediately on wake from sleep or when returning to this tab
+        if the idle period has elapsed.
+        Session will lock after <strong>${current} minute${current === 1 ? '' : 's'}</strong> of inactivity.
+      </p>
+    </section>
+  `;
+}
+
 // Independent of cloud sync. Works on any origin including file://. Provides
 // the only recovery path when cloud sync isn't configured.
 //
@@ -552,7 +1292,7 @@ function _dataSectionHtml(settings) {
       </details>
 
       <input type="file" data-target="import-file"
-             accept="application/json,.json" hidden>
+             accept="application/json,.json,.qstore" hidden>
       <input type="file" data-target="import-v1-file"
              accept="application/json,.json" hidden>
     </section>
@@ -609,6 +1349,12 @@ function _syncActionsHtml(status) {
   }
   if (status.state === 'not-signed-in' || status.state === 'error') {
     buttons.push(`<button type="button" class="btn btn--primary" data-action="sign-in">Sign in to OneDrive</button>`);
+    // Recovery button — clears stuck MSAL interaction state. Shown alongside
+    // Sign in so users with interaction_in_progress errors have a self-service fix.
+    buttons.push(`<button type="button" class="btn btn--ghost" data-action="reset-auth-state"
+                         title="Use this if sign-in is stuck or shows an error after refreshing">
+                    Reset sign-in state
+                  </button>`);
   }
   if (status.state === 'signed-in' || status.state === 'busy') {
     buttons.push(`<button type="button" class="btn btn--primary" data-action="sync-now" ${status.busy ? 'disabled' : ''}>Sync now</button>`);
@@ -635,11 +1381,17 @@ async function _refreshSyncBlock(status) {
 // -----------------------------------------------------------------------------
 
 function _wireEventListeners() {
+  // Note: _root.addEventListener('click', _onRootClick) is wired once in
+  // mount() with { signal } — not here — to avoid accumulation across re-renders.
   const cloudForm = $('form[data-form="cloud-config"]', _root);
   if (cloudForm) cloudForm.addEventListener('submit', _onSaveConfig);
   const unitForm = $('form[data-form="unit-config"]', _root);
   if (unitForm) unitForm.addEventListener('submit', _onSaveUnit);
-  _root.addEventListener('click', _onRootClick);
+  const keyForm = $('form[data-form="activate-key"]', _root);
+  if (keyForm) keyForm.addEventListener('submit', _onActivateKey);
+
+  const logoInput = $('input[data-target="logo-file-input"]', _root);
+  if (logoInput) logoInput.addEventListener('change', _onLogoFileChange);
 
   // Cloud-disabled toggle. The checkbox lives outside any <form>, so we
   // listen for the change event directly on the root and dispatch from
@@ -650,6 +1402,111 @@ function _wireEventListeners() {
   if (cloudToggle) {
     cloudToggle.addEventListener('change', _onToggleCloudDisabled);
   }
+
+  const revealBtn = $('[data-action="reveal-client-id"]', _root);
+  if (revealBtn) _wireRevealButton(revealBtn);
+
+  const changeBtn = $('[data-action="change-client-id"]', _root);
+  if (changeBtn) {
+    changeBtn.addEventListener('click', () => {
+      const editDiv = $('[data-cloud-id-edit]', _root);
+      if (editDiv) {
+        editDiv.style.display = '';
+        const inp = editDiv.querySelector('input');
+        if (inp) inp.focus();
+      }
+    });
+  }
+
+  const idleSelect = $('[data-action="save-idle-timeout"]', _root);
+  if (idleSelect) idleSelect.addEventListener('change', _onIdleTimeoutChange);
+
+  const dueDaysSelect = $('[data-action="save-default-due-days"]', _root);
+  if (dueDaysSelect) dueDaysSelect.addEventListener('change', _onDefaultDueDaysChange);
+
+  const themeSelect = $('[data-action="save-theme"]', _root);
+  if (themeSelect) themeSelect.addEventListener('change', _onThemeChange);
+}
+
+async function _onDefaultDueDaysChange(e) {
+  const select = e.target;
+  const days   = parseInt(select.value, 10);
+  select.disabled = true;
+  try {
+    await Storage.settings.set('loans.defaultDueDays', isNaN(days) ? 7 : days);
+    showToast(
+      days === 0
+        ? 'Default loan duration cleared — due date will start blank.'
+        : `Default loan duration set to ${days} day${days === 1 ? '' : 's'}.`,
+      'success'
+    );
+    await _render();   // refresh hint text
+  } catch (err) {
+    showToast('Failed to save loan default.', 'error');
+  } finally {
+    select.disabled = false;
+  }
+}
+
+async function _onThemeChange(e) {
+  const select = e.target;
+  const theme  = select.value;
+  select.disabled = true;
+  try {
+    await Storage.settings.set('ui.theme', theme);
+    // Apply immediately — save to localStorage for fast next-boot application.
+    applyTheme(theme);
+    showToast(
+      theme === 'dark'   ? 'Theme set to dark.'  :
+      theme === 'light'  ? 'Theme set to light.' :
+                           'Theme will follow your system preference.',
+      'success'
+    );
+  } catch (err) {
+    showToast('Failed to save theme setting.', 'error');
+  } finally {
+    select.disabled = false;
+  }
+}
+
+async function _onIdleTimeoutChange(e) {
+  const select  = e.target;
+  const minutes = parseInt(select.value, 10);
+  select.disabled = true;
+  try {
+    await Storage.settings.set('security.idleTimeoutMinutes', isNaN(minutes) ? 0 : minutes);
+    // Notify the shell so it restarts the idle watcher immediately.
+    document.dispatchEvent(new CustomEvent('qstore:idle-timeout-changed'));
+    showToast(
+      minutes > 0
+        ? `Auto-lock set to ${minutes} minute${minutes === 1 ? '' : 's'}.`
+        : 'Auto-lock disabled.',
+      'success'
+    );
+    await _render();   // refresh hint text
+  } catch (err) {
+    showToast('Failed to save auto-lock setting.', 'error');
+  } finally {
+    select.disabled = false;
+  }
+}
+
+function _wireRevealButton(btn) {
+  const original = 'Hold to reveal';
+  const show = () => {
+    btn.textContent = btn.dataset.clientId;
+    btn.classList.add('cloud-id-reveal--active');
+  };
+  const hide = () => {
+    btn.textContent = original;
+    btn.classList.remove('cloud-id-reveal--active');
+  };
+  btn.addEventListener('mousedown',    show);
+  btn.addEventListener('mouseup',      hide);
+  btn.addEventListener('mouseleave',   hide);
+  btn.addEventListener('touchstart',   (e) => { e.preventDefault(); show(); }, { passive: false });
+  btn.addEventListener('touchend',     hide);
+  btn.addEventListener('touchcancel',  hide);
 }
 
 async function _onToggleCloudDisabled(e) {
@@ -683,7 +1540,7 @@ async function _onToggleCloudDisabled(e) {
                             // updates if it's now visible
     await _render();
   } catch (err) {
-    alert('Failed to update cloud-disabled setting: ' + (err.message || err));
+    showToast('Failed to update cloud-disabled setting: ' + (err.message || err), 'error');
     // Roll back the visual state so the UI matches storage.
     checkbox.checked = !desiredDisabled;
   } finally {
@@ -731,20 +1588,19 @@ async function _onSaveUnit(e) {
     // settings page's open state. We deliberately don't try to update the
     // login screen because the user is logged in — login screen's values
     // refresh next time it mounts.
-    // Soft-update the shell brand. The brand-code element is conditionally
-    // rendered (only present if it was non-empty at last shell render), so
-    // we have to inject it if the user just set a code where there wasn't
-    // one. Removing it when cleared is symmetric.
-    const brand = document.querySelector('.shell__brand');
-    const brandName = brand && brand.querySelector('.shell__brand-name');
+    // Soft-update the shell brand. name+code now live inside .shell__brand-text
+    // so the parent for new element insertion is that wrapper, not .shell__brand.
+    const brand     = document.querySelector('.shell__brand');
+    const brandText = brand && brand.querySelector('.shell__brand-text');
+    const brandName = brandText && brandText.querySelector('.shell__brand-name');
     if (brandName) brandName.textContent = fields.unitName || 'QStore IMS';
-    if (brand) {
-      let brandCode = brand.querySelector('.shell__brand-code');
+    if (brandText) {
+      let brandCode = brandText.querySelector('.shell__brand-code');
       if (fields.unitCode) {
         if (!brandCode) {
           brandCode = document.createElement('div');
           brandCode.className = 'shell__brand-code';
-          brand.appendChild(brandCode);
+          brandText.appendChild(brandCode);
         }
         brandCode.textContent = fields.unitCode;
       } else if (brandCode) {
@@ -764,7 +1620,10 @@ async function _onSaveConfig(e) {
   errEl.textContent = '';
 
   const fd = new FormData(form);
-  const clientId = String(fd.get('clientId') || '').trim();
+  // clientId_edit is present when the user clicked "Change" on a configured ID.
+  // If it's non-empty, use it; otherwise fall back to the hidden clientId field.
+  const editedId = String(fd.get('clientId_edit') || '').trim();
+  const clientId = editedId || String(fd.get('clientId') || '').trim();
   const folder   = String(fd.get('folder')   || '').trim() || 'QStore';
   const filename = String(fd.get('filename') || '').trim() || 'qstore_data.json';
   const autoSync = fd.get('autoSync') === 'on';
@@ -786,7 +1645,9 @@ async function _onSaveConfig(e) {
       user:   AUTH.getSession()?.name || 'unknown',
       desc:   `Cloud config updated (clientId set: ${clientId ? 'yes' : 'no'}, folder: ${folder}, file: ${filename}, autoSync: ${autoSync}).`,
     });
-    await _refreshSyncBlock(Sync.getStatus());
+    // Re-render the full settings page so the Client ID badge reflects the
+    // newly saved ID (the badge's data-client-id is baked in at render time).
+    await _render();
     _flashSuccess('Cloud settings saved.');
   } catch (err) {
     errEl.textContent = err.message || 'Could not save settings.';
@@ -797,16 +1658,297 @@ async function _onRootClick(e) {
   const action = e.target.closest('[data-action]')?.dataset.action;
   if (!action) return;
   switch (action) {
-    case 'sign-in':         await _doSignIn();       break;
-    case 'sign-out':        await _doSignOut();      break;
-    case 'sync-now':        await _doSyncNow();      break;
-    case 'load-from-cloud': await _doLoadFromCloud(); break;
+    case 'sign-in':           await _doSignIn();           break;
+    case 'sign-out':          await _doSignOut();          break;
+    case 'sync-now':          await _doSyncNow();          break;
+    case 'load-from-cloud':   await _doLoadFromCloud();    break;
+    case 'reset-auth-state':  await _doResetAuthState();   break;
     case 'export-data':     await _doExportData(e.target.closest('button')); break;
     case 'import-data':     await _doImportData(e.target.closest('button')); break;
     case 'import-v1':       await _doImportV1(e.target.closest('button')); break;
     case 'import-items-csv':  CsvUi.openItemsCsvImport();  break;
     case 'import-cadets-csv': CsvUi.openCadetsCsvImport(); break;
-    case 'recovery-generate': await _doGenerateRecovery(e.target.closest('button')); break;
+    case 'recovery-generate':    await _doGenerateRecovery(e.target.closest('button')); break;
+    case 'setup-2fa':            { const s = AUTH.getSession(); if (s?.userId) TotpSetup.openTotpSetup(s.userId); } break;
+    case 'manage-2fa':           { const s = AUTH.getSession(); if (s?.userId) TotpSetup.openTotpManage(s.userId); } break;
+    case 'logo-remove':          await _doRemoveLogo(); break;
+    case 'logo-download-copy':  await _doDownloadUnitCopy(); break;
+    case 'configure-structure':  await _onConfigureStructure(); break;
+    case 'clear-structure':      await _onClearStructure(e.target.closest('button')); break;
+    case 'migrate-platoons':     await _onMigratePlatoons(); break;
+    case 'manage-categories':   await _onManageCategories(); break;
+    case 'reset-categories':    await _onResetCategories();  break;
+  }
+}
+
+async function _onConfigureStructure() {
+  const existing = await Structure.load();
+  _openStructureModal(existing);
+}
+
+async function _onClearStructure(btn) {
+  if (btn) { btn.disabled = true; }
+  openModal({
+    titleHtml: 'Clear unit structure?',
+    size:      'sm',
+    bodyHtml:  `
+      <p class="modal__body">
+        This removes the company/platoon/section configuration. Cadets already assigned
+        to a company/platoon/section will retain those values on their records, but the
+        cascading dropdowns will no longer be available in the edit form. The nominal roll
+        will revert to the flat list view.
+      </p>
+      <div class="form__actions">
+        <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
+        <button type="button" class="btn btn--danger" data-action="confirm-clear-structure">Clear structure</button>
+      </div>
+    `,
+    onMount(panel, close) {
+      $('[data-action="confirm-clear-structure"]', panel)?.addEventListener('click', async () => {
+        await Structure.save([]);
+        close();
+        showToast('Unit structure cleared.', 'info');
+        await _render();
+      });
+    },
+  });
+  if (btn) btn.disabled = false;
+}
+
+// -----------------------------------------------------------------------------
+// Platoon migration wizard
+// -----------------------------------------------------------------------------
+// Reads all cadets that have a `plt` value but no `company` set, groups them
+// by unique plt string, then shows a mapping table so the QM can assign each
+// existing plt value to a company → platoon → section in the new structure.
+// On confirm, rewrites each cadet record with the selected structure fields.
+// -----------------------------------------------------------------------------
+
+async function _onMigratePlatoons() {
+  const structure = await Structure.load();
+  if (structure.length === 0) {
+    showToast('Configure a unit structure before migrating platoon data.', 'warn');
+    return;
+  }
+
+  const allCadets = await Storage.cadets.list();
+  // Only cadets with a legacy plt value AND no company assignment yet.
+  const unmigrated = allCadets.filter(c => (c.plt || c.platoon) && !c.company);
+
+  if (unmigrated.length === 0) {
+    openModal({
+      titleHtml: 'Platoon migration',
+      size: 'sm',
+      bodyHtml: `
+        <p class="modal__body">
+          All cadets are already assigned to a company, or have no platoon
+          value to migrate. Nothing to do.
+        </p>
+        <div class="form__actions">
+          <button type="button" class="btn btn--primary" data-action="modal-close">OK</button>
+        </div>
+      `,
+    });
+    return;
+  }
+
+  // Group by unique plt value (case-insensitive, trimmed).
+  const pltGroups = new Map();
+  for (const c of unmigrated) {
+    const key = (c.plt || c.platoon || '').trim();
+    if (!pltGroups.has(key)) pltGroups.set(key, []);
+    pltGroups.get(key).push(c);
+  }
+
+  // Build options for the company select.
+  const coOptions = structure.map((co, ci) =>
+    `<option value="${esc(String(ci))}">${esc(co.name)}</option>`
+  ).join('');
+
+  // Each row: [plt label | count | company dropdown | platoon dropdown | section dropdown]
+  const rowsHtml = [...pltGroups.entries()].map(([plt, cadets], rowIdx) => {
+    const count = cadets.length;
+    // Platoon options — empty until company is chosen; populated via JS.
+    return `
+      <tr class="migrate__row" data-plt="${esc(plt)}" data-row="${rowIdx}">
+        <td class="migrate__plt-label"><strong>${esc(plt || '(blank)')}</strong></td>
+        <td class="migrate__count">${count}</td>
+        <td>
+          <select class="migrate__co-sel" data-row="${rowIdx}" aria-label="Company">
+            <option value="">— skip —</option>
+            ${coOptions}
+          </select>
+        </td>
+        <td>
+          <select class="migrate__plt-sel" data-row="${rowIdx}" aria-label="Platoon" disabled>
+            <option value="">— select company first —</option>
+          </select>
+        </td>
+        <td>
+          <select class="migrate__sec-sel" data-row="${rowIdx}" aria-label="Section" disabled>
+            <option value="">— none —</option>
+          </select>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  openModal({
+    titleHtml: 'Migrate platoon data to company structure',
+    size: 'lg',
+    bodyHtml: `
+      <p class="modal__body">
+        ${unmigrated.length} cadet${unmigrated.length === 1 ? '' : 's'} have a free-text platoon
+        value but no company assignment. Map each platoon below to your configured structure.
+        Rows set to <em>— skip —</em> are left unchanged.
+      </p>
+      <div class="migrate__table-wrap">
+        <table class="migrate__table">
+          <thead>
+            <tr>
+              <th>Existing platoon</th>
+              <th>Cadets</th>
+              <th>→ Company</th>
+              <th>→ Platoon</th>
+              <th>→ Section</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+      </div>
+      <div class="form__actions">
+        <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
+        <button type="button" class="btn btn--primary" data-action="confirm-migrate">
+          Apply migration
+        </button>
+      </div>
+    `,
+    onMount(panel, close) {
+      // Wire each company dropdown to repopulate platoon/section children.
+      panel.querySelectorAll('.migrate__co-sel').forEach(coSel => {
+        coSel.addEventListener('change', () => {
+          const row  = coSel.dataset.row;
+          const ci   = coSel.value !== '' ? parseInt(coSel.value, 10) : -1;
+          const pltSel = panel.querySelector(`.migrate__plt-sel[data-row="${row}"]`);
+          const secSel = panel.querySelector(`.migrate__sec-sel[data-row="${row}"]`);
+
+          if (ci < 0 || !structure[ci]) {
+            pltSel.innerHTML = '<option value="">— select company first —</option>';
+            pltSel.disabled = true;
+            secSel.innerHTML = '<option value="">— none —</option>';
+            secSel.disabled = true;
+            return;
+          }
+          const platoons = structure[ci].platoons || [];
+          pltSel.innerHTML = `<option value="">— none —</option>` +
+            platoons.map((p, pi) =>
+              `<option value="${esc(String(pi))}">${esc(p.name)}</option>`
+            ).join('');
+          pltSel.disabled = platoons.length === 0;
+          // Reset section when company changes.
+          secSel.innerHTML = '<option value="">— none —</option>';
+          secSel.disabled = true;
+        });
+      });
+
+      // Wire each platoon dropdown to repopulate sections.
+      panel.querySelectorAll('.migrate__plt-sel').forEach(pltSel => {
+        pltSel.addEventListener('change', () => {
+          const row    = pltSel.dataset.row;
+          const coSel  = panel.querySelector(`.migrate__co-sel[data-row="${row}"]`);
+          const secSel = panel.querySelector(`.migrate__sec-sel[data-row="${row}"]`);
+          const ci     = coSel.value !== '' ? parseInt(coSel.value, 10) : -1;
+          const pi     = pltSel.value !== '' ? parseInt(pltSel.value, 10) : -1;
+
+          if (ci < 0 || pi < 0 || !structure[ci] || !structure[ci].platoons[pi]) {
+            secSel.innerHTML = '<option value="">— none —</option>';
+            secSel.disabled = true;
+            return;
+          }
+          const sections = structure[ci].platoons[pi].sections || [];
+          secSel.innerHTML = `<option value="">— none —</option>` +
+            sections.map((s, si) =>
+              `<option value="${esc(String(si))}">${esc(s.name)}</option>`
+            ).join('');
+          secSel.disabled = sections.length === 0;
+        });
+      });
+
+      // Confirm button: build mapping and write cadets.
+      panel.querySelector('[data-action="confirm-migrate"]')
+        ?.addEventListener('click', async (evt) => {
+          const btn = evt.target;
+          btn.disabled = true;
+          btn.textContent = 'Migrating…';
+
+          // Collect mapping: plt string → { company, platoon, section }.
+          const mapping = new Map();
+          panel.querySelectorAll('.migrate__row').forEach(tr => {
+            const plt    = tr.dataset.plt;
+            const coSel  = tr.querySelector('.migrate__co-sel');
+            const pltSel = tr.querySelector('.migrate__plt-sel');
+            const secSel = tr.querySelector('.migrate__sec-sel');
+            const ci     = coSel.value !== '' ? parseInt(coSel.value, 10) : -1;
+            if (ci < 0) return;  // skip
+            const pi = pltSel.value !== '' ? parseInt(pltSel.value, 10) : -1;
+            const si = secSel.value !== '' ? parseInt(secSel.value, 10) : -1;
+            const co     = structure[ci];
+            const pltObj = (pi >= 0 && co.platoons[pi]) ? co.platoons[pi] : null;
+            const secObj = (si >= 0 && pltObj?.sections?.[si]) ? pltObj.sections[si] : null;
+            mapping.set(plt, {
+              company:  co.name,
+              platoon:  pltObj ? pltObj.name : '',
+              section:  secObj ? secObj.name : '',
+            });
+          });
+
+          if (mapping.size === 0) {
+            showToast('No rows mapped — nothing to migrate.', 'warn');
+            btn.disabled = false;
+            btn.textContent = 'Apply migration';
+            return;
+          }
+
+          let updated = 0;
+          for (const c of unmigrated) {
+            const key  = (c.plt || c.platoon || '').trim();
+            const dest = mapping.get(key);
+            if (!dest) continue;
+            await Storage.cadets.put({
+              ...c,
+              company:   dest.company,
+              platoon:   dest.platoon,
+              section:   dest.section,
+              // Keep plt for backward compat with any legacy reads.
+              plt:       dest.platoon || c.plt || '',
+              updatedAt: new Date().toISOString(),
+            });
+            updated++;
+          }
+
+          await Storage.audit.append({
+            action: 'cadet_platoon_migration',
+            user:   AUTH.getSession()?.name || 'unknown',
+            desc:   `Platoon migration: ${updated} cadet${updated === 1 ? '' : 's'} assigned to structure via ${mapping.size} mapping${mapping.size === 1 ? '' : 's'}.`,
+          });
+          Sync.notifyChanged();
+
+          close();
+          showToast(`Migrated ${updated} cadet${updated === 1 ? '' : 's'} to company structure.`, 'success');
+        });
+    },
+  });
+}
+
+async function _doResetAuthState() {
+  try {
+    await getProvider().resetAuthState();
+    // Re-initialise so the provider picks up the cleared state.
+    await getProvider().init();
+    await _refreshSyncBlock(Sync.getStatus());
+    showToast('Sign-in state cleared. You can now sign in again.', 'success');
+  } catch (err) {
+    showToast('Reset failed: ' + (err.message || err), 'error');
   }
 }
 
@@ -818,7 +1960,7 @@ async function _doSignIn() {
     // executes — the next page load will resume.
     await _refreshSyncBlock(Sync.getStatus());
   } catch (err) {
-    alert('Sign-in failed: ' + (err.message || err));
+    showToast('Sign-in failed: ' + (err.message || err), 'error');
   }
 }
 
@@ -828,7 +1970,7 @@ async function _doSignOut() {
     await getProvider().signOut();
     await _refreshSyncBlock(Sync.getStatus());
   } catch (err) {
-    alert('Sign-out failed: ' + (err.message || err));
+    showToast('Sign-out failed: ' + (err.message || err), 'error');
   }
 }
 
@@ -837,7 +1979,7 @@ async function _doSyncNow() {
     await Sync.syncNow();
     _flashSuccess('Synced to OneDrive.');
   } catch (err) {
-    alert('Sync failed: ' + (err.message || err));
+    showToast('Sync failed: ' + (err.message || err), 'error');
   }
 }
 
@@ -905,6 +2047,66 @@ async function _doLoadFromCloud() {
 // while running so a frantic double-click can't kick off two exports or two
 // imports racing each other through the same IndexedDB transaction queue.
 
+// ---------------------------------------------------------------------------
+// Encrypted backup helpers
+// Encrypted file format: { qstoreEncrypted: true, v: 1, salt: b64, iv: b64, data: b64 }
+// Key derivation: PBKDF2 (SHA-256, 310000 iterations) → AES-256-GCM
+// ---------------------------------------------------------------------------
+
+function _b64(buf) {
+  // Spread operator on large Uint8Array blows the call stack for big backups.
+  // Chunk the conversion to stay well within argument limits.
+  const bytes = new Uint8Array(buf);
+  const CHUNK = 0x8000;
+  let s = '';
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    s += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(s);
+}
+function _fromB64(s) {
+  return Uint8Array.from(atob(s), c => c.charCodeAt(0));
+}
+
+async function _encryptBackup(jsonStr, password) {
+  const enc      = new TextEncoder();
+  const salt     = crypto.getRandomValues(new Uint8Array(32));
+  const iv       = crypto.getRandomValues(new Uint8Array(12));
+  const baseKey  = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
+  const aesKey   = await crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: 310_000, hash: 'SHA-256' },
+    baseKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt'],
+  );
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aesKey, enc.encode(jsonStr));
+  return JSON.stringify({ qstoreEncrypted: true, v: 1, salt: _b64(salt), iv: _b64(iv), data: _b64(ciphertext) });
+}
+
+async function _decryptBackup(encObj, password) {
+  if (!encObj?.qstoreEncrypted || encObj.v !== 1) throw new Error('Not a QStore encrypted backup.');
+  const enc     = new TextEncoder();
+  const salt    = _fromB64(encObj.salt);
+  const iv      = _fromB64(encObj.iv);
+  const data    = _fromB64(encObj.data);
+  const baseKey = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
+  const aesKey  = await crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: 310_000, hash: 'SHA-256' },
+    baseKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['decrypt'],
+  );
+  let plain;
+  try {
+    plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, aesKey, data);
+  } catch {
+    throw new Error('Incorrect password or corrupted backup file.');
+  }
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+
 async function _doExportData(btn) {
   if (btn) btn.disabled = true;
   try {
@@ -917,31 +2119,91 @@ async function _doExportData(btn) {
     });
 
     const snapshot = await Storage.exportAll();
-    const blob = new Blob([JSON.stringify(snapshot)], { type: 'application/json' });
 
     const settings = await Storage.settings.getAll();
     const unitTag = (settings.unitCode || settings.unitName || 'qstore')
       .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'qstore';
     const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-    const filename = `qstore-backup-${unitTag}-${stamp}.json`;
+    const baseFilename = `qstore-backup-${unitTag}-${stamp}`;
 
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    // Revoke after a tick — some browsers need the URL to still be valid
-    // when the click handler returns.
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-
-    await Storage.settings.set('data.lastExport', new Date().toISOString());
-    await _render();
-    _flashSuccess(`Backup saved as ${filename}.`);
+    // Offer password protection via a modal. This is non-blocking: the user
+    // can choose plain JSON or an AES-256-GCM encrypted file.
+    openModal({
+      titleHtml: 'Export backup',
+      size: 'sm',
+      bodyHtml: `
+        <p class="modal__body">
+          Password-protect your backup to prevent anyone who finds the file
+          from reading your unit's data. You will need this password to restore.
+        </p>
+        <form class="form" data-form="export-pw" autocomplete="off">
+          <label class="form__field">
+            <span class="form__label">Password <span class="form__optional">(leave blank for unencrypted)</span></span>
+            <input type="password" name="pw" autocomplete="new-password"
+                   placeholder="Leave blank to export without encryption">
+          </label>
+          <label class="form__field">
+            <span class="form__label">Confirm password</span>
+            <input type="password" name="pw2" autocomplete="new-password"
+                   placeholder="Repeat password">
+          </label>
+          <div class="form__error" role="alert"></div>
+          <div class="form__actions">
+            <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
+            <button type="submit" class="btn btn--primary">Export backup</button>
+          </div>
+        </form>
+      `,
+      onMount(panel, close) {
+        const form  = $('form[data-form="export-pw"]', panel);
+        const errEl = $('.form__error', panel);
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          errEl.textContent = '';
+          const fd  = new FormData(form);
+          const pw  = String(fd.get('pw')  || '');
+          const pw2 = String(fd.get('pw2') || '');
+          if (pw && pw !== pw2) {
+            errEl.textContent = 'Passwords do not match.';
+            return;
+          }
+          const submitBtn = form.querySelector('[type="submit"]');
+          if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Exporting…'; }
+          try {
+            let outStr, filename, mimeType;
+            if (pw) {
+              outStr   = await _encryptBackup(JSON.stringify(snapshot), pw);
+              filename = `${baseFilename}.qstore`;
+              mimeType = 'application/octet-stream';
+            } else {
+              outStr   = JSON.stringify(snapshot);
+              filename = `${baseFilename}.json`;
+              mimeType = 'application/json';
+            }
+            const blob = new Blob([outStr], { type: mimeType });
+            const url  = URL.createObjectURL(blob);
+            const a    = document.createElement('a');
+            a.href     = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            close();
+            await Storage.settings.set('data.lastExport', new Date().toISOString());
+            await _render();
+            _flashSuccess(`Backup saved as ${filename}.${pw ? ' (encrypted)' : ''}`);
+          } catch (err) {
+            console.error('Export failed:', err);
+            errEl.textContent = 'Export failed: ' + (err.message || err);
+            if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Export backup'; }
+          }
+        });
+      },
+    });
   } catch (err) {
     console.error('Export failed:', err);
-    alert('Export failed: ' + (err.message || err));
+    showToast('Export failed: ' + (err.message || err), 'error');
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -992,7 +2254,7 @@ async function _doImportData(btn) {
         // operation cleanly.
         const fileInput = $('input[data-target="import-file"]', _root);
         if (!fileInput) {
-          alert('Internal error: file input missing.');
+          showToast('Something went wrong — please reload the page and try again.', 'error');
           return;
         }
         // One-shot listener so repeated imports don't stack handlers.
@@ -1010,23 +2272,95 @@ async function _doImportData(btn) {
   });
 }
 
+/**
+ * Prompt the user for a decryption password when importing an encrypted backup.
+ * Returns the decrypted snapshot object, or null if the user cancels.
+ */
+function _promptDecrypt(encObj) {
+  return new Promise((resolve) => {
+    openModal({
+      titleHtml: 'Encrypted backup — enter password',
+      size: 'sm',
+      bodyHtml: `
+        <p class="modal__body">
+          This backup file is password-protected. Enter the password that was
+          used when the backup was exported.
+        </p>
+        <form class="form" data-form="decrypt-pw" autocomplete="off">
+          <label class="form__field">
+            <span class="form__label">Backup password</span>
+            <input type="password" name="pw" autocomplete="current-password" required
+                   autofocus placeholder="Enter backup password">
+          </label>
+          <div class="form__error" role="alert"></div>
+          <div class="form__actions">
+            <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
+            <button type="submit" class="btn btn--primary">Decrypt &amp; restore</button>
+          </div>
+        </form>
+      `,
+      onMount(panel, close) {
+        const form  = $('form[data-form="decrypt-pw"]', panel);
+        const errEl = $('.form__error', panel);
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          errEl.textContent = '';
+          const pw = String(new FormData(form).get('pw') || '');
+          const submitBtn = form.querySelector('[type="submit"]');
+          if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Decrypting…'; }
+          try {
+            const snapshot = await _decryptBackup(encObj, pw);
+            close();
+            resolve(snapshot);
+          } catch (err) {
+            errEl.textContent = err.message || 'Decryption failed.';
+            if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Decrypt & restore'; }
+          }
+        });
+        // If the modal is closed without submitting, resolve null so the
+        // import caller knows to abort cleanly.
+        panel.closest('.modal')?.addEventListener('modal-close', () => resolve(null), { once: true });
+      },
+    });
+  });
+}
+
 async function _performImport(file, btn) {
   if (btn) btn.disabled = true;
   try {
     const text = await file.text();
-    let snapshot;
+    let parsed;
     try {
-      snapshot = JSON.parse(text);
+      parsed = JSON.parse(text);
     } catch {
-      alert('That file is not valid JSON. Choose a backup file produced by QStore.');
+      showToast('That file is not valid JSON. Choose a backup file produced by QStore.', 'error');
+      if (btn) btn.disabled = false;
       return;
     }
+
+    // Detect encrypted backup (.qstore format)
+    let snapshot;
+    if (parsed?.qstoreEncrypted === true) {
+      snapshot = await _promptDecrypt(parsed);
+      if (!snapshot) { if (btn) btn.disabled = false; return; } // user cancelled
+    } else {
+      snapshot = parsed;
+    }
+
     if (!snapshot || typeof snapshot !== 'object' || !snapshot.schemaVersion) {
-      alert('That file is not a QStore backup (missing schemaVersion).');
+      showToast('That file is not a QStore backup (missing schemaVersion).', 'error');
+      if (btn) btn.disabled = false;
       return;
     }
     // Storage.importAll throws on schema mismatch; we surface that cleanly.
     await Storage.importAll(snapshot);
+
+    // Mirror logo to localStorage so splash shows it on the forced reload below.
+    try {
+      const ls = await Storage.settings.getAll();
+      if (ls.unitLogo) localStorage.setItem('qstore2_logo', ls.unitLogo);
+      else localStorage.removeItem('qstore2_logo');
+    } catch (_) {}
 
     // Log AFTER importAll because importAll wipes the audit store and
     // replaces it with the snapshot's chain. Logging before the import
@@ -1043,11 +2377,11 @@ async function _performImport(file, btn) {
     // Force a reload — the current page state is now stale, and the
     // session may also be invalid (the imported users table might not
     // contain the currently-logged-in user).
-    alert('Backup restored. The page will now reload.');
+    showToast('Backup restored. The page will now reload.', 'success', 2000);
     location.reload();
   } catch (err) {
     console.error('Import failed:', err);
-    alert('Restore failed: ' + (err.message || err));
+    showToast('Restore failed: ' + (err.message || err), 'error');
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -1088,7 +2422,7 @@ function _flashSuccess(message) {
 async function _doGenerateRecovery(button) {
   const sess = AUTH.getSession();
   if (!sess?.userId) {
-    alert('No active session — cannot generate recovery code.');
+    showToast('No active session — cannot generate recovery code.', 'warn');
     return;
   }
 
@@ -1122,7 +2456,7 @@ async function _doGenerateRecovery(button) {
     // even before they read the code.
     _openRecoveryFromSettings(formattedCode, before.exists);
   } catch (err) {
-    alert('Failed to generate recovery code: ' + (err.message || err));
+    showToast('Failed to generate recovery code: ' + (err.message || err), 'error');
   } finally {
     if (button) button.disabled = false;
   }
@@ -1175,6 +2509,145 @@ function _openRecoveryFromSettings(formattedCode, wasRotation) {
       });
     },
   });
+}
+
+// =============================================================================
+// Unit logo upload / remove
+// =============================================================================
+// The logo is stored as a PNG data URL in the settings store under key
+// 'unitLogo'. Storing as a data URL means it's included in backup exports
+// without any extra serialisation logic, and it renders inline in the <img>
+// without an object-URL lifecycle to manage.
+//
+// Size budget: we cap input at 5 MB and resize to fit 400×160 px before
+// encoding as PNG. A typical unit badge at that size is 20–80 KB as a
+// data URL — well within the settings store's practical limits.
+//
+// PNG is used (not JPEG) to preserve transparency, which most unit logos need.
+
+async function _onLogoFileChange(e) {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';  // allow re-selecting the same file later
+  if (!file) return;
+
+  const errEl = $('[data-target="logo-error"]', _root);
+  if (errEl) errEl.textContent = '';
+
+  if (!file.type.startsWith('image/')) {
+    if (errEl) errEl.textContent = 'File must be an image (PNG, JPEG, SVG, etc.).';
+    return;
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    const mb = (file.size / 1024 / 1024).toFixed(1);
+    if (errEl) errEl.textContent = `Image is ${mb} MB — maximum is 5 MB.`;
+    return;
+  }
+
+  try {
+    const dataUrl = await _processLogo(file);
+    await Storage.settings.set('unitLogo', dataUrl);
+    // Mirror to localStorage so the logo survives an HTML file upgrade at the
+    // same origin/path (GitHub Pages updates, same-path file replacement).
+    try { localStorage.setItem('qstore2_logo', dataUrl); } catch (_) {}
+    _softUpdateHeaderLogo(dataUrl);
+    await _render();
+    _flashSuccess('Logo updated.');
+  } catch (err) {
+    if (errEl) errEl.textContent = err.message || 'Failed to process logo.';
+  }
+}
+
+async function _doRemoveLogo() {
+  await Storage.settings.set('unitLogo', null);
+  // Clear the localStorage mirror as well.
+  try { localStorage.removeItem('qstore2_logo'); } catch (_) {}
+  _softUpdateHeaderLogo(null);
+  await _render();
+  _flashSuccess('Logo removed.');
+}
+
+async function _doDownloadUnitCopy() {
+  // Generates a version of this HTML file with the unit logo (and unit name/code)
+  // embedded as window.__UNIT_CONFIG__. When this file is opened on any device,
+  // the logo shows on the splash screen immediately — before IDB is populated.
+  try {
+    const s = await Storage.settings.getAll();
+    const logo = s.unitLogo || null;
+    if (!logo) {
+      showToast('Upload a logo first.', 'error');
+      return;
+    }
+    const config = { logo, unitName: s.unitName || '', unitCode: s.unitCode || '' };
+    // Inject config as first script in <head> so it runs before the app bundle.
+    const configScript = `<script>window.__UNIT_CONFIG__=${JSON.stringify(config)};<\/script>`;
+    const html = document.documentElement.outerHTML;
+    const injected = html.includes('</head>')
+      ? html.replace('</head>', configScript + '</head>')
+      : configScript + html;
+    const slug = (s.unitCode || s.unitName || 'unit')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'unit';
+    const filename = `qstore-${slug}-unit-copy.html`;
+    const blob = new Blob([injected], { type: 'text/html' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    _flashSuccess(`Saved as ${filename}. Share this file — logo is embedded.`);
+  } catch (err) {
+    showToast('Download failed: ' + (err.message || err), 'error');
+  }
+}
+
+async function _processLogo(file) {
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    throw new Error('Could not decode image. Try a different file or format.');
+  }
+
+  try {
+    // Fit inside 1024×1024 — large enough for the splash screen at any display
+    // size while staying lossless (PNG). The old 160px cap caused pixelation
+    // when the logo was displayed at splash size (60vmin ≈ 460px+).
+    // Images smaller than 1024px are stored at their natural size (no upscale).
+    const MAX = 1024;
+    const scale = Math.min(MAX / bitmap.width, MAX / bitmap.height, 1);
+    const w = Math.max(1, Math.round(bitmap.width  * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+
+    const canvas = document.createElement('canvas');
+    canvas.width  = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled  = true;
+    ctx.imageSmoothingQuality  = 'high';
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    return canvas.toDataURL('image/png');
+  } finally {
+    if (bitmap.close) bitmap.close();
+  }
+}
+
+function _softUpdateHeaderLogo(logoDataUrl) {
+  const brand = document.querySelector('.shell__brand');
+  if (!brand) return;
+  let logoImg = brand.querySelector('.shell__brand-logo');
+  if (logoDataUrl) {
+    if (!logoImg) {
+      logoImg = document.createElement('img');
+      logoImg.className = 'shell__brand-logo';
+      logoImg.alt = '';
+      brand.insertBefore(logoImg, brand.firstChild);
+    }
+    logoImg.src = logoDataUrl;
+  } else {
+    if (logoImg) logoImg.remove();
+  }
 }
 
 // =============================================================================
@@ -1241,7 +2714,7 @@ async function _doImportV1(btn) {
         close();
         const fileInput = $('input[data-target="import-v1-file"]', _root);
         if (!fileInput) {
-          alert('Internal error: v1 file input missing.');
+          showToast('Internal error: v1 file input missing.', 'error');
           return;
         }
         const onChange = async () => {
@@ -1269,8 +2742,7 @@ async function _performV1Import(file, btn) {
     const text = await file.text();
     parsed = JSON.parse(text);
   } catch (err) {
-    alert('Could not read the v1 file: ' + (err.message || err) +
-          '\n\nThe file may be corrupted or not a valid JSON export.');
+    showToast('Could not read the v1 file: ' + (err.message || err) + ' — The file may be corrupted or not a valid JSON export.', 'error');
     if (btn) btn.disabled = false;
     return;
   }
@@ -1311,10 +2783,7 @@ async function _performV1Import(file, btn) {
     result = await Migration.runFromObject(parsed, { wipeFirst: true, onProgress });
   } catch (err) {
     if (progressClose) progressClose();
-    alert('v1 import failed: ' + (err.message || err) +
-          '\n\nThe database may be in a partially-migrated state. ' +
-          'Restore from a v2 backup file, or re-run the v1 import after ' +
-          'the issue is resolved.');
+    showToast('v1 import failed: ' + (err.message || err) + ' — Database may be partially migrated. Restore from a v2 backup or re-run the import.', 'error', 8000);
     if (btn) btn.disabled = false;
     return;
   }
@@ -1353,4 +2822,258 @@ async function _performV1Import(file, btn) {
   // Re-render so the data section's "last import" timestamp updates.
   await _render();
   if (btn) btn.disabled = false;
+}
+
+// -----------------------------------------------------------------------------
+// About section
+// -----------------------------------------------------------------------------
+// Subscription section
+// -----------------------------------------------------------------------------
+
+function _subscriptionSectionHtml(ls) {
+  const STATE_LABELS = {
+    TRIAL:      'Free Trial',
+    ACTIVE:     'Active',
+    GRACE:      'Expired (Grace Period)',
+    RESTRICTED: 'Expired — Read-Only',
+    INVALID:    'Invalid Key',
+  };
+  const STATE_DOT = {
+    TRIAL:      'trial',
+    ACTIVE:     'active',
+    GRACE:      'grace',
+    RESTRICTED: 'restricted',
+    INVALID:    'invalid',
+  };
+
+  const stateLabel = STATE_LABELS[ls.state] ?? ls.state;
+  const dotClass   = `sub__status-dot sub__status-dot--${STATE_DOT[ls.state] ?? 'invalid'}`;
+
+  let detailHtml = '';
+  if (ls.state === 'TRIAL') {
+    const days = ls.trialDaysLeft ?? 0;
+    detailHtml = `
+      <div class="sub__detail-row">
+        <span class="sub__detail-label">Trial days remaining</span>
+        <span class="sub__detail-value">${days} day${days === 1 ? '' : 's'}</span>
+      </div>`;
+  } else if (ls.state === 'ACTIVE' || ls.state === 'GRACE') {
+    if (ls.payload?.unit) {
+      detailHtml += `
+        <div class="sub__detail-row">
+          <span class="sub__detail-label">Licensed unit</span>
+          <span class="sub__detail-value">${esc(ls.payload.unit)}</span>
+        </div>`;
+    }
+    if (ls.expiresAt) {
+      detailHtml += `
+        <div class="sub__detail-row">
+          <span class="sub__detail-label">Key expiry</span>
+          <span class="sub__detail-value">${esc(ls.expiresAt)}</span>
+        </div>`;
+    }
+    if (ls.state === 'ACTIVE' && ls.daysRemaining !== null) {
+      detailHtml += `
+        <div class="sub__detail-row">
+          <span class="sub__detail-label">Days remaining</span>
+          <span class="sub__detail-value">${ls.daysRemaining} day${ls.daysRemaining === 1 ? '' : 's'}</span>
+        </div>`;
+    }
+    if (ls.state === 'GRACE' && ls.graceDaysLeft !== null) {
+      detailHtml += `
+        <div class="sub__detail-row">
+          <span class="sub__detail-label">Grace period ends</span>
+          <span class="sub__detail-value">in ${ls.graceDaysLeft} day${ls.graceDaysLeft === 1 ? '' : 's'}</span>
+        </div>`;
+    }
+  } else if (ls.state === 'RESTRICTED' && ls.payload?.unit) {
+    detailHtml = `
+      <div class="sub__detail-row">
+        <span class="sub__detail-label">Last licensed unit</span>
+        <span class="sub__detail-value">${esc(ls.payload.unit)}</span>
+      </div>`;
+  }
+
+  const showRenew = ls.state === 'GRACE' || ls.state === 'RESTRICTED';
+  const renewHtml = showRenew
+    ? `<a href="https://qstore.seanscales.com.au/renew" target="_blank" rel="noopener"
+          class="btn btn--ghost sub__renew-btn">Renew online ↗</a>`
+    : '';
+
+  return `
+    <section class="settings__section" data-section="subscription">
+      <header class="settings__section-header">
+        <h2 class="settings__section-title">Subscription</h2>
+      </header>
+      <div class="sub__status-row">
+        <span class="${dotClass}" aria-hidden="true"></span>
+        <span class="sub__status-label">${esc(stateLabel)}</span>
+        ${renewHtml}
+      </div>
+      ${detailHtml ? `<div class="sub__details">${detailHtml}</div>` : ''}
+      <form class="form sub__key-form" data-form="activate-key" autocomplete="off">
+        <label class="form__field">
+          <span class="form__label">Subscription key</span>
+          <input type="text" name="licenseKey" class="form__input sub__key-input"
+                 placeholder="QSTRE-XXXXX-XXXXX-XXXXX-XXXXX or paste raw key"
+                 spellcheck="false" autocorrect="off" autocapitalize="characters">
+        </label>
+        <div class="form__error sub__key-error" role="alert"></div>
+        <div class="form__actions">
+          <button type="submit" class="btn btn--primary">Activate key</button>
+        </div>
+      </form>
+    </section>
+  `;
+}
+
+async function _onActivateKey(e) {
+  e.preventDefault();
+  const form  = e.currentTarget;
+  const errEl = $('.sub__key-error', _root);
+  const input = $('input[name="licenseKey"]', form);
+  const btn   = $('button[type="submit"]', form);
+  if (!errEl || !input || !btn) return;
+
+  errEl.textContent = '';
+  const raw = (input.value || '').trim();
+  if (!raw) { errEl.textContent = 'Enter a subscription key.'; return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Activating…';
+  try {
+    const result = activateKey(raw);
+    if (!result.ok) {
+      const msgs = {
+        bad_signature:    'Key signature is invalid. Check the key and try again.',
+        expired:          'Key has expired. Contact support to renew.',
+        malformed:        'Key format not recognised. Paste the full key as provided.',
+        malformed_payload:'Key format not recognised.',
+        missing_exp:      'Key is missing expiry information. Contact support.',
+        verify_error:     'Could not verify the key. Contact support.',
+        empty_key:        'No key entered.',
+      };
+      errEl.textContent = msgs[result.error] ?? `Activation failed (${result.error || 'unknown'}).`;
+      return;
+    }
+
+    // Register this device with Platform Core (enforces per-licence device limit)
+    btn.textContent = 'Registering device…';
+    const deviceResult = await deviceActivate();
+    if (deviceResult && !deviceResult.success && deviceResult.errorCode === 'MAX_DEVICES_REACHED') {
+      errEl.textContent = `Device limit reached — this key is active on ${deviceResult.activeDevices} of ${deviceResult.maxDevices} allowed devices. Remove a device in Settings → Subscription to continue, or purchase an additional device seat.`;
+      localStorage.removeItem('qstore_v2_license');
+      return;
+    }
+
+    input.value = '';
+    showToast(
+      result.state === 'ACTIVE'
+        ? `Subscription activated for ${result.payload?.unit ?? 'your unit'}.`
+        : `Key accepted (${result.state}).`,
+      'success'
+    );
+    await _render();
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Activate key'; }
+  }
+}
+
+// -----------------------------------------------------------------------------
+
+function _aboutSectionHtml() {
+  return `
+    <section class="settings__section" data-section="about">
+      <header class="settings__section-header">
+        <h2 class="settings__section-title">About QStore IMS</h2>
+      </header>
+
+      <div class="about__block">
+        <div class="about__app-name">QStore IMS <span class="about__version">v2.3</span></div>
+        <p class="about__tagline">Inventory Management System for Australian Army Cadet Q-Stores</p>
+        <p class="about__powered">Powered by <strong>ITEMORA</strong> &mdash; <a href="https://itemora.com.au" target="_blank" rel="noopener" class="about__link">itemora.com.au</a></p>
+      </div>
+
+      <div class="about__credits">
+        <div class="about__credit-row">
+          <span class="about__credit-label">Primary Author</span>
+          <span class="about__credit-value">Sean Scales</span>
+        </div>
+        <div class="about__credit-row">
+          <span class="about__credit-label">AI Development Partner</span>
+          <span class="about__credit-value">Claude Sonnet 4.6 — Anthropic</span>
+        </div>
+        <div class="about__credit-row">
+          <span class="about__credit-label">Copyright</span>
+          <span class="about__credit-value">&copy; ${new Date().getFullYear()} Sean Scales. All rights reserved.</span>
+        </div>
+        <div class="about__credit-row">
+          <span class="about__credit-label">Licensing enquiries</span>
+          <span class="about__credit-value"><a href="mailto:admin@seanscales.com.au" class="about__link">admin@seanscales.com.au</a></span>
+        </div>
+      </div>
+
+      <details class="about__license">
+        <summary class="about__license-summary">Proprietary Software Licence</summary>
+        <div class="about__license-body">
+          <p><strong>QStore IMS — Proprietary Software Licence</strong></p>
+          <p>Copyright &copy; ${new Date().getFullYear()} Sean Scales (&ldquo;the Author&rdquo;). All rights reserved.</p>
+
+          <p><strong>OWNERSHIP</strong><br>
+          This software, QStore IMS (the &ldquo;Software&rdquo;), including all associated source code, compiled
+          outputs, documentation, and assets, is the exclusive intellectual property of the Author.
+          All rights not expressly granted herein are reserved by the Author.</p>
+
+          <p><strong>PERMITTED USE</strong><br>
+          Authorised end users may use the Software solely for its intended purpose of inventory
+          management operations. This permission is granted at the Author&rsquo;s sole discretion and
+          may be withdrawn at any time.</p>
+
+          <p><strong>RESTRICTIONS</strong><br>
+          Without the express prior written consent of the Author, you may <strong>not</strong>:</p>
+          <ol class="about__license-list">
+            <li>Distribute, sublicense, sell, lease, rent, lend, or otherwise transfer the Software
+                or any copy thereof to any third party;</li>
+            <li>Modify, adapt, translate, reverse-engineer, decompile, disassemble, or create
+                derivative works based on the Software;</li>
+            <li>Remove, alter, or obscure any copyright, trademark, or proprietary notices
+                contained in or accompanying the Software;</li>
+            <li>Use the Software, in whole or in part, for any commercial purpose or incorporate
+                it into any commercial product or service without a separate written licence
+                agreement with the Author;</li>
+            <li>Publicly display, publicly perform, or otherwise make the Software available to
+                any person not expressly authorised by the Author.</li>
+          </ol>
+
+          <p><strong>INTELLECTUAL PROPERTY</strong><br>
+          The Software incorporates AI-assisted development tooling provided by Anthropic
+          (Claude Sonnet 4.6). All output generated through such tooling in the creation of this
+          Software is attributed to and owned by the Author in accordance with Anthropic&rsquo;s
+          terms of service.</p>
+
+          <p><strong>DISCLAIMER OF WARRANTIES</strong><br>
+          THE SOFTWARE IS PROVIDED &ldquo;AS IS&rdquo;, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+          INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+          PARTICULAR PURPOSE, AND NON-INFRINGEMENT. THE AUTHOR DOES NOT WARRANT THAT THE
+          SOFTWARE WILL BE ERROR-FREE OR UNINTERRUPTED.</p>
+
+          <p><strong>LIMITATION OF LIABILITY</strong><br>
+          TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE AUTHOR SHALL NOT BE LIABLE
+          FOR ANY INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+          (INCLUDING LOSS OF DATA, LOSS OF PROFITS, OR BUSINESS INTERRUPTION) ARISING OUT OF
+          OR IN CONNECTION WITH THE USE OR INABILITY TO USE THE SOFTWARE.</p>
+
+          <p><strong>GOVERNING LAW</strong><br>
+          This licence is governed by the laws of Queensland, Australia. Any dispute arising
+          under or in connection with this licence shall be subject to the exclusive jurisdiction
+          of the courts of Queensland, Australia.</p>
+
+          <p><strong>LICENSING ENQUIRIES</strong><br>
+          To enquire about commercial licensing, distribution rights, or any permissions beyond
+          the scope of this licence, contact the Author at
+          <a href="mailto:admin@seanscales.com.au" class="about__link">admin@seanscales.com.au</a>.</p>
+        </div>
+      </details>
+    </section>
+  `;
 }

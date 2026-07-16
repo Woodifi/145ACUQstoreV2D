@@ -74,7 +74,8 @@ export const PERMS = Object.freeze({
   ro:    ['view', 'requestIssue', 'reports'],
 });
 
-const SESSION_STORAGE_KEY    = 'qstore_session';
+// V2L sandbox: separate session key prevents login state bleed.
+const SESSION_STORAGE_KEY    = (typeof __V2L_SESSION_KEY__ !== 'undefined') ? __V2L_SESSION_KEY__ : 'qstore_session';
 const SETTING_INVALIDATED_AT = 'session.invalidatedAt';
 
 const ARGON_PARAMS = {
@@ -83,6 +84,53 @@ const ARGON_PARAMS = {
   memorySize:  64 * 1024,  // 64 MB, expressed in KB per hash-wasm convention
   hashLength:  32,
 };
+
+// -----------------------------------------------------------------------------
+// PIN lockout — per-user, localStorage-backed
+// -----------------------------------------------------------------------------
+// After LOCKOUT_THRESHOLD consecutive failures the account is locked for an
+// escalating delay. Stored in localStorage so a page refresh doesn't reset it.
+// State is cleared on successful login.
+//
+// Thresholds: 5 → 30 s, 10 → 5 min, 15 → 30 min.
+// localStorage key: qstore_lockout_<userId>
+
+const LOCKOUT_THRESHOLD = 5;
+const LOCKOUT_KEY_PREFIX = 'qstore_lockout_';
+
+function _lockoutKey(userId) { return LOCKOUT_KEY_PREFIX + userId; }
+
+function _readLockout(userId) {
+  try {
+    const raw = localStorage.getItem(_lockoutKey(userId));
+    return raw ? JSON.parse(raw) : { failures: 0, lockedUntil: 0 };
+  } catch {
+    return { failures: 0, lockedUntil: 0 };
+  }
+}
+
+function _writeLockout(userId, state) {
+  try { localStorage.setItem(_lockoutKey(userId), JSON.stringify(state)); } catch { /* storage full */ }
+}
+
+function _lockoutDurationMs(failures) {
+  if (failures >= 15) return 60 * 60 * 1000;  // 60 minutes
+  if (failures >= 10) return 30 * 60 * 1000;  // 30 minutes
+  return 15 * 60 * 1000;                       // 15 minutes
+}
+
+/** Current lockout status for a user. Returns { locked, unlockAt, failures }. */
+export function getLockoutStatus(userId) {
+  const state = _readLockout(userId);
+  const now = Date.now();
+  const locked = state.lockedUntil > now;
+  return { locked, unlockAt: state.lockedUntil, failures: state.failures };
+}
+
+/** Clear lockout for a user (called on successful login). */
+export function clearLockout(userId) {
+  try { localStorage.removeItem(_lockoutKey(userId)); } catch { /* ignore */ }
+}
 
 // -----------------------------------------------------------------------------
 // Module state
@@ -194,6 +242,12 @@ export async function login(userId, pin) {
   const user = await Storage.users.get(userId);
   if (!user) return { ok: false, reason: 'user_not_found' };
 
+  // Check lockout before expensive argon2id verification.
+  const lockout = _readLockout(userId);
+  if (lockout.lockedUntil > Date.now()) {
+    return { ok: false, reason: 'locked_out', unlockAt: lockout.lockedUntil };
+  }
+
   const algo = user.pinHashAlgorithm || (user.legacyPinHash ? 'legacy-sha' : 'argon2id');
   let verified    = false;
   let needsRehash = false;
@@ -210,11 +264,22 @@ export async function login(userId, pin) {
   }
 
   if (!verified) {
+    const newFailures = (lockout.failures || 0) + 1;
+    const newLockout = {
+      failures:    newFailures,
+      lockedUntil: newFailures % LOCKOUT_THRESHOLD === 0
+        ? Date.now() + _lockoutDurationMs(newFailures)
+        : lockout.lockedUntil || 0,
+    };
+    _writeLockout(userId, newLockout);
     await Storage.audit.append({
       action: 'login_failed',
       user:   user.name || user.username,
-      desc:   `Failed login attempt for user: ${user.username}`,
+      desc:   `Failed login attempt for user: ${user.username} (attempt ${newFailures})`,
     });
+    if (newLockout.lockedUntil > Date.now()) {
+      return { ok: false, reason: 'locked_out', unlockAt: newLockout.lockedUntil };
+    }
     return { ok: false, reason: 'invalid_pin' };
   }
 
@@ -254,8 +319,95 @@ export async function login(userId, pin) {
     user:   user.name,
     desc:   `Login: ${user.name} (${ROLES[user.role]?.label || user.role})`,
   });
+  clearLockout(userId);
   _notify();
   return { ok: true, session: { ..._session } };
+}
+
+// -----------------------------------------------------------------------------
+// verifyPin — PIN check without a full login (used by the auto-lock overlay)
+// -----------------------------------------------------------------------------
+// Same lockout rules and hash verification as login(), but:
+//   - Does NOT update lastLogin or create a new session object
+//   - Writes 'login_failed' on wrong attempts (lockout tracking)
+//   - Writes 'session_unlock' on success
+// The caller (lock overlay) is responsible for resuming the session after a
+// successful verify.
+
+export async function verifyPin(userId, pin) {
+  if (!userId || pin === undefined || pin === null || pin === '') {
+    return { ok: false, reason: 'missing_credentials' };
+  }
+  const user = await Storage.users.get(userId);
+  if (!user) return { ok: false, reason: 'user_not_found' };
+
+  const lockout = _readLockout(userId);
+  if (lockout.lockedUntil > Date.now()) {
+    return { ok: false, reason: 'locked_out', unlockAt: lockout.lockedUntil };
+  }
+
+  const algo = user.pinHashAlgorithm || (user.legacyPinHash ? 'legacy-sha' : 'argon2id');
+  let verified = false;
+
+  if (algo === 'legacy-sha') {
+    verified = user.legacyPinHash
+      ? (_legacyHashV1(String(pin)) === user.legacyPinHash)
+      : false;
+  } else if (algo === 'argon2id') {
+    verified = user.pinHash
+      ? await _argonVerify(pin, user.pinHash)
+      : false;
+  }
+
+  if (!verified) {
+    const newFailures   = (lockout.failures || 0) + 1;
+    const newLockout    = {
+      failures:    newFailures,
+      lockedUntil: newFailures % LOCKOUT_THRESHOLD === 0
+        ? Date.now() + _lockoutDurationMs(newFailures)
+        : lockout.lockedUntil || 0,
+    };
+    _writeLockout(userId, newLockout);
+    await Storage.audit.append({
+      action: 'login_failed',
+      user:   user.name || user.username,
+      desc:   `Failed unlock attempt for ${user.username} (attempt ${newFailures})`,
+    });
+    if (newLockout.lockedUntil > Date.now()) {
+      return { ok: false, reason: 'locked_out', unlockAt: newLockout.lockedUntil };
+    }
+    return { ok: false, reason: 'invalid_pin' };
+  }
+
+  clearLockout(userId);
+  await Storage.audit.append({
+    action: 'session_unlock',
+    user:   user.name || user.username,
+    desc:   `Session unlocked: ${user.name} (${ROLES[user.role]?.label || user.role})`,
+  });
+  return { ok: true };
+}
+
+/**
+ * Suspend the active session — removes the token from sessionStorage while
+ * keeping the in-memory _session intact.  Called when the auto-lock overlay
+ * fires so that closing the browser/tab during a lock requires a full re-login
+ * (including 2FA) rather than auto-restoring from sessionStorage.
+ */
+export function suspendSession() {
+  sessionStorage.removeItem(SESSION_STORAGE_KEY);
+  // _session deliberately NOT cleared — the lock overlay needs it to display
+  // the user name and verify PIN, then re-save after successful unlock.
+}
+
+/**
+ * Resume a suspended session — re-writes the in-memory session to sessionStorage.
+ * Called after the lock overlay's PIN (+ optional TOTP) step succeeds.
+ */
+export function resumeSession() {
+  if (_session) {
+    sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(_session));
+  }
 }
 
 export async function logout() {
@@ -299,6 +451,10 @@ export function isAdmin() {
 
 export function isCO() {
   return _session !== null && _session.role === 'co';
+}
+
+export function isCadet() {
+  return _session !== null && _session.role === 'cadet';
 }
 
 /** Throws Error if the current session lacks the named permission. */

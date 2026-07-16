@@ -42,7 +42,10 @@
 // =============================================================================
 
 import * as Storage from './storage.js';
-import { getProvider } from './cloud.js';
+import { getProvider, handlePopupAuth } from './cloud.js';
+
+// Re-export so shell.js can call Sync.handlePopupAuth() without importing cloud.js directly.
+export { handlePopupAuth };
 
 const SYNC_DEBOUNCE_MS = 5000;
 
@@ -66,6 +69,8 @@ let _busy = false;
  * after Storage.init.
  */
 export async function init() {
+  // V2L sandbox — cloud sync is disabled to prevent interaction with real units.
+  if (typeof __V2L_SANDBOX__ !== 'undefined' && __V2L_SANDBOX__) { _emitStatus(); return; }
   _lastError = null;
   await getProvider().init();
   _emitStatus();
@@ -80,6 +85,7 @@ export async function init() {
  * — the actual upload happens later, asynchronously.
  */
 export async function notifyChanged() {
+  if (typeof __V2L_SANDBOX__ !== 'undefined' && __V2L_SANDBOX__) return;
   if (!await _shouldAutoSync()) return;
   if (_debounceTimer) clearTimeout(_debounceTimer);
   _debounceTimer = setTimeout(() => {
@@ -134,6 +140,12 @@ export async function loadFromCloud() {
       throw new Error('Cloud blob is not a valid QStore snapshot.');
     }
     await Storage.importAll(snapshot);
+    // Mirror logo to localStorage so splash shows it on the caller's reload.
+    try {
+      const ls = await Storage.settings.getAll();
+      if (ls.unitLogo) localStorage.setItem('qstore2_logo', ls.unitLogo);
+      else localStorage.removeItem('qstore2_logo');
+    } catch (_) {}
     await Storage.audit.append({
       action: 'data_imported',
       user:   'cloud-sync',

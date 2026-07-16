@@ -453,7 +453,22 @@ async function _migrateUsers(v1) {
 
 async function _migrateRequests(v1) {
   for (const r of v1.pendingRequests || []) {
-    await Storage.requests.put(r);  // shape compatible
+    // Normalise to v2.3 schema. Earlier drafts stored items:[{itemId,qty}]
+    // instead of lines:[{description,nsn,qty}]. Both must produce a valid
+    // lines array so the card renderer never hits req.lines.map on undefined.
+    let lines;
+    if (Array.isArray(r.lines)) {
+      lines = r.lines;
+    } else if (Array.isArray(r.items)) {
+      lines = r.items.map(i => ({
+        description: i.itemId || '',
+        nsn:         '',
+        qty:         Number(i.qty) || 1,
+      }));
+    } else {
+      lines = [];
+    }
+    await Storage.requests.put({ ...r, lines });
   }
 }
 

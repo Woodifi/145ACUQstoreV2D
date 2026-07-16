@@ -65,7 +65,7 @@ export const STAFF_RANKS_RECOGNISED = Object.freeze([
  * before classification or canonicalisation.
  */
 export function normaliseRankInput(rank) {
-  return String(rank || '').toUpperCase().replace(/[\s.]/g, '');
+  return String(rank || '').replace(/\([^)]*\)/g, '').toUpperCase().replace(/[\s.]/g, '');
 }
 
 /**
@@ -84,6 +84,55 @@ export function normalizeRank(rank) {
   const norm = normaliseRankInput(rank);
   if (OFFICER_RANK_BASES.includes(norm)) return norm + '-AAC';
   return norm;
+}
+
+/**
+ * Rank sort priority — highest rank first (lower number = higher rank).
+ * Staff precede cadets. Unknown / blank ranks sort to the bottom (9999).
+ *
+ * Usage:
+ *   people.sort((a, b) =>
+ *     compareRanks(a.rank, b.rank) ||
+ *     (a.surname || '').localeCompare(b.surname || ''));
+ */
+const _RANK_PRIORITY = (() => {
+  // Each entry is a group of aliases that share the same priority.
+  // Canonical CDT-prefixed forms AND the shorthand army forms (CPL, SGT, etc.)
+  // that v1/legacy records may have stored are both included so they sort
+  // identically regardless of which form is on disk.
+  const groups = [
+    // Staff — highest to lowest
+    ['COL-AAC'],
+    ['LTCOL-AAC'],
+    ['MAJ-AAC'],
+    ['CAPT-AAC'],
+    ['LT-AAC'],
+    ['2LT-AAC'],
+    ['DAH'],
+    // Cadets — highest to lowest
+    ['UO'],
+    ['CDTWO1', 'WO1'],
+    ['CDTWO2', 'WO2'],
+    ['CDTSSGT', 'SSGT'],
+    ['CDTSGT',  'SGT'],
+    ['CDTCPL',  'CPL'],
+    ['CDTLCPL', 'LCPL'],
+    ['CDT'],
+  ];
+  const map = new Map();
+  groups.forEach((aliases, i) => aliases.forEach((r) => map.set(r, i)));
+  return map;
+})();
+
+export function compareRanks(rankA, rankB) {
+  // Normalise before lookup: strips spaces/dots, uppercases, and converts bare
+  // officer bases to canonical form (e.g. 'CAPT' → 'CAPT-AAC') so legacy and
+  // hand-typed values resolve to the same priority as canonical stored values.
+  const normA = normalizeRank(rankA) || '';
+  const normB = normalizeRank(rankB) || '';
+  const a = _RANK_PRIORITY.has(normA) ? _RANK_PRIORITY.get(normA) : 9999;
+  const b = _RANK_PRIORITY.has(normB) ? _RANK_PRIORITY.get(normB) : 9999;
+  return a - b;
 }
 
 /**

@@ -34,8 +34,11 @@ import * as Storage    from '../storage.js';
 import * as AUTH       from '../auth.js';
 import * as Sync       from '../sync.js';
 import { processItemPhoto } from './photo.js';
-import { generateStockReport, downloadPdf } from '../pdf.js';
+import { generateStockReport, generateQRSheet, generateBoardOfSurvey, downloadPdf } from '../pdf.js';
+import { openQRScanModal } from './qr-scan.js';
+import { openKitManager } from './kits.js';
 import { openModal }   from './modal.js';
+import { showToast }   from './toast.js';
 import { esc, $, $$, render, fmtDate, ObjectURLPool } from './util.js';
 
 // -----------------------------------------------------------------------------
@@ -45,15 +48,38 @@ import { esc, $, $$, render, fmtDate, ObjectURLPool } from './util.js';
 // settings storage so units can extend the lists. For now they're hard-
 // coded matching v1 plus the calibration-due addition.
 
+// Default category list — used when no custom list has been saved in Settings.
+// Exported so settings.js can seed the editor with these defaults.
 export const CATEGORIES = [
   'Uniform', 'Equipment', 'Safety', 'Training Aids',
   'Field Stores', 'Medical', 'ICT',
 ];
 
+/**
+ * Return the effective category list: custom list from storage if set,
+ * otherwise the DEFAULT_CATEGORIES constant above.
+ * Also merges in any categories already in use by items that aren't in the
+ * stored list — so data already entered is never orphaned.
+ */
+export async function getCategories(itemsForMerge) {
+  let stored = null;
+  try {
+    const raw = await Storage.settings.get('categories');
+    if (Array.isArray(raw) && raw.length > 0) stored = raw;
+  } catch (_) { /* non-fatal */ }
+  const base = stored || CATEGORIES;
+  if (!itemsForMerge) return base;
+  // Merge any in-use categories not in the base list so nothing is hidden.
+  const inUse = [...new Set(itemsForMerge.map(i => i.cat).filter(Boolean))];
+  const extra = inUse.filter(c => !base.includes(c));
+  return extra.length > 0 ? [...base, ...extra.sort()] : base;
+}
+
 // CONDITIONS lives in src/conditions.js so non-UI modules can import it
 // without pulling DOM-dependent code. Re-exported here so existing
 // callers keep working.
-export { CONDITIONS } from '../conditions.js';
+import { CONDITIONS } from '../conditions.js';
+export { CONDITIONS };
 
 // Standard NSN format: 4-2-3-4 digits with dashes (e.g., 8470-66-001-0001).
 // Items with non-standard local NSNs are still accepted, just flagged.
@@ -65,21 +91,26 @@ const MAX_DELETE_REASON = 200;
 // Module state
 // -----------------------------------------------------------------------------
 
-let _root = null;
-let _searchTerm = '';
+let _root           = null;
+let _controller     = null;  // AbortController — cleaned up on unmount
+let _searchTerm     = '';
 let _categoryFilter = '';
-let _urlPool = new ObjectURLPool();
+let _urlPool        = new ObjectURLPool();
 
 // -----------------------------------------------------------------------------
 // Mount / unmount
 // -----------------------------------------------------------------------------
 
 export async function mount(rootEl) {
-  _root = rootEl;
-  _searchTerm = '';
+  _root         = rootEl;
+  _controller   = new AbortController();
+  _root.innerHTML = '';   // ensure first render always builds the full shell
+  _searchTerm   = '';
   _categoryFilter = '';
   await _render();
   return function unmount() {
+    _controller.abort();
+    _controller = null;
     _urlPool.revokeAll();
     _root = null;
   };
@@ -98,7 +129,7 @@ async function _render() {
     category: _categoryFilter || undefined,
     search:   _searchTerm     || undefined,
   });
-  items.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  items.sort(Storage.compareItems);
 
   const canAdd  = AUTH.can('addItem');
   const canEdit = AUTH.can('editItem');
@@ -116,41 +147,87 @@ async function _render() {
     }
   }));
 
-  const totalItems = await Storage.items.count();
+  const totalItems  = await Storage.items.count();
+  const categories  = await getCategories(items);
 
+  // Check whether a stocktake has ever been finalised.
+  // The warning banner persists until at least one stocktake is completed.
+  const lastStocktake = await Storage.audit.list({ action: 'stocktake_finalise', limit: 1, order: 'desc' });
+  const stocktakeDone = lastStocktake.length > 0;
+
+  const stocktakeWarnHtml = stocktakeDone ? '' : `
+    <div class="inv__stocktake-warn" role="alert">
+      <span class="inv__stocktake-warn-icon">⚠</span>
+      <div class="inv__stocktake-warn-body">
+        <strong>Stock counts are unverified.</strong>
+        Quantities shown may not reflect actual physical stock until a full stocktake is
+        performed and finalised. Items issued before QStore was installed may cause
+        discrepancies between <em>On hand</em> and <em>On loan</em> figures.
+        <a href="#" class="inv__stocktake-warn-link" data-nav="stocktake">
+          Go to Stocktake →
+        </a>
+      </div>
+    </div>
+  `;
+
+  const contentHtml = `
+    ${stocktakeWarnHtml}
+    <div class="inv__meta">
+      ${items.length} ${items.length === 1 ? 'item' : 'items'} shown
+      ${(_searchTerm || _categoryFilter) && totalItems !== items.length
+        ? `<span class="inv__meta-of"> of ${totalItems}</span>`
+        : ''}
+    </div>
+    <div class="inv__table-wrap">
+      ${items.length === 0
+        ? _emptyStateHtml(totalItems, canAdd)
+        : _tableHtml(items, photoUrls, { canEdit, canDel })}
+    </div>
+  `;
+
+  // If the toolbar already exists, only replace the content area so the search
+  // input is never destroyed and never loses focus mid-keystroke.
+  const existingContent = $('.inv__content', _root);
+  if (existingContent) {
+    existingContent.innerHTML = contentHtml;
+    // Sync input/select state in case _render was called by clear-filters or
+    // an external action that changed _searchTerm / _categoryFilter.
+    const searchEl = $('.inv__search', _root);
+    if (searchEl && searchEl !== document.activeElement) searchEl.value = _searchTerm;
+    const catEl = $('.inv__cat-filter', _root);
+    if (catEl) catEl.value = _categoryFilter;
+    oldPool.revokeAll();
+    return;
+  }
+
+  // First render: build the full shell including the toolbar.
   render(_root, `
     <section class="inv">
       <header class="inv__toolbar">
         <div class="inv__filters">
           <input type="search"
                  class="inv__search"
-                 placeholder="Search NSN, name, or category…"
+                 placeholder="Search NSN, name, category, or location…"
                  aria-label="Search inventory"
                  value="${esc(_searchTerm)}">
           <select class="inv__cat-filter" aria-label="Filter by category">
             <option value="">All categories</option>
-            ${CATEGORIES.map(c =>
+            ${categories.map(c =>
               `<option value="${esc(c)}" ${c === _categoryFilter ? 'selected' : ''}>${esc(c)}</option>`
             ).join('')}
           </select>
         </div>
         <div class="inv__actions">
           <button type="button" class="btn btn--ghost" data-action="print-stock" title="Print the currently-shown stock list">⎙ Print stock</button>
+          ${AUTH.can('qr') ? `<button type="button" class="btn btn--ghost" data-action="print-qr" title="Print QR code labels for the currently-shown items">⎙ QR codes</button>` : ''}
+          ${AUTH.can('qr') ? `<button type="button" class="btn btn--ghost" data-action="scan-qr" title="Scan a QR code label to look up an item">⌖ Scan</button>` : ''}
+          ${canEdit ? `<button type="button" class="btn btn--ghost" data-action="manage-kits" title="Create and manage issue kits">⊞ Kits</button>` : ''}
+          ${canEdit ? `<button type="button" class="btn btn--ghost" data-action="print-ab174" title="Generate AB174 Board of Survey form for all written-off items">⎙ AB174</button>` : ''}
           ${canAdd ? `<button type="button" class="btn btn--primary" data-action="add">+ Add item</button>` : ''}
         </div>
       </header>
-
-      <div class="inv__meta">
-        ${items.length} ${items.length === 1 ? 'item' : 'items'} shown
-        ${(_searchTerm || _categoryFilter) && totalItems !== items.length
-          ? `<span class="inv__meta-of"> of ${totalItems}</span>`
-          : ''}
-      </div>
-
-      <div class="inv__table-wrap">
-        ${items.length === 0
-          ? _emptyStateHtml(totalItems, canAdd)
-          : _tableHtml(items, photoUrls, { canEdit, canDel })}
+      <div class="inv__content">
+        ${contentHtml}
       </div>
     </section>
   `);
@@ -193,7 +270,7 @@ function _tableHtml(items, photoUrls, { canEdit, canDel }) {
       <th class="inv__col-qty">Unsvc</th>
       <th class="inv__col-cond">Condition</th>
       <th class="inv__col-loc">Location</th>
-      ${(canEdit || canDel) ? `<th class="inv__col-actions" aria-label="Actions"></th>` : ''}
+      <th class="inv__col-actions" aria-label="Actions"></th>
     </tr>
   `;
 
@@ -217,6 +294,15 @@ function _itemRowHtml(item, photoUrl, { canEdit, canDel }) {
   const pct = authQty > 0 ? Math.min(100, Math.round((onHand / authQty) * 100)) : 0;
   const fillClass = pct < 50 ? 'is-low' : pct < 75 ? 'is-mid' : '';
 
+  // Low-stock / zero-stock indicator. Only shown when an auth qty is set.
+  const isZeroStock = authQty > 0 && onHand === 0;
+  const isLowStock  = authQty > 0 && !isZeroStock && onHand < Math.ceil(authQty * 0.25);
+  const stockBadge  = isZeroStock
+    ? `<span class="inv__stock-badge inv__stock-badge--zero" title="No stock on hand">Zero stock</span>`
+    : isLowStock
+      ? `<span class="inv__stock-badge inv__stock-badge--low" title="Below 25% of authorised qty">Low stock</span>`
+      : '';
+
   // Badge derivation: blends the line-level `condition` flag with the
   // numeric `unsvc`/`onHand` counts so that bumping just the Unsvc count
   // surfaces visually. Without this, a line with onHand=2/unsvc=2 and
@@ -228,7 +314,9 @@ function _itemRowHtml(item, photoUrl, { canEdit, canDel }) {
   // exists specifically for the "some but not all units broken" case
   // that v1 had no visual marker for.
   const { label: condLabel, modifier: condModifier } = _deriveCondition(item.condition, onHand, unsvc);
-  const condCss = `inv__cond inv__cond--${condModifier}`;
+  const condCss    = `inv__cond inv__cond--${condModifier}`;
+  const bdText     = _breakdownText(item);
+  const bdTooltip  = _breakdownTooltip(item);
 
   const photoCell = photoUrl
     ? `<img class="inv__thumb" src="${esc(photoUrl)}" alt="" loading="lazy"
@@ -238,22 +326,29 @@ function _itemRowHtml(item, photoUrl, { canEdit, canDel }) {
                data-action="photo" data-item-id="${esc(item.id)}"
                title="Click to upload photo">📷</button>`;
 
-  const actionsCell = (canEdit || canDel) ? `
+  const mlogCount = Array.isArray(item.maintenanceLogs) ? item.maintenanceLogs.length : 0;
+  const actionsCell = `
     <td class="inv__col-actions">
       <div class="inv__row-actions">
+        <button type="button" class="btn btn--sm btn--ghost"
+                data-action="history" data-item-id="${esc(item.id)}"
+                title="View loan history for this item">History</button>
+        <button type="button" class="btn btn--sm btn--ghost"
+                data-action="maint-log" data-item-id="${esc(item.id)}"
+                title="View / add maintenance notes">${mlogCount > 0 ? `Notes (${mlogCount})` : 'Notes'}</button>
         ${canEdit ? `<button type="button" class="btn btn--sm btn--ghost"
                               data-action="edit" data-item-id="${esc(item.id)}">Edit</button>` : ''}
         ${canDel  ? `<button type="button" class="btn btn--sm btn--danger"
                               data-action="delete" data-item-id="${esc(item.id)}">Delete</button>` : ''}
       </div>
-    </td>` : '';
+    </td>`;
 
   return `
-    <tr class="inv__row">
+    <tr class="inv__row ${isZeroStock ? 'inv__row--zero-stock' : isLowStock ? 'inv__row--low-stock' : ''}">
       <td class="inv__col-nsn"><span class="inv__nsn">${esc(item.nsn || '—')}</span></td>
       <td class="inv__col-photo">${photoCell}</td>
       <td class="inv__col-name">
-        <div class="inv__name">${esc(item.name || '')}</div>
+        <div class="inv__name">${esc(item.name || '')}${stockBadge}</div>
         ${item.notes ? `<div class="inv__notes">${esc(item.notes)}</div>` : ''}
       </td>
       <td class="inv__col-cat">${esc(item.cat || '—')}</td>
@@ -268,7 +363,10 @@ function _itemRowHtml(item, photoUrl, { canEdit, canDel }) {
       </td>
       <td class="inv__col-qty inv__col-qty--loan">${onLoan}</td>
       <td class="inv__col-qty inv__col-qty--unsvc">${unsvc || ''}</td>
-      <td class="inv__col-cond"><span class="${condCss}">${esc(condLabel)}</span></td>
+      <td class="inv__col-cond">
+        <span class="${condCss}" title="${esc(condLabel)}">${esc(condLabel)}</span>
+        ${bdText ? `<div class="inv__cond-bd" title="${esc(bdTooltip)}">${esc(bdText)}</div>` : ''}
+      </td>
       <td class="inv__col-loc">${esc(item.loc || '—')}</td>
       ${actionsCell}
     </tr>
@@ -280,15 +378,16 @@ function _itemRowHtml(item, photoUrl, { canEdit, canDel }) {
 // -----------------------------------------------------------------------------
 
 function _wireEventListeners() {
+  const sig    = _controller.signal;
   const search = $('.inv__search', _root);
   if (search) {
-    search.addEventListener('input', _onSearchInput);
+    search.addEventListener('input', _onSearchInput, { signal: sig });
   }
   const catSel = $('.inv__cat-filter', _root);
   if (catSel) {
-    catSel.addEventListener('change', _onCategoryChange);
+    catSel.addEventListener('change', _onCategoryChange, { signal: sig });
   }
-  _root.addEventListener('click', _onRootClick);
+  _root.addEventListener('click', _onRootClick, { signal: sig });
 }
 
 let _searchDebounce = null;
@@ -307,6 +406,17 @@ function _onCategoryChange(e) {
 }
 
 async function _onRootClick(e) {
+  // Handle in-page navigation links (e.g. stocktake warning banner).
+  const navTarget = e.target.closest('[data-nav]');
+  if (navTarget) {
+    e.preventDefault();
+    _root.dispatchEvent(new CustomEvent('dash:navigate', {
+      bubbles: true,
+      detail: { page: navTarget.dataset.nav },
+    }));
+    return;
+  }
+
   const target = e.target.closest('[data-action]');
   if (!target) return;
   const action = target.dataset.action;
@@ -315,6 +425,12 @@ async function _onRootClick(e) {
   switch (action) {
     case 'add':
       if (AUTH.can('addItem')) await _openAddModal();
+      break;
+    case 'history':
+      if (itemId) await _openHistoryModal(itemId);
+      break;
+    case 'maint-log':
+      if (itemId) await _openMaintLogModal(itemId);
       break;
     case 'edit':
       if (AUTH.can('editItem') && itemId) await _openEditModal(itemId);
@@ -333,11 +449,23 @@ async function _onRootClick(e) {
     case 'print-stock':
       await _doPrintStock(target);
       break;
+    case 'print-ab174':
+      await _doPrintAB174(target);
+      break;
+    case 'print-qr':
+      await _doPrintQR(target);
+      break;
+    case 'scan-qr':
+      _doScanQR();
+      break;
+    case 'manage-kits':
+      if (AUTH.can('editItem')) openKitManager();
+      break;
   }
 }
 
 // Print the currently-filtered stock list. Storage.items.list does the
-// filtering for us; we sort by category-then-name to give the printed
+// filtering for us; we sort by category-then-NSN to give the printed
 // version a stable, scan-friendly order regardless of how the user is
 // viewing it on screen.
 async function _doPrintStock(button) {
@@ -347,9 +475,7 @@ async function _doPrintStock(button) {
       category: _categoryFilter || undefined,
       search:   _searchTerm     || undefined,
     });
-    items.sort((a, b) =>
-      (a.cat  || '').localeCompare(b.cat  || '') ||
-      (a.name || '').localeCompare(b.name || ''));
+    items.sort(Storage.compareItems);
 
     const filterParts = [];
     if (_categoryFilter) filterParts.push(`Category: ${_categoryFilter}`);
@@ -360,10 +486,65 @@ async function _doPrintStock(button) {
     const result = await generateStockReport(items, { unit, subtitle });
     downloadPdf(result);
   } catch (err) {
-    alert('Stock report generation failed: ' + (err.message || err));
+    showToast('Stock report generation failed: ' + (err.message || err), 'error');
   } finally {
     if (button) { button.disabled = false; button.textContent = '⎙ Print stock'; }
   }
+}
+
+// Generate AB174 Board of Survey form for all items with writtenOff > 0.
+async function _doPrintAB174(button) {
+  if (button) { button.disabled = true; button.textContent = 'Building PDF…'; }
+  try {
+    const allItems = await Storage.items.list();
+    const writtenOffItems = allItems.filter((i) => (Number(i.writtenOff) || Number(i.qtyWrittenOff) || 0) > 0);
+    if (writtenOffItems.length === 0) {
+      showToast('No written-off items found in inventory.', 'info');
+      return;
+    }
+    const unit = await Storage.settings.getAll();
+    const result = await generateBoardOfSurvey(writtenOffItems, { unit });
+    downloadPdf(result);
+  } catch (err) {
+    showToast('AB174 generation failed: ' + (err.message || err), 'error');
+  } finally {
+    if (button) { button.disabled = false; button.textContent = '⎙ AB174'; }
+  }
+}
+
+// Print QR code labels for the currently-filtered inventory. Same filter
+// logic as _doPrintStock; sorted by category then NSN for a stable layout.
+async function _doPrintQR(button) {
+  AUTH.requirePermission('qr');
+  if (button) { button.disabled = true; button.textContent = 'Building PDF…'; }
+  try {
+    const items = await Storage.items.list({
+      category: _categoryFilter || undefined,
+      search:   _searchTerm     || undefined,
+    });
+    items.sort(Storage.compareItems);
+    const unit   = await Storage.settings.getAll();
+    const result = await generateQRSheet(items, { unit });
+    downloadPdf(result);
+  } catch (err) {
+    showToast('QR sheet generation failed: ' + (err.message || err), 'error');
+  } finally {
+    if (button) { button.disabled = false; button.textContent = '⎙ QR codes'; }
+  }
+}
+
+// Open the QR scan modal. On a successful decode, look up the item and open
+// its edit modal so the QM can inspect or update it immediately.
+function _doScanQR() {
+  AUTH.requirePermission('qr');
+  openQRScanModal(async (itemId) => {
+    const item = await Storage.items.get(itemId);
+    if (!item) {
+      showToast('Scanned item not found in this Q-Store. The label may belong to a different unit.', 'warn');
+      return;
+    }
+    await _openEditModal(itemId);
+  });
 }
 
 // -----------------------------------------------------------------------------
@@ -373,6 +554,198 @@ async function _doPrintStock(button) {
 async function _openAddModal() {
   AUTH.requirePermission('addItem');
   _openItemFormModal({ mode: 'add', item: null });
+}
+
+// -----------------------------------------------------------------------------
+// Loan history panel
+// -----------------------------------------------------------------------------
+
+async function _openHistoryModal(itemId) {
+  const item  = await Storage.items.get(itemId);
+  if (!item) return;
+
+  // Load all loans for this item from the loans store. The loans store has
+  // an `itemId` index we can query.
+  const allLoans = await Storage.loans.list();
+  const itemLoans = allLoans
+    .filter(l => l.itemId === itemId)
+    .sort((a, b) => b.issueDate.localeCompare(a.issueDate));  // most-recent first
+
+  const totalIssued  = itemLoans.reduce((n, l) => n + (l.qty || 1), 0);
+  const activeCount  = itemLoans.filter(l => l.active).length;
+  const today        = new Date().toISOString().slice(0, 10);
+  const overdueCount = itemLoans.filter(l => l.active && l.dueDate && l.dueDate < today).length;
+
+  const rowsHtml = itemLoans.length === 0
+    ? `<tr><td colspan="6" class="inv__hist-empty">No loan records for this item.</td></tr>`
+    : itemLoans.map(l => {
+        const isActive   = l.active;
+        const isOverdue  = isActive && l.dueDate && l.dueDate < today;
+        const rowClass   = isOverdue ? 'inv__hist-row--overdue' : isActive ? 'inv__hist-row--active' : 'inv__hist-row--returned';
+        const statusHtml = isOverdue
+          ? `<span class="inv__hist-badge inv__hist-badge--overdue">Overdue</span>`
+          : isActive
+            ? `<span class="inv__hist-badge inv__hist-badge--active">Active</span>`
+            : `<span class="inv__hist-badge inv__hist-badge--returned">Returned</span>`;
+        return `
+          <tr class="inv__hist-row ${rowClass}">
+            <td class="inv__hist-ref">${esc(l.ref || '—')}</td>
+            <td>${esc(l.borrowerName || l.borrowerSvc || '—')}</td>
+            <td class="inv__hist-qty">${esc(String(l.qty || 1))}</td>
+            <td>${esc(_fmtDateAU(l.issueDate))}</td>
+            <td>${esc(l.dueDate ? _fmtDateAU(l.dueDate) : '—')}</td>
+            <td>${statusHtml}</td>
+          </tr>
+        `;
+      }).join('');
+
+  openModal({
+    titleHtml: `Loan history — ${esc(item.name || itemId)}`,
+    size:      'lg',
+    bodyHtml: `
+      <div class="inv__hist-summary">
+        <span>${itemLoans.length} loan record${itemLoans.length === 1 ? '' : 's'}</span>
+        <span>&middot; ${totalIssued} unit${totalIssued === 1 ? '' : 's'} issued total</span>
+        ${activeCount > 0
+          ? `<span>&middot; <strong>${activeCount} currently on loan</strong></span>` : ''}
+        ${overdueCount > 0
+          ? `<span class="inv__hist-overdue-warn">&middot; ${overdueCount} overdue</span>` : ''}
+      </div>
+      <div class="inv__hist-table-wrap">
+        <table class="inv__hist-table">
+          <thead>
+            <tr>
+              <th>Ref</th>
+              <th>Borrower</th>
+              <th>Qty</th>
+              <th>Issued</th>
+              <th>Due</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+      </div>
+      <div class="form__actions">
+        <button type="button" class="btn btn--primary" data-action="modal-close">Close</button>
+      </div>
+    `,
+  });
+}
+
+function _fmtDateAU(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function _fmtDateTimeAU(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleString('en-AU', {
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
+}
+
+// -----------------------------------------------------------------------------
+// Maintenance / notes log modal
+// -----------------------------------------------------------------------------
+// Provides a timestamped free-text log per item. Entries are stored as
+// `item.maintenanceLogs = [{ ts, user, note }, ...]` (appended, never deleted).
+// The log is purely informational — no stock impact. Useful for servicing,
+// calibration reminders, or QM notes about an item's physical state.
+
+async function _openMaintLogModal(itemId) {
+  const item = await Storage.items.get(itemId);
+  if (!item) return;
+
+  const logs = Array.isArray(item.maintenanceLogs) ? item.maintenanceLogs : [];
+
+  const _renderLogs = (entries) => entries.length === 0
+    ? `<p class="inv__mlog-empty">No notes yet. Add the first one below.</p>`
+    : `<div class="inv__mlog-list">
+        ${entries.slice().reverse().map((e) => `
+          <div class="inv__mlog-entry">
+            <span class="inv__mlog-ts">${esc(_fmtDateTimeAU(e.ts))}</span>
+            <span class="inv__mlog-user">${esc(e.user || '—')}</span>
+            <p class="inv__mlog-note">${esc(e.note)}</p>
+          </div>`).join('')}
+       </div>`;
+
+  openModal({
+    titleHtml: `Maintenance notes — ${esc(item.name || itemId)}`,
+    size: 'md',
+    bodyHtml: `
+      <div class="inv__mlog" data-mlog-itemid="${esc(itemId)}">
+        <div data-mlog-list>
+          ${_renderLogs(logs)}
+        </div>
+        <div class="inv__mlog-form">
+          <label class="form__field">
+            <span class="form__label">Add note</span>
+            <textarea class="form__input" rows="3" data-mlog-input
+                      placeholder="e.g. Sent for calibration 2026-05-20, due back 2026-06-10"></textarea>
+          </label>
+          <div class="form__error" data-mlog-error role="alert"></div>
+          <div class="form__actions" style="margin-top:8px">
+            <button type="button" class="btn btn--primary" data-action="mlog-save">
+              + Add note
+            </button>
+          </div>
+        </div>
+      </div>
+    `,
+    async onMount(panel) {
+      panel.querySelector('[data-action="mlog-save"]')?.addEventListener('click', async () => {
+        const textarea = panel.querySelector('[data-mlog-input]');
+        const errEl    = panel.querySelector('[data-mlog-error]');
+        const note     = (textarea?.value || '').trim();
+        if (!note) { errEl.textContent = 'Note cannot be empty.'; return; }
+        errEl.textContent = '';
+
+        const saveBtn = panel.querySelector('[data-action="mlog-save"]');
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Saving…';
+
+        try {
+          // Re-fetch the item to avoid overwriting concurrent changes.
+          const current = await Storage.items.get(itemId);
+          if (!current) throw new Error('Item no longer exists.');
+          const existing = Array.isArray(current.maintenanceLogs) ? current.maintenanceLogs : [];
+          const entry = {
+            ts:   new Date().toISOString(),
+            user: AUTH.getSession()?.name || 'unknown',
+            note,
+          };
+          current.maintenanceLogs = [...existing, entry];
+          current.updatedAt = entry.ts;
+          await Storage.items.put(current);
+          await Storage.audit.append({
+            action: 'item_note',
+            user:   entry.user,
+            desc:   `Note added to "${current.name}" (${current.nsn}): ${note.slice(0, 100)}${note.length > 100 ? '…' : ''}`,
+          });
+          Sync.notifyChanged();
+
+          // Refresh the log display in-place without closing the modal.
+          textarea.value = '';
+          const listEl = panel.querySelector('[data-mlog-list]');
+          if (listEl) listEl.innerHTML = _renderLogs(current.maintenanceLogs);
+
+          // Refresh the Notes button count in the main list.
+          await _render();
+        } catch (err) {
+          errEl.textContent = 'Failed to save: ' + (err.message || err);
+        } finally {
+          saveBtn.disabled = false;
+          saveBtn.textContent = '+ Add note';
+        }
+      });
+    },
+  });
 }
 
 async function _openEditModal(itemId) {
@@ -386,9 +759,11 @@ async function _openEditModal(itemId) {
   _openItemFormModal({ mode: 'edit', item });
 }
 
-function _openItemFormModal({ mode, item }) {
-  const isEdit = mode === 'edit';
-  const title  = isEdit ? `Edit item — ${esc(item.name || item.id)}` : 'Add inventory item';
+async function _openItemFormModal({ mode, item }) {
+  const isEdit     = mode === 'edit';
+  const title      = isEdit ? `Edit item — ${esc(item.name || item.id)}` : 'Add inventory item';
+  // Pre-fetch categories so the form select is populated on open.
+  const categories = await getCategories();
 
   openModal({
     titleHtml: title,
@@ -406,7 +781,7 @@ function _openItemFormModal({ mode, item }) {
           <label class="form__field">
             <span class="form__label">Category</span>
             <select name="cat">
-              ${CATEGORIES.map(c =>
+              ${categories.map(c =>
                 `<option value="${esc(c)}" ${c === (item?.cat || 'Equipment') ? 'selected' : ''}>${esc(c)}</option>`
               ).join('')}
             </select>
@@ -426,31 +801,64 @@ function _openItemFormModal({ mode, item }) {
           <label class="form__field">
             <span class="form__label">On hand</span>
             <input type="number" name="onHand" min="0" step="1" inputmode="numeric"
-                   value="${esc(item?.onHand ?? (isEdit ? 0 : 1))}">
-          </label>
-          ${isEdit ? `
-          <label class="form__field">
-            <span class="form__label">Unsvc</span>
-            <input type="number" name="unsvc" min="0" step="1" inputmode="numeric"
-                   value="${esc(item?.unsvc ?? 0)}">
-          </label>` : ''}
-        </div>
-        <div class="form__row">
-          <label class="form__field form__field--grow">
-            <span class="form__label">Condition</span>
-            <select name="condition">
-              ${CONDITIONS.map(c =>
-                `<option value="${esc(c.value)}" ${c.value === (item?.condition || 'serviceable') ? 'selected' : ''}>${esc(c.label)}</option>`
-              ).join('')}
-            </select>
-          </label>
-          <label class="form__field form__field--grow">
-            <span class="form__label">Location</span>
-            <input type="text" name="loc" maxlength="80"
-                   value="${esc(item?.loc || '')}"
-                   placeholder="e.g. Bay 3, Shelf A">
+                   value="${esc(item?.onHand ?? (isEdit ? 0 : 1))}"
+                   data-target="onhand-input">
           </label>
         </div>
+        ${(() => {
+          const bd = _seedBreakdown(item);
+          const total = bd.qtyServiceable + bd.qtyUnserviceable + bd.qtyRepair + bd.qtyCalibrationDue + bd.qtyWrittenOff;
+          const oh = item?.onHand ?? (isEdit ? 0 : 1);
+          const totalClass = total === oh ? 'inv__bd-total--ok' : 'inv__bd-total--warn';
+          return `
+        <div class="inv__breakdown">
+          <div class="inv__breakdown-header">
+            <span class="form__label">Condition breakdown</span>
+            <span class="inv__bd-total ${totalClass}" data-target="bd-total">
+              Total: ${total} / ${oh}
+            </span>
+          </div>
+          <div class="inv__breakdown-row">
+            <label class="inv__bd-field">
+              <span class="inv__bd-label inv__bd-label--svc" title="Serviceable — auto-calculated (On hand minus all other categories)">Svc</span>
+              <input type="number" name="qtyServiceable" min="0" step="1" inputmode="numeric"
+                     value="${esc(String(bd.qtyServiceable))}" class="inv__bd-input inv__bd-input--derived"
+                     data-target="qty-svc" readonly
+                     title="Auto-calculated: On hand minus Unserviceable, Repair, Calibration due, and Written off">
+            </label>
+            <label class="inv__bd-field">
+              <span class="inv__bd-label inv__bd-label--uns" title="Unserviceable — damaged or non-functional">U/S</span>
+              <input type="number" name="qtyUnserviceable" min="0" step="1" inputmode="numeric"
+                     value="${esc(String(bd.qtyUnserviceable))}" class="inv__bd-input"
+                     title="Unserviceable — damaged or non-functional">
+            </label>
+            <label class="inv__bd-field">
+              <span class="inv__bd-label inv__bd-label--repr" title="In repair — temporarily unavailable">Repr</span>
+              <input type="number" name="qtyRepair" min="0" step="1" inputmode="numeric"
+                     value="${esc(String(bd.qtyRepair))}" class="inv__bd-input"
+                     title="In repair — temporarily unavailable">
+            </label>
+            <label class="inv__bd-field">
+              <span class="inv__bd-label inv__bd-label--cal" title="Calibration due — must be calibrated before issue">Cal</span>
+              <input type="number" name="qtyCalibrationDue" min="0" step="1" inputmode="numeric"
+                     value="${esc(String(bd.qtyCalibrationDue))}" class="inv__bd-input"
+                     title="Calibration due — must be calibrated before issue">
+            </label>
+            <label class="inv__bd-field">
+              <span class="inv__bd-label inv__bd-label--wo" title="Written off — beyond repair, pending Board of Survey">W/O</span>
+              <input type="number" name="qtyWrittenOff" min="0" step="1" inputmode="numeric"
+                     value="${esc(String(bd.qtyWrittenOff))}" class="inv__bd-input"
+                     title="Written off — beyond repair, pending Board of Survey">
+            </label>
+          </div>
+        </div>`;
+        })()}
+        <label class="form__field">
+          <span class="form__label">Location</span>
+          <input type="text" name="loc" maxlength="80"
+                 value="${esc(item?.loc || '')}"
+                 placeholder="e.g. Bay 3, Shelf A">
+        </label>
         <label class="form__field">
           <span class="form__label">Notes</span>
           <textarea name="notes" maxlength="500" rows="2">${esc(item?.notes || '')}</textarea>
@@ -462,16 +870,31 @@ function _openItemFormModal({ mode, item }) {
         </div>
       </form>
     `,
-    onMount(panel, close) {
+    async onMount(panel, close) {
       const form = $('form[data-form="item"]', panel);
       const errEl = $('.form__error', panel);
       const nsnInput = $('input[name="nsn"]', panel);
       const nsnHint  = $('[data-hint="nsn"]', panel);
 
-      // Live NSN format hint.
+      // Pre-load the item list once for duplicate NSN checks.
+      let allItems = [];
+      try { allItems = await Storage.items.list(); } catch (_) { /* non-fatal */ }
+
+      // Live NSN format hint + duplicate detection.
       const updateNsnHint = () => {
         const v = nsnInput.value.trim();
-        if (!v) { nsnHint.textContent = ''; return; }
+        if (!v) { nsnHint.textContent = ''; nsnHint.className = 'form__hint'; return; }
+
+        // Duplicate check — ignore the item being edited (same id).
+        const dupe = allItems.find(
+          (i) => i.nsn === v && (!isEdit || i.id !== item?.id)
+        );
+        if (dupe) {
+          nsnHint.textContent = `⚠ Duplicate NSN — already used by "${dupe.name}"`;
+          nsnHint.className = 'form__hint is-warn';
+          return;
+        }
+
         nsnHint.textContent = NSN_PATTERN.test(v)
           ? '✓ Standard format'
           : 'Non-standard format (will be accepted as a local NSN)';
@@ -479,6 +902,36 @@ function _openItemFormModal({ mode, item }) {
       };
       nsnInput.addEventListener('input', updateNsnHint);
       updateNsnHint();
+
+      // Live breakdown — qtyServiceable is auto-derived; all editable fields
+      // trigger a recalculation: Svc = max(0, onHand − U/S − Repr − Cal − W/O).
+      const onHandInput = $('[data-target="onhand-input"]', panel);
+      const svcInput    = $('[data-target="qty-svc"]',     panel);
+      const bdTotalEl   = $('[data-target="bd-total"]',    panel);
+      // Non-serviceable editable inputs only (svcInput is readonly, excluded).
+      const nonSvcInputs = [
+        $('input[name="qtyUnserviceable"]',  panel),
+        $('input[name="qtyRepair"]',         panel),
+        $('input[name="qtyCalibrationDue"]', panel),
+        $('input[name="qtyWrittenOff"]',     panel),
+      ].filter(Boolean);
+
+      const _recalcBreakdown = () => {
+        const oh     = Math.max(0, Number(onHandInput?.value) || 0);
+        const nonSvc = nonSvcInputs.reduce((s, el) => s + Math.max(0, Number(el.value) || 0), 0);
+        const svc    = Math.max(0, oh - nonSvc);
+        if (svcInput) svcInput.value = String(svc);
+        if (bdTotalEl) {
+          const total = svc + nonSvc;
+          bdTotalEl.textContent = `Total: ${total} / ${oh}`;
+          // Total will always equal onHand (svc absorbs remainder) unless nonSvc > onHand
+          bdTotalEl.className = `inv__bd-total ${total === oh ? 'inv__bd-total--ok' : 'inv__bd-total--warn'}`;
+        }
+      };
+
+      nonSvcInputs.forEach(el => el.addEventListener('input', _recalcBreakdown));
+      if (onHandInput) onHandInput.addEventListener('input', _recalcBreakdown);
+      _recalcBreakdown();   // initialise on open
 
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -509,15 +962,41 @@ function _readFormData(form, isEdit) {
 
   const authQty = _readNonNegInt(fd, 'authQty', 'Authorised qty');
   const onHand  = _readNonNegInt(fd, 'onHand',  'On hand');
-  const unsvc   = isEdit ? _readNonNegInt(fd, 'unsvc', 'Unsvc') : 0;
+
+  // Condition breakdown — qtyServiceable is read-only/auto-derived in the form.
+  // We re-derive it here from the other fields so the stored value is always
+  // consistent regardless of what the hidden input contains.
+  const qtyUnserviceable  = _readNonNegInt(fd, 'qtyUnserviceable',  'U/S count');
+  const qtyRepair         = _readNonNegInt(fd, 'qtyRepair',         'Repr count');
+  const qtyCalibrationDue = _readNonNegInt(fd, 'qtyCalibrationDue', 'Cal count');
+  const qtyWrittenOff     = _readNonNegInt(fd, 'qtyWrittenOff',     'W/O count');
+  const nonSvcTotal       = qtyUnserviceable + qtyRepair + qtyCalibrationDue + qtyWrittenOff;
+  if (nonSvcTotal > onHand) {
+    throw new Error(
+      `Non-serviceable total (${nonSvcTotal}) cannot exceed On hand (${onHand}). ` +
+      'Reduce one of the other categories first.'
+    );
+  }
+  const qtyServiceable = onHand - nonSvcTotal;
+
+  // Derive legacy aggregated fields from the breakdown (kept for backward compat
+  // and for any code that still reads .unsvc / .condition directly).
+  const unsvc     = qtyUnserviceable + qtyRepair + qtyCalibrationDue;
+  const writtenOff = qtyWrittenOff;
+  const condition  = qtyWrittenOff > 0     ? 'written-off'
+    : qtyRepair > 0         ? 'repair'
+    : qtyCalibrationDue > 0 ? 'calibration-due'
+    : qtyUnserviceable > 0  ? 'unserviceable'
+    : 'serviceable';
 
   return {
     nsn, name,
-    cat:        String(fd.get('cat') || 'Equipment'),
-    authQty, onHand, unsvc,
-    condition:  String(fd.get('condition') || 'serviceable'),
-    loc:        String(fd.get('loc')   || '').trim(),
-    notes:      String(fd.get('notes') || '').trim(),
+    cat: String(fd.get('cat') || 'Equipment'),
+    authQty, onHand,
+    qtyServiceable, qtyUnserviceable, qtyRepair, qtyCalibrationDue, qtyWrittenOff,
+    unsvc, writtenOff, condition,
+    loc:   String(fd.get('loc')   || '').trim(),
+    notes: String(fd.get('notes') || '').trim(),
   };
 }
 
@@ -532,21 +1011,34 @@ function _readNonNegInt(fd, key, label) {
 }
 
 async function _saveAdd(data) {
+  // Guard against duplicate NSNs — a second click or a race condition could
+  // slip through the live hint. Throw so the form shows an inline error.
+  const existing = await Storage.items.list();
+  const dupe = existing.find((i) => i.nsn === data.nsn);
+  if (dupe) {
+    throw new Error(`NSN ${data.nsn} is already in the inventory ("${dupe.name}"). Edit that item instead.`);
+  }
   const id = 'I' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   const item = {
     id,
-    nsn:        data.nsn,
-    name:       data.name,
-    cat:        data.cat,
-    authQty:    data.authQty,
-    onHand:     data.onHand,
-    onLoan:     0,
-    unsvc:      0,
-    condition:  data.condition,
-    loc:        data.loc,
-    notes:      data.notes,
-    hasPhoto:   false,
-    createdAt:  new Date().toISOString(),
+    nsn:               data.nsn,
+    name:              data.name,
+    cat:               data.cat,
+    authQty:           data.authQty,
+    onHand:            data.onHand,
+    onLoan:            0,
+    unsvc:             data.unsvc,
+    writtenOff:        data.writtenOff,
+    condition:         data.condition,
+    qtyServiceable:    data.qtyServiceable,
+    qtyUnserviceable:  data.qtyUnserviceable,
+    qtyRepair:         data.qtyRepair,
+    qtyCalibrationDue: data.qtyCalibrationDue,
+    qtyWrittenOff:     data.qtyWrittenOff,
+    loc:               data.loc,
+    notes:             data.notes,
+    hasPhoto:          false,
+    createdAt:         new Date().toISOString(),
   };
   await Storage.items.put(item);
   await Storage.audit.append({
@@ -564,16 +1056,22 @@ async function _saveEdit(itemId, data) {
   }
   const updated = {
     ...existing,
-    nsn:       data.nsn,
-    name:      data.name,
-    cat:       data.cat,
-    authQty:   data.authQty,
-    onHand:    data.onHand,
-    unsvc:     data.unsvc,
-    condition: data.condition,
-    loc:       data.loc,
-    notes:     data.notes,
-    updatedAt: new Date().toISOString(),
+    nsn:               data.nsn,
+    name:              data.name,
+    cat:               data.cat,
+    authQty:           data.authQty,
+    onHand:            data.onHand,
+    unsvc:             data.unsvc,
+    writtenOff:        data.writtenOff,
+    condition:         data.condition,
+    qtyServiceable:    data.qtyServiceable,
+    qtyUnserviceable:  data.qtyUnserviceable,
+    qtyRepair:         data.qtyRepair,
+    qtyCalibrationDue: data.qtyCalibrationDue,
+    qtyWrittenOff:     data.qtyWrittenOff,
+    loc:               data.loc,
+    notes:             data.notes,
+    updatedAt:         new Date().toISOString(),
   };
   await Storage.items.put(updated);
   await Storage.audit.append({
@@ -840,9 +1338,84 @@ function _sessionName() {
 }
 
 function _flashError(message) {
-  // Tiny non-blocking error reporter. For now, alert(); in a future round
-  // we'll add a proper toast component.
-  alert(message);  // eslint-disable-line no-alert
+  showToast(message, 'error');
+}
+
+// -----------------------------------------------------------------------------
+// Condition breakdown helpers
+// -----------------------------------------------------------------------------
+
+/**
+ * Seed the 5 breakdown qty fields for the item form.
+ * - If the item already stores the breakdown (qtyServiceable is set), use it.
+ * - Otherwise (legacy item) derive from the old `condition` + `unsvc` fields.
+ */
+function _seedBreakdown(item) {
+  if (!item) {
+    return { qtyServiceable: 1, qtyUnserviceable: 0, qtyRepair: 0, qtyCalibrationDue: 0, qtyWrittenOff: 0 };
+  }
+  if (item.qtyServiceable != null) {
+    return {
+      qtyServiceable:    Math.max(0, Number(item.qtyServiceable)    || 0),
+      qtyUnserviceable:  Math.max(0, Number(item.qtyUnserviceable)  || 0),
+      qtyRepair:         Math.max(0, Number(item.qtyRepair)         || 0),
+      qtyCalibrationDue: Math.max(0, Number(item.qtyCalibrationDue) || 0),
+      qtyWrittenOff:     Math.max(0, Number(item.qtyWrittenOff)     || 0),
+    };
+  }
+  // Legacy item — distribute unsvc into the appropriate condition bucket.
+  const onHand     = Math.max(0, Number(item.onHand)    || 0);
+  const unsvc      = Math.max(0, Number(item.unsvc)     || 0);
+  const writtenOff = Math.max(0, Number(item.writtenOff) || 0);
+  const cond       = item.condition || 'serviceable';
+  let qtyU = 0, qtyR = 0, qtyC = 0;
+  if      (cond === 'unserviceable')   qtyU = unsvc;
+  else if (cond === 'repair')          qtyR = unsvc;
+  else if (cond === 'calibration-due') qtyC = unsvc;
+  else if (unsvc > 0)                  qtyU = unsvc; // best guess for any other condition
+  const qtyW = writtenOff;
+  const qtyS = Math.max(0, onHand - qtyU - qtyR - qtyC - qtyW);
+  return { qtyServiceable: qtyS, qtyUnserviceable: qtyU, qtyRepair: qtyR, qtyCalibrationDue: qtyC, qtyWrittenOff: qtyW };
+}
+
+/**
+ * Build a short breakdown text for the table row, e.g. "3 Svc · 1 U/S · 1 Repr".
+ * Returns empty string when the item is fully serviceable (no noise in the table).
+ */
+function _breakdownText(item) {
+  if (item.qtyServiceable == null) return ''; // legacy — badge is sufficient
+  const qS = Number(item.qtyServiceable)    || 0;
+  const qU = Number(item.qtyUnserviceable)  || 0;
+  const qR = Number(item.qtyRepair)         || 0;
+  const qC = Number(item.qtyCalibrationDue) || 0;
+  const qW = Number(item.qtyWrittenOff)     || 0;
+  // Only show breakdown when something non-serviceable exists.
+  if (qU === 0 && qR === 0 && qC === 0 && qW === 0) return '';
+  const parts = [];
+  if (qS > 0) parts.push(`${qS} Svc`);
+  if (qU > 0) parts.push(`${qU} U/S`);
+  if (qR > 0) parts.push(`${qR} Repr`);
+  if (qC > 0) parts.push(`${qC} Cal`);
+  if (qW > 0) parts.push(`${qW} W/O`);
+  return parts.join(' · ');
+}
+
+// Full-text expansion of the abbreviations in _breakdownText — used as tooltip.
+function _breakdownTooltip(item) {
+  if (item.qtyServiceable == null) return '';
+  const qS = Number(item.qtyServiceable)    || 0;
+  const qU = Number(item.qtyUnserviceable)  || 0;
+  const qR = Number(item.qtyRepair)         || 0;
+  const qC = Number(item.qtyCalibrationDue) || 0;
+  const qW = Number(item.qtyWrittenOff)     || 0;
+  if (qU === 0 && qR === 0 && qC === 0 && qW === 0) return '';
+  const parts = [];
+  if (qS > 0) parts.push(`${qS} Serviceable`);
+  if (qU > 0) parts.push(`${qU} Unserviceable`);
+  if (qR > 0) parts.push(`${qR} In repair`);
+  if (qC > 0) parts.push(`${qC} Calibration due`);
+  if (qW > 0) parts.push(`${qW} Written off`);
+  return parts.join(', ');
 }
 
 // -----------------------------------------------------------------------------

@@ -1,9 +1,10 @@
 // =============================================================================
 // QStore IMS v2 — Login screen
 // =============================================================================
-// Two-step flow:
+// Three-step flow:
 //   1. User picker  — list of all users in the unit, sorted by role then name
 //   2. PIN keypad   — 4-digit entry, auto-submits on 4th digit
+//   3. TOTP code    — 6-digit authenticator code (only if 2FA is enabled)
 //
 // Calls AUTH.login() and dispatches success via the onLoggedIn callback.
 // Unsuccessful logins shake the keypad and clear the buffer for retry.
@@ -20,13 +21,20 @@
 //     temporarily, useful for fat-finger debugging)
 //   - We never log the typed PIN, even on failure
 //   - Failed-login audit entries are written by AUTH.login(), not here
+//   - TOTP step uses a ±30s window and replay guard (totpLastUsedStep)
+//   - Backup codes are single-use; consumed entry is removed on success
 // =============================================================================
 
 import * as Storage from '../storage.js';
 import * as AUTH    from '../auth.js';
+import * as TOTP    from '../totp.js';
+import { openModal } from './modal.js';
 import { esc, $, $$, render, fmtDateOnly, sleep } from './util.js';
 
 const ROLE_ORDER = ['co', 'qm', 'staff', 'cadet', 'ro'];
+
+const _ICON_EYE     = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+const _ICON_EYE_OFF = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
 
 let _root           = null;
 let _onLoggedIn     = null;
@@ -34,6 +42,8 @@ let _selectedUserId = null;
 let _pinBuffer      = '';
 let _pinRevealed    = false;
 let _busy           = false;
+let _lockoutTimer   = null;
+let _cadetPickerMode = false; // true when showing cadet sub-list
 
 /**
  * Mount the login screen into a DOM container. Calls onLoggedIn(session)
@@ -47,6 +57,7 @@ export async function mount(rootEl, { onLoggedIn } = {}) {
   _pinRevealed = false;
   _busy = false;
 
+  _cadetPickerMode = false;
   await _renderUserPicker();
 
   return function unmount() {
@@ -60,10 +71,18 @@ export async function mount(rootEl, { onLoggedIn } = {}) {
 // -----------------------------------------------------------------------------
 
 async function _renderUserPicker() {
-  const users = await Storage.users.list();
+  const users    = await Storage.users.list();
   const settings = await Storage.settings.getAll();
   const unitName = settings.unitName || 'QStore IMS';
   const unitCode = settings.unitCode || '';
+
+  // In cadet picker mode, load cadet records to build a svcNo → cadet map
+  // so we can display "SURNAME F." instead of the stored user.name.
+  let cadetRecordMap = new Map();
+  if (_cadetPickerMode) {
+    const cadetRecords = await Storage.cadets.list();
+    cadetRecordMap = new Map(cadetRecords.map(c => [c.svcNo, c]));
+  }
 
   users.sort((a, b) => {
     const ra = ROLE_ORDER.indexOf(a.role);
@@ -72,37 +91,88 @@ async function _renderUserPicker() {
     return (a.name || '').localeCompare(b.name || '');
   });
 
-  const userButtonsHtml = users.length === 0
-    ? `<div class="login__empty">No user accounts yet. The system needs to be initialised by an administrator.</div>`
-    : users.map(_userButtonHtml).join('');
+  // In cadet picker mode show only cadets; otherwise show non-cadets + the
+  // Cadet Login button.
+  const visibleUsers = _cadetPickerMode
+    ? users.filter(u => u.role === 'cadet')
+    : users.filter(u => u.role !== 'cadet');
+
+  let userButtonsHtml;
+  if (_cadetPickerMode) {
+    // Sort by surname from cadet records (privacy: no given name shown in list)
+    visibleUsers.sort((a, b) => {
+      const ca = cadetRecordMap.get(a.svcNo);
+      const cb = cadetRecordMap.get(b.svcNo);
+      const sa = (ca?.surname || a.name || '').toUpperCase();
+      const sb = (cb?.surname || b.name || '').toUpperCase();
+      return sa.localeCompare(sb);
+    });
+    userButtonsHtml = visibleUsers.length === 0
+      ? `<div class="login__empty">No cadet accounts registered.</div>`
+      : visibleUsers.map(u => _cadetButtonHtml(u, cadetRecordMap.get(u.svcNo))).join('');
+  } else {
+    userButtonsHtml = visibleUsers.length === 0
+      ? `<div class="login__empty">No staff accounts yet. The system needs to be initialised by an administrator.</div>`
+      : visibleUsers.map(_userButtonHtml).join('');
+  }
+
+  const headerHtml = _cadetPickerMode
+    ? `<button type="button" class="login__back" data-action="back-to-staff" aria-label="Back to sign in">‹ Back</button>
+       <div class="login__user-summary"><div class="login__user-name">Cadet Login</div></div>`
+    : `<h1 class="login__title">${esc(unitName)}</h1>
+       ${unitCode ? `<div class="login__subtitle">${esc(unitCode)} — Q-Store IMS</div>` : ''}`;
+
+  const cadetBtnHtml = !_cadetPickerMode
+    ? `<button type="button" class="btn btn--secondary login__cadet-login-btn" data-action="cadet-login">
+         Cadet Login
+       </button>`
+    : '';
 
   render(_root, `
     <div class="login">
       <div class="login__card">
         <header class="login__header">
-          <h1 class="login__title">${esc(unitName)}</h1>
-          ${unitCode ? `<div class="login__subtitle">${esc(unitCode)} — Q-Store IMS</div>` : ''}
+          ${headerHtml}
         </header>
         <div class="login__body">
-          <h2 class="login__heading">Sign in</h2>
+          <h2 class="login__heading">${_cadetPickerMode ? 'Select your name' : 'Sign in'}</h2>
           <p class="login__hint">Select your name to continue.</p>
           <div class="login__user-list" role="list">
             ${userButtonsHtml}
           </div>
+          ${cadetBtnHtml}
         </div>
+        <footer class="login__privacy">
+          This system stores personnel and equipment data.
+          Access is restricted to authorised unit staff only.
+          All actions are audit-logged.
+        </footer>
       </div>
     </div>
   `);
 
-  // Wire user-select buttons via event delegation on the list container.
-  const list = $('.login__user-list', _root);
-  if (list) {
-    list.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-user-id]');
-      if (!btn) return;
-      _selectedUserId = btn.dataset.userId;
-      _pinBuffer = '';
-      _renderPinKeypad();
+  // Wire user-select buttons and action buttons via event delegation.
+  const card = $('.login__card', _root);
+  if (card) {
+    card.addEventListener('click', (e) => {
+      const btn    = e.target.closest('[data-user-id]');
+      const action = e.target.closest('[data-action]')?.dataset.action;
+
+      if (action === 'cadet-login') {
+        _cadetPickerMode = true;
+        _renderUserPicker();
+        return;
+      }
+      if (action === 'back-to-staff') {
+        _cadetPickerMode = false;
+        _renderUserPicker();
+        return;
+      }
+      if (btn) {
+        _selectedUserId = btn.dataset.userId;
+        _pinBuffer = '';
+        _renderPinKeypad();
+      }
     });
   }
 }
@@ -120,6 +190,36 @@ function _userButtonHtml(user) {
       <span class="login__user-name">${esc(user.name)}</span>
       <span class="login__user-meta">
         <span class="login__user-role">${esc(roleLabel)}</span>
+        <span class="login__user-last">${esc(lastSeen)}</span>
+      </span>
+    </button>
+  `;
+}
+
+/**
+ * Button for the cadet picker — shows "SURNAME F." for privacy.
+ * Full name is never shown in the list; only last name + first initial.
+ * Falls back to the user.name if no matching cadet record exists.
+ */
+function _cadetButtonHtml(user, cadetRecord) {
+  let displayName;
+  if (cadetRecord?.surname) {
+    const initial = cadetRecord.given ? ` ${cadetRecord.given.charAt(0).toUpperCase()}.` : '';
+    displayName = `${cadetRecord.surname.toUpperCase()}${initial}`;
+  } else {
+    // Fallback: use stored user name if no cadet record linked yet
+    displayName = user.name || user.username;
+  }
+  const lastSeen = user.lastLogin
+    ? `last seen ${fmtDateOnly(user.lastLogin)}`
+    : `never logged in`;
+  return `
+    <button type="button"
+            class="login__user-btn"
+            data-user-id="${esc(user.id)}"
+            role="listitem">
+      <span class="login__user-name">${esc(displayName)}</span>
+      <span class="login__user-meta">
         <span class="login__user-last">${esc(lastSeen)}</span>
       </span>
     </button>
@@ -164,6 +264,11 @@ async function _renderPinKeypad() {
             <button type="button" class="login__key login__key--backspace"
                     data-action="backspace" aria-label="Backspace">⌫</button>
           </div>
+          <div class="login__forgot-row">
+            <button type="button" class="login__forgot-link" data-action="forgot-pin">
+              Forgot PIN?
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -178,6 +283,13 @@ async function _renderPinKeypad() {
   _root.__loginKeydownUnbind = () => {
     document.removeEventListener('keydown', _onKeydown);
   };
+
+  // If this user is already locked out (e.g. returning to the keypad after
+  // switching tabs), start the countdown immediately.
+  const lockoutStatus = AUTH.getLockoutStatus(_selectedUserId);
+  if (lockoutStatus.locked) {
+    _startLockoutCountdown(lockoutStatus.unlockAt);
+  }
 }
 
 function _pinDisplayInnerHtml() {
@@ -188,7 +300,7 @@ function _pinDisplayInnerHtml() {
             data-action="toggle-reveal"
             aria-label="${_pinRevealed ? 'Hide PIN' : 'Show PIN'}"
             aria-pressed="${_pinRevealed}">
-      ${_pinRevealed ? '🙈' : '👁'}
+      ${_pinRevealed ? _ICON_EYE_OFF : _ICON_EYE}
     </button>
   `;
 }
@@ -310,19 +422,33 @@ async function _submitPin() {
 
   if (result.ok) {
     _teardownKeypad();
-    _onLoggedIn(result.session);
+    // Check if this user has TOTP enabled — if so, gate on the code step
+    // before completing the login. We pass the already-validated session
+    // so that if the user abandons the TOTP step, the session is never
+    // returned to the caller.
+    const userRecord = await Storage.users.get(_selectedUserId);
+    if (userRecord?.totpEnabled && userRecord?.totpSecret) {
+      await _renderTotpStep(userRecord, result.session);
+    } else {
+      _onLoggedIn(result.session);
+    }
     return;
   }
 
   // Failure path. Most common reason is invalid_pin. Show error, shake,
   // refresh display.
+  if (result.reason === 'locked_out') {
+    _startLockoutCountdown(result.unlockAt);
+    return;
+  }
+
   let msg;
   switch (result.reason) {
     case 'invalid_pin':         msg = 'Incorrect PIN. Try again.';                          break;
     case 'user_not_found':      msg = 'This account no longer exists.';                     break;
     case 'invalid_user_record': msg = 'Account is missing a PIN. Contact your CO or QM.';   break;
     case 'unknown_algorithm':   msg = 'Account uses an unsupported hash. Reset required.';  break;
-    case 'thrown':              msg = 'Sign-in error. Check your connection and reload.';   break;
+    case 'thrown':              msg = 'Sign-in error. The app still works offline — try again or reload the page.'; break;
     default:                    msg = 'Sign-in failed. Try again or pick a different user.';
   }
 
@@ -339,7 +465,186 @@ async function _submitPin() {
   _refreshPinDisplay();
 }
 
+// -----------------------------------------------------------------------------
+// TOTP verification step (step 3 of login)
+// -----------------------------------------------------------------------------
+// Shown only when the authenticated user has totpEnabled=true.
+// Accepts both 6-digit TOTP codes and 8-char single-use backup codes.
+
+async function _renderTotpStep(userRecord, session) {
+  let _verifying  = false;
+  let _useBackup  = false;
+
+  const _render2FA = () => {
+    render(_root, `
+      <div class="login">
+        <div class="login__card">
+          <header class="login__header">
+            <button type="button" class="login__back" aria-label="Back to PIN entry">‹ Back</button>
+            <div class="login__user-summary">
+              <div class="login__user-name">${esc(userRecord.name)}</div>
+              <div class="login__user-meta">Two-factor authentication</div>
+            </div>
+          </header>
+          <div class="login__body">
+            <h2 class="login__heading">${_useBackup ? 'Enter backup code' : 'Enter authenticator code'}</h2>
+            <p class="login__hint">
+              ${_useBackup
+                ? 'Enter one of your 8-character backup codes.'
+                : 'Open your authenticator app and enter the 6-digit code.'}
+            </p>
+            <div class="login__totp-wrap">
+              <input type="text"
+                     id="login-totp-input"
+                     class="login__totp-input"
+                     inputmode="${_useBackup ? 'text' : 'numeric'}"
+                     ${_useBackup ? '' : 'pattern="\\d{6}" maxlength="6"'}
+                     ${_useBackup ? 'maxlength="8"' : ''}
+                     autocomplete="one-time-code"
+                     spellcheck="false"
+                     placeholder="${_useBackup ? 'XXXXXXXX' : '000000'}"
+                     aria-label="${_useBackup ? 'Backup code' : '6-digit authenticator code'}">
+            </div>
+            <div class="login__error" role="alert" aria-live="assertive"></div>
+            <div class="login__totp-actions">
+              <button type="button" class="login__forgot-link" data-action="toggle-backup">
+                ${_useBackup ? 'Use authenticator code instead' : 'Use a backup code instead'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `);
+
+    const input = $('#login-totp-input', _root);
+    if (input) {
+      input.focus();
+      input.addEventListener('input', () => {
+        if (!_useBackup) {
+          input.value = input.value.replace(/\D/g, '').slice(0, 6);
+          if (input.value.length === 6) _doVerify();
+        } else {
+          input.value = input.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase();
+          if (input.value.length === 8) _doVerify();
+        }
+      });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') _doVerify();
+      });
+    }
+
+    const card = $('.login__card', _root);
+    if (card) {
+      card.addEventListener('click', async (e) => {
+        const back   = e.target.closest('.login__back');
+        const action = e.target.closest('[data-action]')?.dataset.action;
+        if (back) {
+          // Back to PIN — clear session, re-render keypad
+          _selectedUserId = userRecord.id;
+          _pinBuffer = '';
+          await _renderPinKeypad();
+          return;
+        }
+        if (action === 'toggle-backup') {
+          _useBackup = !_useBackup;
+          _render2FA();
+          return;
+        }
+      });
+    }
+  };
+
+  const _doVerify = async () => {
+    if (_verifying) return;
+    const input  = $('#login-totp-input', _root);
+    const errEl  = $('.login__error',     _root);
+    const code   = input?.value?.trim() || '';
+    if (!code) return;
+
+    _verifying = true;
+    if (errEl) errEl.textContent = '';
+
+    try {
+      if (_useBackup) {
+        // Backup code path
+        const remaining = userRecord.totpHashedBackups || [];
+        const idx = await TOTP.verifyBackupCode(code, remaining);
+        if (idx < 0) {
+          _verifying = false;
+          if (errEl) errEl.textContent = 'Backup code not recognised or already used.';
+          if (input) { input.value = ''; input.focus(); }
+          return;
+        }
+        // Consume the code
+        const newBackups = remaining.filter((_, i) => i !== idx);
+        await Storage.users.put({ ...userRecord, totpHashedBackups: newBackups });
+        await Storage.audit.append({
+          action: '2fa_backup_used',
+          user:   userRecord.name || userRecord.id,
+          desc:   `Backup code used for login. ${newBackups.length} remaining.`,
+        });
+      } else {
+        // TOTP path
+        const result = await TOTP.verify(
+          userRecord.totpSecret,
+          code,
+          { lastUsedStep: userRecord.totpLastUsedStep ?? -1 },
+        );
+        if (!result.ok) {
+          _verifying = false;
+          if (errEl) errEl.textContent = 'Code incorrect or expired — check your device clock and try again.';
+          if (input) { input.value = ''; input.focus(); }
+          return;
+        }
+        // Update replay guard
+        await Storage.users.put({ ...userRecord, totpLastUsedStep: result.step });
+      }
+
+      // Success — hand off to the shell
+      _onLoggedIn(session);
+    } catch (err) {
+      _verifying = false;
+      console.error('TOTP verification error:', err);
+      if (errEl) errEl.textContent = 'Verification error — please try again.';
+    }
+  };
+
+  _render2FA();
+}
+
+function _startLockoutCountdown(unlockAt) {
+  if (_lockoutTimer) clearInterval(_lockoutTimer);
+
+  const errorEl  = $('.login__error', _root);
+  const keypad   = $('.login__keypad', _root);
+  if (keypad) keypad.setAttribute('aria-disabled', 'true');
+  $$('.login__key', _root).forEach((b) => b.disabled = true);
+
+  const _tick = () => {
+    const secs = Math.ceil((unlockAt - Date.now()) / 1000);
+    if (secs <= 0) {
+      clearInterval(_lockoutTimer);
+      _lockoutTimer = null;
+      if (errorEl) errorEl.textContent = '';
+      if (keypad) keypad.removeAttribute('aria-disabled');
+      $$('.login__key', _root).forEach((b) => b.disabled = false);
+      _refreshPinDisplay();
+      return;
+    }
+    const mins = Math.floor(secs / 60);
+    const display = mins >= 1
+      ? `${mins} minute${mins !== 1 ? 's' : ''}`
+      : `${secs} second${secs !== 1 ? 's' : ''}`;
+    if (errorEl) errorEl.textContent =
+      `Too many incorrect PINs. Please wait ${display} before trying again.`;
+  };
+
+  _tick();
+  _lockoutTimer = setInterval(_tick, 1000);
+}
+
 function _teardownKeypad() {
+  if (_lockoutTimer) { clearInterval(_lockoutTimer); _lockoutTimer = null; }
   if (_root?.__loginKeydownUnbind) {
     _root.__loginKeydownUnbind();
     delete _root.__loginKeydownUnbind;

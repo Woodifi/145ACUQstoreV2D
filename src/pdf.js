@@ -37,6 +37,7 @@
 // =============================================================================
 
 import { jsPDF } from 'jspdf';
+import qrcodegen from 'qrcode-generator';
 
 // Page geometry — all in millimetres (jsPDF's default unit).
 const PAGE = {
@@ -485,35 +486,115 @@ const REPORT_FOOTER_RESERVE = 18;   // mm at bottom of every page
  * @returns {{filename, blob, bytes}}
  */
 export async function generateNominalRoll(cadets, opts = {}) {
-  const unit = opts.unit || {};
-  const subtitle = opts.subtitle || '';
+  const unit      = opts.unit      || {};
+  const subtitle  = opts.subtitle  || '';
+  const structure = opts.structure || [];   // unit sub-structure for grouped layout
+  const useStruct = structure.length > 0;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
-  // Layout: 5 columns. Widths sum to PAGE.CW.
-  const COLS = [
-    { x: PAGE.MARGIN + 2,   w: 28,  label: 'Rank',        get: (c) => c.rank || '' },
-    { x: PAGE.MARGIN + 32,  w: 50,  label: 'Surname',     get: (c) => c.surname || '' },
-    { x: PAGE.MARGIN + 84,  w: 50,  label: 'Given names', get: (c) => c.given || '' },
-    { x: PAGE.MARGIN + 136, w: 24,  label: 'Service No.', get: (c) => c.svcNo || '' },
-    { x: PAGE.MARGIN + 162, w: 12,  label: 'Plt',         get: (c) => c.plt || '' },
-  ];
+  // Column layout differs by mode:
+  //   Legacy (no structure): 5 wide columns
+  //   Structure mode: 7 narrower columns + group separator rows
+  const COLS = useStruct
+    ? [
+        { x: PAGE.MARGIN + 2,   w: 22, label: 'Rank',        get: (c) => c.rank || '' },
+        { x: PAGE.MARGIN + 25,  w: 38, label: 'Surname',     get: (c) => c.surname || '' },
+        { x: PAGE.MARGIN + 64,  w: 34, label: 'Given names', get: (c) => c.given || '' },
+        { x: PAGE.MARGIN + 99,  w: 22, label: 'Service No.', get: (c) => c.svcNo || '' },
+        { x: PAGE.MARGIN + 122, w: 18, label: 'Company',     get: (c) => c.company || '' },
+        { x: PAGE.MARGIN + 141, w: 16, label: 'Platoon',     get: (c) => c.platoon || c.plt || '' },
+        { x: PAGE.MARGIN + 158, w: 12, label: 'Section',     get: (c) => c.section || '' },
+      ]
+    : [
+        { x: PAGE.MARGIN + 2,   w: 28, label: 'Rank',        get: (c) => c.rank || '' },
+        { x: PAGE.MARGIN + 32,  w: 50, label: 'Surname',     get: (c) => c.surname || '' },
+        { x: PAGE.MARGIN + 84,  w: 50, label: 'Given names', get: (c) => c.given || '' },
+        { x: PAGE.MARGIN + 136, w: 24, label: 'Service No.', get: (c) => c.svcNo || '' },
+        { x: PAGE.MARGIN + 162, w: 12, label: 'Plt',         get: (c) => c.plt || '' },
+      ];
 
   const meta = `${cadets.length} ${cadets.length === 1 ? 'person' : 'people'}` +
                (subtitle ? ` · ${subtitle}` : '');
-  _renderTabularReport(doc, {
-    title:    'NOMINAL ROLL',
-    subtitle: meta,
-    unit,
-    columns:  COLS,
-    rows:     cadets,
-    rowDecorate(c) {
-      // Inactive rows are shown in muted grey so paper-mark-up can use
-      // them as a "still on books but not active" reference.
-      return c.active === false
+  const title = 'NOMINAL ROLL';
+
+  if (!useStruct) {
+    // Flat render — reuse the shared tabular helper.
+    _renderTabularReport(doc, {
+      title, subtitle: meta, unit,
+      columns: COLS,
+      rows:    cadets,
+      rowDecorate(c) {
+        return c.active === false ? { textColor: COL.txtSub, fontStyle: 'italic' } : null;
+      },
+    });
+  } else {
+    // Grouped render — inject group-band rows between company/plt/sec groups.
+    const ROW_H    = 6;
+    const BAND_H   = 5;
+    const usableBottom = PAGE.H - PAGE.MARGIN - REPORT_FOOTER_RESERVE;
+
+    let y       = _drawReportHeader(doc, PAGE.MARGIN, title, meta, unit);
+    y           = _drawColumnHeader(doc, y, COLS);
+    let pageNum = 1;
+    let prevKey = null;
+
+    const ensureSpace = (needed) => {
+      if (y + needed > usableBottom) {
+        _drawReportFooter(doc, pageNum, null);
+        doc.addPage();
+        pageNum++;
+        y = _drawReportHeader(doc, PAGE.MARGIN, title, meta, unit);
+        y = _drawColumnHeader(doc, y, COLS);
+      }
+    };
+
+    for (let i = 0; i < cadets.length; i++) {
+      const c       = cadets[i];
+      const isStaff = c.personType === 'staff';
+      const company = c.company  || '';
+      const platoon = c.platoon  || c.plt || '';
+      const section = c.section  || '';
+      const key     = isStaff
+        ? '__staff__'
+        : `${company}\x00${platoon}\x00${section}`;
+
+      if (key !== prevKey) {
+        // Ensure room for band + at least one data row.
+        ensureSpace(BAND_H + ROW_H);
+        const label = isStaff
+          ? 'Staff'
+          : [company, platoon, section].filter(Boolean).join(' › ') || 'Unassigned';
+        // Draw group band.
+        doc.setFillColor(...COL.bandFill);
+        doc.rect(PAGE.MARGIN, y, PAGE.CW, BAND_H, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.5);
+        doc.setTextColor(...COL.armyGreen);
+        doc.text(label.toUpperCase(), PAGE.MARGIN + 2, y + 3.5);
+        y += BAND_H;
+        prevKey = key;
+      }
+
+      ensureSpace(ROW_H);
+      const decoration = c.active === false
         ? { textColor: COL.txtSub, fontStyle: 'italic' }
         : null;
-    },
-  });
+      _drawRow(doc, y, COLS, c, i, decoration);
+      y += ROW_H;
+    }
+
+    _drawReportFooter(doc, pageNum, null);
+
+    // Second pass: fill in "Page N of M".
+    const totalPages = pageNum;
+    for (let p = 1; p <= totalPages; p++) {
+      doc.setPage(p);
+      doc.setFillColor(255, 255, 255);
+      doc.rect(PAGE.MARGIN, PAGE.H - REPORT_FOOTER_RESERVE,
+               PAGE.CW, REPORT_FOOTER_RESERVE - 2, 'F');
+      _drawReportFooter(doc, p, totalPages);
+    }
+  }
 
   const filename = `NominalRoll_${_unitSlug(unit)}_${_todayIsoDate()}.pdf`;
   return _packageResult(doc, filename);
@@ -528,15 +609,40 @@ export async function generateStockReport(items, opts = {}) {
   const subtitle = opts.subtitle || '';
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
+  // Compact condition summary for the report — e.g. "5S / 2U / 1R".
+  // For legacy items without breakdown data, falls back to the old condition flag.
+  const _condPdf = (i) => {
+    if (i.qtyServiceable != null) {
+      const qS = Number(i.qtyServiceable)    || 0;
+      const qU = Number(i.qtyUnserviceable)  || 0;
+      const qR = Number(i.qtyRepair)         || 0;
+      const qC = Number(i.qtyCalibrationDue) || 0;
+      const qW = Number(i.qtyWrittenOff)     || 0;
+      if (qU === 0 && qR === 0 && qC === 0 && qW === 0) return 'Svc';
+      const parts = [];
+      if (qS > 0) parts.push(`${qS}S`);
+      if (qU > 0) parts.push(`${qU}U`);
+      if (qR > 0) parts.push(`${qR}R`);
+      if (qC > 0) parts.push(`${qC}C`);
+      if (qW > 0) parts.push(`${qW}W`);
+      return parts.join('/');
+    }
+    // Legacy: derive from condition flag + unsvc count.
+    const u = Number(i.unsvc) || 0;
+    if (!i.condition || i.condition === 'serviceable') return u > 0 ? `U/S:${u}` : 'Svc';
+    const abbr = { 'unserviceable': 'U/S', 'repair': 'Repr', 'calibration-due': 'Cal', 'written-off': 'W/O' };
+    return abbr[i.condition] || i.condition;
+  };
+
   // Compute "available" inline so the column shows what the QM cares about.
   const COLS = [
-    { x: PAGE.MARGIN + 2,   w: 30, label: 'NSN',       get: (i) => i.nsn || '' },
-    { x: PAGE.MARGIN + 34,  w: 46, label: 'Item',      get: (i) => i.name || '' },
-    { x: PAGE.MARGIN + 82,  w: 24, label: 'Cat.',      get: (i) => i.cat || '' },
-    { x: PAGE.MARGIN + 108, w: 14, label: 'On hand',   get: (i) => String(i.onHand || 0), align: 'right' },
-    { x: PAGE.MARGIN + 124, w: 14, label: 'On loan',   get: (i) => String(i.onLoan || 0), align: 'right' },
-    { x: PAGE.MARGIN + 140, w: 14, label: 'Unsvc',     get: (i) => String(i.unsvc  || 0), align: 'right' },
-    { x: PAGE.MARGIN + 156, w: 14, label: 'Avail.',    get: (i) => String(Math.max(0, (Number(i.onHand)||0) - (Number(i.onLoan)||0))), align: 'right' },
+    { x: PAGE.MARGIN + 2,   w: 26, label: 'NSN',       get: (i) => i.nsn || '' },
+    { x: PAGE.MARGIN + 30,  w: 44, label: 'Item',      get: (i) => i.name || '' },
+    { x: PAGE.MARGIN + 76,  w: 22, label: 'Cat.',      get: (i) => i.cat || '' },
+    { x: PAGE.MARGIN + 100, w: 13, label: 'On hand',   get: (i) => String(i.onHand || 0), align: 'right' },
+    { x: PAGE.MARGIN + 115, w: 13, label: 'On loan',   get: (i) => String(i.onLoan || 0), align: 'right' },
+    { x: PAGE.MARGIN + 130, w: 13, label: 'Avail.',    get: (i) => String(Math.max(0, (Number(i.onHand)||0) - (Number(i.onLoan)||0))), align: 'right' },
+    { x: PAGE.MARGIN + 145, w: 25, label: 'Condition', get: _condPdf },
   ];
 
   const totalOnHand = items.reduce((s, i) => s + (Number(i.onHand) || 0), 0);
@@ -552,11 +658,14 @@ export async function generateStockReport(items, opts = {}) {
     columns:  COLS,
     rows:     items,
     rowDecorate(i) {
-      // Highlight items that are entirely or substantially unserviceable
-      // for visual scan during a stocktake.
+      // Highlight rows with substantial non-serviceable counts.
       const onHand = Number(i.onHand) || 0;
-      const unsvc  = Number(i.unsvc)  || 0;
-      if (onHand > 0 && unsvc / onHand >= 0.5) {
+      // If breakdown is available, use it; otherwise fall back to unsvc.
+      const notReady = i.qtyServiceable != null
+        ? (Number(i.qtyUnserviceable) || 0) + (Number(i.qtyRepair) || 0) +
+          (Number(i.qtyCalibrationDue) || 0) + (Number(i.qtyWrittenOff) || 0)
+        : (Number(i.unsvc) || 0);
+      if (onHand > 0 && notReady / onHand >= 0.5) {
         return { textColor: [180, 30, 30], rowFill: [255, 230, 230], fontStyle: 'bold' };
       }
       return null;
@@ -628,15 +737,20 @@ export async function generateStocktakeReport(session, opts = {}) {
   const { rows, counts, finalisedAt, finalisedBy } = session;
 
   const COLS = [
-    { x: PAGE.MARGIN + 2,   w: 28, label: 'NSN',      get: (r) => r.item.nsn || '' },
-    { x: PAGE.MARGIN + 32,  w: 56, label: 'Item',     get: (r) => r.item.name || '' },
-    { x: PAGE.MARGIN + 90,  w: 14, label: 'System',   get: (r) => String(r.item.onHand || 0), align: 'right' },
-    { x: PAGE.MARGIN + 106, w: 14, label: 'Counted',  get: (r) => String(r.stk.counted),       align: 'right' },
-    { x: PAGE.MARGIN + 122, w: 14, label: 'Var.',     get: (r) => (r.variance >= 0 ? '+' : '') + r.variance, align: 'right' },
-    { x: PAGE.MARGIN + 138, w: 32, label: 'Notes',    get: (r) => r.stk.notes || '' },
+    { x: PAGE.MARGIN + 2,   w: 24, label: 'NSN',    get: (r) => r.item.nsn || '' },
+    { x: PAGE.MARGIN + 28,  w: 44, label: 'Item',   get: (r) => r.item.name || '' },
+    { x: PAGE.MARGIN + 74,  w: 12, label: 'System', get: (r) => String(r.item.onHand || 0),                                                                         align: 'right' },
+    { x: PAGE.MARGIN + 88,  w: 10, label: 'Svc',    get: (r) => String(r.stk.qtyServiceable    != null ? r.stk.qtyServiceable    : r.stk.counted),                  align: 'right' },
+    { x: PAGE.MARGIN + 100, w: 10, label: 'U/S',    get: (r) => String(r.stk.qtyUnserviceable  != null ? r.stk.qtyUnserviceable  : 0),                              align: 'right' },
+    { x: PAGE.MARGIN + 112, w: 10, label: 'Repr',   get: (r) => String(r.stk.qtyRepair         != null ? r.stk.qtyRepair         : 0),                              align: 'right' },
+    { x: PAGE.MARGIN + 124, w: 10, label: 'Cal',    get: (r) => String(r.stk.qtyCalibrationDue != null ? r.stk.qtyCalibrationDue : 0),                              align: 'right' },
+    { x: PAGE.MARGIN + 136, w: 10, label: 'W/O',    get: (r) => String(r.stk.qtyWrittenOff     != null ? r.stk.qtyWrittenOff     : 0),                              align: 'right' },
+    { x: PAGE.MARGIN + 148, w: 10, label: 'Total',  get: (r) => String(r.stk.counted),                                                                              align: 'right' },
+    { x: PAGE.MARGIN + 160, w: 10, label: 'Var.',   get: (r) => (r.variance >= 0 ? '+' : '') + r.variance,                                                          align: 'right' },
   ];
 
   const subtitle = `${counts.total} counted · ${counts.match} match, ${counts.over} over, ${counts.short} short` +
+                   (counts.writeOffs > 0 ? `, ${counts.writeOffs} write-off` : '') +
                    ` · finalised ${_fmtDateTimeAU(finalisedAt)} by ${finalisedBy}`;
 
   _renderTabularReport(doc, {
@@ -705,6 +819,227 @@ export async function generateStocktakeReport(session, opts = {}) {
 }
 
 // =============================================================================
+// STOCKTAKE WORKSHEET — blank counting sheet
+// =============================================================================
+// Printable paper worksheet: QM takes it to the store, counts by hand,
+// then transfers totals into the system. Each item row has five hand-fill
+// boxes (Svc / U/S / Repr / Cal / W/O) plus a Total box.
+//
+// Layout: portrait A4 — same geometry as the other reports.
+//   Col   | w (mm) | Content
+//   -------+--------+-------------------------------
+//   #      |  6     | row number
+//   NSN    | 24     | item.nsn
+//   Item   | 56     | item.name
+//   Sys    | 10     | item.onHand (system qty)
+//   Svc    | 14     | blank handwriting box
+//   U/S    | 14     | blank handwriting box
+//   Repr   | 10     | blank handwriting box
+//   Cal    | 10     | blank handwriting box
+//   W/O    | 10     | blank handwriting box
+//   Total  | 16     | blank handwriting box (emphasised)
+//   TOTAL  =170mm   = PAGE.CW
+//
+// Row height 8mm (vs 6mm for the data report) — room for a pencil figure.
+// Blank boxes have a light grey border; Total box has a tan border.
+// Signature + name line for QM at bottom of the last page.
+// =============================================================================
+
+/**
+ * Generate a blank stocktake counting worksheet and trigger a browser download.
+ *
+ * @param {Array}  items  Full list of inventory items to count (filtered by
+ *                        the caller to match whatever the toolbar filter shows).
+ * @param {Object} opts
+ * @param {Object} [opts.unit]      Unit branding settings.
+ * @param {string} [opts.category]  Category filter label for the subtitle
+ *                                  (empty / undefined = "All items").
+ * @returns {Promise<{filename: string, blob: Blob, bytes: number}>}
+ */
+export async function generateStocktakeWorksheet(items, opts = {}) {
+  const unit = opts.unit || {};
+  const category = opts.category || '';
+
+  if (!items || items.length === 0) {
+    throw new Error('generateStocktakeWorksheet: no items to print.');
+  }
+
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+  // Column definitions — x positions are absolute page coords.
+  const M = PAGE.MARGIN;
+  const COLS = [
+    { x: M,       w:  6,  label: '#',    align: 'right',  box: false  },
+    { x: M +  6,  w: 24,  label: 'NSN',  align: 'left',   box: false  },
+    { x: M + 30,  w: 56,  label: 'Item', align: 'left',   box: false  },
+    { x: M + 86,  w: 10,  label: 'Sys',  align: 'right',  box: false,
+      note: 'System' },
+    { x: M + 96,  w: 14,  label: 'Svc',  align: 'center', box: true,
+      boxColor: COL.borderDim },
+    { x: M + 110, w: 14,  label: 'U/S',  align: 'center', box: true,
+      boxColor: COL.borderDim },
+    { x: M + 124, w: 10,  label: 'Repr', align: 'center', box: true,
+      boxColor: COL.borderDim },
+    { x: M + 134, w: 10,  label: 'Cal',  align: 'center', box: true,
+      boxColor: COL.borderDim },
+    { x: M + 144, w: 10,  label: 'W/O',  align: 'center', box: true,
+      boxColor: COL.borderDim },
+    { x: M + 154, w: 16,  label: 'Total',align: 'center', box: true,
+      boxColor: COL.tan,   totalCol: true },
+  ];
+
+  const ROW_H   = 8;   // mm — room for a pencil figure
+  const HDR_H   = 7;   // column header band height
+  const FOOTER_RESERVE = REPORT_FOOTER_RESERVE;
+  const usableBottom   = PAGE.H - PAGE.MARGIN - FOOTER_RESERVE;
+
+  const subtitle = `${items.length} item${items.length === 1 ? '' : 's'}` +
+    (category ? ` · category: ${category}` : ' · all categories') +
+    ' · COUNTING WORKSHEET — do not file; transfer totals to QStore IMS';
+
+  // ── draw helpers ────────────────────────────────────────────────────────────
+
+  function drawHeader(y) {
+    return _drawReportHeader(doc, y, 'STOCKTAKE WORKSHEET', subtitle, unit);
+  }
+
+  function drawColHeader(y) {
+    doc.setFillColor(...COL.bandFill);
+    doc.rect(M, y, PAGE.CW, HDR_H, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.setTextColor(...COL.armyGreen);
+    for (const c of COLS) {
+      const tx = c.align === 'right'
+        ? c.x + c.w - 1
+        : c.align === 'center'
+          ? c.x + c.w / 2
+          : c.x + 1;
+      const opts2 = c.align === 'right'
+        ? { align: 'right' }
+        : c.align === 'center'
+          ? { align: 'center' }
+          : undefined;
+      doc.text(c.label, tx, y + 4.5, opts2);
+    }
+    return y + HDR_H;
+  }
+
+  function drawRow(y, item, rowIdx) {
+    // Wrap item name across multiple lines if needed.
+    const nameLines = doc.splitTextToSize(item.name || '—', COLS[2].w - 2);
+    const LINE_H    = 3.8; // mm per line at 7.5pt
+    const rowH      = Math.max(ROW_H, nameLines.length * LINE_H + 3);
+
+    // Alternating stripe on non-box columns.
+    if (rowIdx % 2 === 1) {
+      doc.setFillColor(...COL.rowFillEven);
+      doc.rect(M, y, COLS[3].x + COLS[3].w - M, rowH, 'F');
+    }
+
+    // Text columns.
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...COL.txtDark);
+
+    // # (row number, 1-based)
+    doc.text(String(rowIdx + 1), COLS[0].x + COLS[0].w - 1, y + 5, { align: 'right' });
+
+    // NSN
+    doc.text(_fitText(doc, item.nsn || '—', COLS[1].w - 2), COLS[1].x + 1, y + 5);
+
+    // Item name — wrapped
+    doc.setFont('helvetica', 'bold');
+    doc.text(nameLines, COLS[2].x + 1, y + 5);
+    doc.setFont('helvetica', 'normal');
+
+    // Sys qty
+    doc.setTextColor(...COL.txtMuted);
+    doc.text(
+      String(item.onHand ?? 0),
+      COLS[3].x + COLS[3].w - 1, y + 5, { align: 'right' }
+    );
+    doc.setTextColor(...COL.txtDark);
+
+    // Blank boxes for count columns — expand with row height.
+    const boxPad = 1;
+    for (const c of COLS) {
+      if (!c.box) continue;
+      const bx = c.x + boxPad;
+      const bw = c.w - boxPad * 2;
+      const bh = rowH - 2;
+      doc.setDrawColor(...c.boxColor);
+      doc.setLineWidth(c.totalCol ? 0.5 : 0.3);
+      doc.setFillColor(255, 255, 255);
+      doc.rect(bx, y + 1, bw, bh, 'FD');
+    }
+
+    // Light horizontal rule at row bottom for legibility.
+    doc.setDrawColor(...COL.borderDim);
+    doc.setLineWidth(0.15);
+    doc.line(M, y + rowH, M + PAGE.CW, y + rowH);
+    return rowH;
+  }
+
+  function drawSigBlock(y) {
+    // Bottom-of-sheet signature line.
+    const sigW = 70;
+    const lineY = y + 16;
+    doc.setDrawColor(...COL.txtMuted);
+    doc.setLineWidth(0.4);
+    doc.line(M, lineY, M + sigW, lineY);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(...COL.txtMuted);
+    doc.text('QM Signature', M, lineY + 4);
+
+    doc.line(M + sigW + 10, lineY, M + sigW * 2 + 10, lineY);
+    doc.text('Name / Date', M + sigW + 10, lineY + 4);
+  }
+
+  // ── pagination loop ─────────────────────────────────────────────────────────
+
+  let y       = drawHeader(PAGE.MARGIN);
+  y           = drawColHeader(y);
+  let pageNum = 1;
+
+  for (let i = 0; i < items.length; i++) {
+    if (y + ROW_H > usableBottom) {
+      _drawReportFooter(doc, pageNum, null);
+      doc.addPage();
+      pageNum++;
+      y = drawHeader(PAGE.MARGIN);
+      y = drawColHeader(y);
+    }
+    const usedH = drawRow(y, items[i], i);
+    y += usedH;
+  }
+
+  // Signature block — only if there's room; otherwise a fresh page.
+  if (y + 35 > usableBottom) {
+    _drawReportFooter(doc, pageNum, null);
+    doc.addPage();
+    pageNum++;
+    y = drawHeader(PAGE.MARGIN);
+    y += 4;
+  }
+  drawSigBlock(y + 4);
+  _drawReportFooter(doc, pageNum, null);
+
+  // Second pass — write "Page N of M".
+  const totalPages = pageNum;
+  for (let p = 1; p <= totalPages; p++) {
+    doc.setPage(p);
+    doc.setFillColor(255, 255, 255);
+    doc.rect(M, PAGE.H - FOOTER_RESERVE, PAGE.CW, FOOTER_RESERVE - 2, 'F');
+    _drawReportFooter(doc, p, totalPages);
+  }
+
+  const filename = `Stocktake_Worksheet_${_unitSlug(unit)}_${_todayIsoDate()}.pdf`;
+  return _packageResult(doc, filename);
+}
+
+// =============================================================================
 // AB189 — EQUIPMENT REQUEST FORM
 // =============================================================================
 // Pre-issue request form: cadet fills it, QM and OC/CO sign before issue.
@@ -765,6 +1100,150 @@ export async function generateAB189(loans, opts = {}) {
   const dateStr  = first.issueDate || _todayIsoDate();
   const filename = `AB189_${safeSvc}_${dateStr}.pdf`;
   return _packageResult(doc, filename);
+}
+
+// =============================================================================
+// BLANK AB189 (fillable / printable template)
+// =============================================================================
+
+/**
+ * Generate a blank, printable AB189 Equipment Request form.
+ * Used by cadets/staff to fill in offline and submit physically or
+ * import back into the system via PDF text extraction.
+ *
+ * @param {Object} [opts]
+ * @param {Object} [opts.unit]     Unit branding settings.
+ * @param {number} [opts.rows=8]   Number of blank equipment item rows to include.
+ * @returns {Promise<{filename: string, blob: Blob, bytes: number}>}
+ */
+export async function generateBlankAB189(opts = {}) {
+  const unit = opts.unit || {};
+  const rows = Math.max(3, Math.min(20, opts.rows || 8));
+  const doc  = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+  let y = PAGE.MARGIN;
+
+  // ---- Header ----
+  doc.setFillColor(...COL.armyGreen);
+  doc.rect(PAGE.MARGIN, y, PAGE.CW, 16, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.setTextColor(...COL.tan);
+  doc.text('EQUIPMENT REQUEST', PAGE.MARGIN + 4, y + 7);
+  doc.setFontSize(11);
+  doc.text('AB 189', PAGE.MARGIN + PAGE.CW - 4, y + 7, { align: 'right' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(220, 220, 200);
+  const subtitle = unit.unitName
+    ? `${unit.unitName} — Q-Store`
+    : 'Australian Army Cadets — Unit Quartermaster';
+  doc.text(subtitle, PAGE.MARGIN + 4, y + 13);
+  y += 20;
+
+  // ---- Request meta row ----
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(...COL.txtMuted);
+  doc.text('Request date:', PAGE.MARGIN, y);
+  _blankLine(doc, PAGE.MARGIN + 26, y, 55);
+  if (unit.unitCode) {
+    doc.text(`Unit code: ${unit.unitCode}`, PAGE.MARGIN + 90, y);
+  }
+  doc.setFontSize(8);
+  doc.setTextColor(...COL.txtSub);
+  doc.text(`Blank form generated: ${_nowFmt()}`, PAGE.MARGIN + 90, y + 5);
+  doc.setDrawColor(...COL.tan);
+  doc.setLineWidth(0.5);
+  doc.line(PAGE.MARGIN, y + 8, PAGE.MARGIN + PAGE.CW, y + 8);
+  y += 14;
+
+  // ---- Requesting member section ----
+  y = _drawSectionBand(doc, y, 'Requesting member');
+  y = _blankLabelRow(doc, y, 'Service No.', 80);
+  y = _blankLabelRow(doc, y, 'Rank', 40);
+  y = _blankLabelRow(doc, y, 'Surname', 80);
+  y = _blankLabelRow(doc, y, 'Given names', 80);
+  y = _blankLabelRow(doc, y, 'Platoon / Flight', 60);
+  y += 2;
+
+  // ---- Equipment requested table ----
+  y = _drawSectionBand(doc, y, 'Equipment requested');
+
+  const COLS = [
+    { x: PAGE.MARGIN + 2,   label: '#',            w: 8,  align: 'left'  },
+    { x: PAGE.MARGIN + 12,  label: 'NSN',          w: 42, align: 'left'  },
+    { x: PAGE.MARGIN + 56,  label: 'Nomenclature / Description', w: 96, align: 'left' },
+    { x: PAGE.MARGIN + 154, label: 'Qty',          w: 14, align: 'right' },
+  ];
+
+  // Column header row.
+  doc.setFillColor(180, 175, 165);
+  doc.rect(PAGE.MARGIN, y, PAGE.CW, 6, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(50, 50, 40);
+  for (const c of COLS) {
+    const tx = c.align === 'right' ? c.x + c.w - 1 : c.x;
+    doc.text(c.label, tx, y + 4.5, c.align === 'right' ? { align: 'right' } : undefined);
+  }
+  y += 7;
+
+  // Blank item rows.
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  for (let i = 0; i < rows; i++) {
+    if (i % 2 === 1) {
+      doc.setFillColor(...COL.rowFillEven);
+      doc.rect(PAGE.MARGIN, y - 1, PAGE.CW, 7, 'F');
+    }
+    doc.setTextColor(...COL.txtDark);
+    doc.text(String(i + 1), COLS[0].x, y + 4);
+    // Underlines for NSN, description, qty.
+    doc.setDrawColor(150, 145, 135);
+    doc.setLineWidth(0.3);
+    doc.line(COLS[1].x, y + 4.5, COLS[1].x + COLS[1].w - 2, y + 4.5);
+    doc.line(COLS[2].x, y + 4.5, COLS[2].x + COLS[2].w - 2, y + 4.5);
+    doc.line(COLS[3].x, y + 4.5, COLS[3].x + COLS[3].w - 1, y + 4.5);
+    y += 7;
+  }
+  y += 4;
+
+  // ---- Purpose and details section ----
+  y = _drawSectionBand(doc, y, 'Purpose and details');
+  y = _blankLabelRow(doc, y, 'Purpose', 100);
+  y = _blankLabelRow(doc, y, 'Required by (date)', 60);
+  y = _blankLabelRow(doc, y, 'Remarks / Notes', 120);
+  y += 4;
+
+  // ---- Approval blocks ----
+  _drawAB189ApprovalBlocks(doc, y, unit);
+  _drawFooter(doc);
+
+  const filename = `AB189_Blank_${_todayIsoDate()}.pdf`;
+  return _packageResult(doc, filename);
+}
+
+// Blank form helpers -----------------------------------------------------------
+
+/** Draw a label + underline row and return the new y cursor. */
+function _blankLabelRow(doc, y, label, lineWidth) {
+  const LABEL_W = 48;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...COL.txtMuted);
+  doc.text(label, PAGE.MARGIN + 2, y + 4);
+  doc.setDrawColor(120, 115, 105);
+  doc.setLineWidth(0.3);
+  doc.line(PAGE.MARGIN + LABEL_W, y + 4.5, PAGE.MARGIN + LABEL_W + lineWidth, y + 4.5);
+  return y + 8;
+}
+
+/** Draw a horizontal underline (for date fields etc. that don't have a label). */
+function _blankLine(doc, x, y, width) {
+  doc.setDrawColor(120, 115, 105);
+  doc.setLineWidth(0.3);
+  doc.line(x, y + 0.5, x + width, y + 0.5);
 }
 
 // AB189 drawing helpers -------------------------------------------------------
@@ -832,17 +1311,27 @@ function _drawAB189RequestorSection(doc, y, loan, cadet) {
   return y + 2;
 }
 
-function _drawAB189ItemsSection(doc, y, loans) {
+function _drawAB189ItemsSection(doc, y, loans, { showIssueNoCol = false } = {}) {
   y = _drawSectionBand(doc, y, 'Equipment requested');
 
-  // Four columns: # | NSN | Nomenclature | Qty.
-  // No Condition column (we're requesting, not recording receipt state).
-  const COLS = [
-    { x: PAGE.MARGIN + 2,   label: '#',            w: 8,  align: 'left'  },
-    { x: PAGE.MARGIN + 12,  label: 'NSN',          w: 42, align: 'left'  },
-    { x: PAGE.MARGIN + 56,  label: 'Nomenclature', w: 96, align: 'left'  },
-    { x: PAGE.MARGIN + 154, label: 'Qty',          w: 14, align: 'right' },
-  ];
+  // Column layouts — with or without the "Issue No." write-in column.
+  // Total content width = PAGE.CW (168 mm on A4 with 20 mm margins).
+  const COLS = showIssueNoCol
+    ? [
+        // Narrower NSN + Nomenclature to free ~30 mm for Issue No.
+        { x: PAGE.MARGIN + 2,   label: '#',            w: 8,  align: 'left'  },
+        { x: PAGE.MARGIN + 12,  label: 'NSN',          w: 34, align: 'left'  },
+        { x: PAGE.MARGIN + 48,  label: 'Nomenclature', w: 76, align: 'left'  },
+        { x: PAGE.MARGIN + 126, label: 'Qty',          w: 12, align: 'right' },
+        { x: PAGE.MARGIN + 140, label: 'Issue No.',    w: 28, align: 'left',
+          writeIn: true },  // blank write-in box for QM
+      ]
+    : [
+        { x: PAGE.MARGIN + 2,   label: '#',            w: 8,  align: 'left'  },
+        { x: PAGE.MARGIN + 12,  label: 'NSN',          w: 42, align: 'left'  },
+        { x: PAGE.MARGIN + 56,  label: 'Nomenclature', w: 96, align: 'left'  },
+        { x: PAGE.MARGIN + 154, label: 'Qty',          w: 14, align: 'right' },
+      ];
 
   doc.setFillColor(180, 175, 165);
   doc.rect(PAGE.MARGIN, y, PAGE.CW, 6, 'F');
@@ -855,20 +1344,32 @@ function _drawAB189ItemsSection(doc, y, loans) {
   }
   y += 7;
 
+  const ROW_H = 7;   // taller rows when write-in column present (more writing room)
+  const dataRowH = showIssueNoCol ? ROW_H : 6;
+
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   for (let i = 0; i < loans.length; i++) {
     const l = loans[i];
     if (i % 2 === 1) {
       doc.setFillColor(...COL.rowFillEven);
-      doc.rect(PAGE.MARGIN, y - 1, PAGE.CW, 6, 'F');
+      doc.rect(PAGE.MARGIN, y - 1, PAGE.CW, dataRowH, 'F');
     }
     doc.setTextColor(...COL.txtDark);
-    doc.text(String(i + 1),                                  COLS[0].x, y + 3.5);
-    doc.text(_fitText(doc, l.nsn || '—',     COLS[1].w),    COLS[1].x, y + 3.5);
-    doc.text(_fitText(doc, l.itemName || '—', COLS[2].w),   COLS[2].x, y + 3.5);
-    doc.text(String(l.qty), COLS[3].x + COLS[3].w - 1, y + 3.5, { align: 'right' });
-    y += 6;
+    doc.text(String(i + 1),                                   COLS[0].x, y + dataRowH - 2);
+    doc.text(_fitText(doc, l.nsn || '—',      COLS[1].w),    COLS[1].x, y + dataRowH - 2);
+    doc.text(_fitText(doc, l.itemName || '—', COLS[2].w),    COLS[2].x, y + dataRowH - 2);
+    doc.text(String(l.qty), COLS[3].x + COLS[3].w - 1, y + dataRowH - 2, { align: 'right' });
+
+    if (showIssueNoCol) {
+      // Draw a light-bordered write-in box for the Issue No. column.
+      const ic = COLS[4];
+      doc.setDrawColor(160, 155, 145);
+      doc.setLineWidth(0.3);
+      doc.rect(ic.x - 1, y - 1, ic.w + 1, dataRowH);
+    }
+
+    y += dataRowH;
   }
 
   const totalQty = loans.reduce((s, l) => s + (Number(l.qty) || 0), 0);
@@ -910,6 +1411,214 @@ function _drawAB189ApprovalBlocks(doc, y, unit) {
 
   _sigBox(doc, col1, y + 4, sigW, 'QM APPROVAL',  qmPrefill);
   _sigBox(doc, col2, y + 4, sigW, 'OC AUTHORITY', unit.coName || '');
+}
+
+// =============================================================================
+// PENDING REQUEST AB189 (pre-filled from a submitted request record)
+// =============================================================================
+
+/**
+ * Generate a pre-filled AB189 Equipment Request PDF from a pending request.
+ *
+ * The request record shape (from Storage.requests):
+ *   { id, requestorName, requestorSvc, purpose, requiredBy, notes, lines[] }
+ * where lines[] = [{ nsn, description, qty }]
+ *
+ * @param {Object} req   The request record.
+ * @param {Object} opts
+ * @param {Object} [opts.unit]   Unit settings (unitName, unitCode, qmName…).
+ * @param {Object} [opts.cadet] Cadet record for the requestor (optional).
+ */
+export async function generateRequestAB189(req, opts = {}) {
+  if (!req || !req.id) {
+    throw new Error('generateRequestAB189: a valid request record is required.');
+  }
+
+  const unit  = opts.unit  || {};
+  const cadet = opts.cadet || null;
+  const doc   = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+  let y = PAGE.MARGIN;
+  y = _drawAB189Header(doc, y, unit);
+
+  // --- Request meta block (adapted for request — no loan.ref yet) ---
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(...COL.txtMuted);
+  const submittedDate = req.submittedAt
+    ? _fmtDateAU(req.submittedAt.slice(0, 10))
+    : _fmtDateAU(_todayIsoDate());
+  doc.text(`Request date: ${submittedDate}`, PAGE.MARGIN, y);
+  if (unit.unitCode) doc.text(`Unit code: ${unit.unitCode}`, PAGE.MARGIN + 90, y);
+  doc.setFontSize(8);
+  doc.setTextColor(...COL.txtSub);
+  doc.text(`Request ref: ${req.id}`, PAGE.MARGIN, y + 5);
+  doc.text(`Generated: ${_nowFmt()}`, PAGE.MARGIN + 90, y + 5);
+  doc.setDrawColor(...COL.tan);
+  doc.setLineWidth(0.5);
+  doc.line(PAGE.MARGIN, y + 8, PAGE.MARGIN + PAGE.CW, y + 8);
+  y += 14;
+
+  // --- Requestor section — adapt req fields to the shape _drawAB189RequestorSection expects ---
+  const fakeLoan = {
+    borrowerName: req.requestorName || '—',
+    borrowerSvc:  req.requestorSvc  || '—',
+  };
+  // Cadet sub-unit (company/platoon/section) for the requestor section.
+  const cadetWithPlt = cadet
+    ? { ...cadet, plt: cadet.platoon || cadet.plt || cadet.section || '' }
+    : null;
+  y = _drawAB189RequestorSection(doc, y, fakeLoan, cadetWithPlt);
+
+  // --- Items section — map request lines to the shape _drawAB189ItemsSection expects ---
+  const fakeLoans = (req.lines || []).map((l) => ({
+    nsn:      l.nsn        || '',
+    itemName: l.description || '—',
+    qty:      l.qty         || 1,
+  }));
+  if (fakeLoans.length === 0) {
+    fakeLoans.push({ nsn: '', itemName: '(no items listed)', qty: 0 });
+  }
+  // showIssueNoCol: adds a blank write-in column so the QM can record
+  // the loan ref / serial number when issuing on paper without a device.
+  y = _drawAB189ItemsSection(doc, y, fakeLoans, { showIssueNoCol: true });
+
+  // --- Purpose section — adapt req fields ---
+  const fakePurposeLoan = {
+    purpose: req.purpose    || '—',
+    dueDate: req.requiredBy || '',
+    remarks: req.notes      || '',
+  };
+  y = _drawAB189PurposeSection(doc, y, fakePurposeLoan, [fakePurposeLoan]);
+
+  // --- QM / OC approval blocks ---
+  _drawAB189ApprovalBlocks(doc, y, unit);
+  _drawFooter(doc);
+
+  const safeId   = String(req.id).replace(/[^a-zA-Z0-9_-]/g, '_');
+  const today    = _todayIsoDate();
+  const filename = `AB189_Request_${safeId}_${today}.pdf`;
+  return _packageResult(doc, filename);
+}
+
+// =============================================================================
+// QR CODE SHEET
+// =============================================================================
+// Generates a printable A4 sheet of QR code labels — one per item — for
+// affixing to physical equipment in the Q-Store. Each label shows the QR
+// code, the item name (up to 2 lines), and the NSN.
+//
+// QR data: `QSTORE:<item.id>` — the prefix lets the scan feature identify
+// QStore-generated codes vs. unrelated barcodes. The item ID is always
+// unique; the NSN is shown as human-readable text below but not encoded
+// (NSNs are not unique-enforced in this system).
+//
+// RENDERING
+// The QR module grid is rendered as individual filled rectangles via jsPDF's
+// rect() API, producing vector output rather than a rasterised image. This
+// gives perfectly crisp modules at any print resolution.
+//
+// LAYOUT: 3 columns × 5 rows = 15 labels per A4 page.
+// =============================================================================
+
+const QR_COLS = 3;
+const QR_ROWS = 5;
+const QR_MARGIN = 15;
+
+/**
+ * Generate a QR code label sheet PDF.
+ *
+ * @param {Array}  items   Items to print. Each must have { id, name, nsn }.
+ *                         Caller controls order (filter + sort before calling).
+ * @param {Object} opts
+ * @param {Object} opts.unit  Unit branding from Storage.settings.
+ * @returns {Promise<{filename, blob, bytes}>}
+ */
+export async function generateQRSheet(items, opts = {}) {
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new Error('generateQRSheet requires at least one item.');
+  }
+  const unit = opts.unit || {};
+  const doc  = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+  const CELL_W = (PAGE.W - QR_MARGIN * 2) / QR_COLS;        // 60 mm
+  const CELL_H = (PAGE.H - QR_MARGIN * 2) / QR_ROWS;        // ~53.4 mm
+  const QR_SIZE = 40;                                         // mm
+  const QR_X_OFFSET = (CELL_W - QR_SIZE) / 2;               // center QR horizontally
+  const QR_Y_PAD = 3;                                        // mm from cell top to QR top
+  const TEXT_Y_OFFSET = QR_Y_PAD + QR_SIZE + 2;             // mm from cell top to first text line
+  const PER_PAGE = QR_COLS * QR_ROWS;
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const pos  = i % PER_PAGE;
+
+    if (i > 0 && pos === 0) doc.addPage();
+
+    const col   = pos % QR_COLS;
+    const row   = Math.floor(pos / QR_COLS);
+    const cellX = QR_MARGIN + col * CELL_W;
+    const cellY = QR_MARGIN + row * CELL_H;
+
+    // Cell border — light dashed guide for cutting.
+    doc.setDrawColor(...COL.borderDim);
+    doc.setLineWidth(0.15);
+    doc.setLineDashPattern([1, 1], 0);
+    doc.rect(cellX, cellY, CELL_W, CELL_H);
+    doc.setLineDashPattern([], 0);
+
+    // QR code.
+    const qrX = cellX + QR_X_OFFSET;
+    const qrY = cellY + QR_Y_PAD;
+    _drawQRModules(doc, qrX, qrY, `QSTORE:${item.id}`, QR_SIZE);
+
+    // Item name — centred, max 2 lines, 7pt bold.
+    const textX = cellX + CELL_W / 2;
+    const textY = cellY + TEXT_Y_OFFSET;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.setTextColor(...COL.txtDark);
+    const nameLines = doc.splitTextToSize(item.name || '—', CELL_W - 4);
+    doc.text(nameLines.slice(0, 2), textX, textY, { align: 'center' });
+
+    // NSN — centred, 6pt, below name.
+    const nsnY = textY + Math.min(nameLines.length, 2) * 3;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6);
+    doc.setTextColor(...COL.txtMuted);
+    doc.text(item.nsn || '—', textX, nsnY, { align: 'center' });
+  }
+
+  const filename = `QRCodes_${_unitSlug(unit)}_${_todayIsoDate()}.pdf`;
+  return _packageResult(doc, filename);
+}
+
+/**
+ * Render a QR code as filled rectangles at (originX, originY), exactly
+ * qrSizeMm × qrSizeMm mm. White background included so the code is readable
+ * even when printed on a coloured cell band.
+ */
+function _drawQRModules(doc, originX, originY, data, qrSizeMm) {
+  const qr = qrcodegen(0, 'M');
+  qr.addData(data);
+  qr.make();
+  const n = qr.getModuleCount();
+  const s = qrSizeMm / n;
+
+  // White background (quiet zone is implied by the surrounding cell padding,
+  // but an explicit white fill ensures no colour bleed from row stripes).
+  doc.setFillColor(255, 255, 255);
+  doc.rect(originX, originY, qrSizeMm, qrSizeMm, 'F');
+
+  doc.setFillColor(0, 0, 0);
+  // isDark(row, col) → isDark(y-index, x-index)
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < n; c++) {
+      if (qr.isDark(r, c)) {
+        doc.rect(originX + c * s, originY + r * s, s, s, 'F');
+      }
+    }
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -1064,6 +1773,327 @@ function _drawReportFooter(doc, pageNum, totalPages) {
 
 // -----------------------------------------------------------------------------
 // Result packaging — common to all generators.
+// -----------------------------------------------------------------------------
+
+/**
+ * Generate a printable kit checklist for a single cadet.
+ *
+ * Lists all active loans for the given person — NSN, item name, qty, issue
+ * date, due date — with a ✓ tick-box column for physical inspection.
+ * Includes signature blocks for cadet and QM.
+ *
+ * @param {object[]} loans   Active loan records for this cadet (all should share borrowerSvc).
+ * @param {object}   opts    { cadet, unit }
+ */
+export async function generateCadetKitChecklist(loans, opts = {}) {
+  if (!Array.isArray(loans)) loans = [];
+  const unit   = opts.unit   || {};
+  const cadet  = opts.cadet  || {};
+  const name   = [cadet.rank || '', cadet.surname || '', cadet.given || ''].filter(Boolean).join(' ');
+  const svcNo  = cadet.svcNo || '—';
+  const today  = _todayIsoDate();
+
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  let y = PAGE.MARGIN;
+
+  // ── Army-green header ──
+  y = _drawHeader(doc, y, unit);
+
+  // ── Title band ──
+  doc.setFillColor(...COL.bandFill);
+  doc.rect(PAGE.MARGIN, y, PAGE.CW, 8, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(...COL.armyGreen);
+  doc.text('KIT INSPECTION CHECKLIST', PAGE.MARGIN + 2, y + 5.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...COL.txtMuted);
+  doc.text(`Generated: ${today}`, PAGE.MARGIN + PAGE.CW, y + 5.5, { align: 'right' });
+  y += 11;
+
+  // ── Cadet info block ──
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(...COL.txtDark);
+  doc.text('Name:', PAGE.MARGIN, y);
+  doc.setFont('helvetica', 'normal');
+  doc.text(name, PAGE.MARGIN + 20, y);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Svc No:', PAGE.MARGIN + PAGE.CW / 2, y);
+  doc.setFont('helvetica', 'normal');
+  doc.text(svcNo, PAGE.MARGIN + PAGE.CW / 2 + 20, y);
+  y += 5;
+
+  doc.setDrawColor(...COL.tan);
+  doc.setLineWidth(0.4);
+  doc.line(PAGE.MARGIN, y, PAGE.MARGIN + PAGE.CW, y);
+  y += 5;
+
+  // ── Items table ──
+  const COL_CHK  = { x: PAGE.MARGIN,       w: 10 };
+  const COL_NSN  = { x: PAGE.MARGIN + 10,  w: 38 };
+  const COL_NAME = { x: PAGE.MARGIN + 48,  w: 75 };
+  const COL_QTY  = { x: PAGE.MARGIN + 123, w: 12 };
+  const COL_ISS  = { x: PAGE.MARGIN + 135, w: 22 };
+  const COL_DUE  = { x: PAGE.MARGIN + 157, w: 23 };
+
+  // Table header
+  doc.setFillColor(...COL.armyGreen);
+  doc.rect(PAGE.MARGIN, y, PAGE.CW, 6, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  doc.setTextColor(255, 255, 255);
+  doc.text('✓',         COL_CHK.x + 3,  y + 4);
+  doc.text('NSN',       COL_NSN.x + 1,  y + 4);
+  doc.text('Item',      COL_NAME.x + 1, y + 4);
+  doc.text('Qty',       COL_QTY.x + 1,  y + 4);
+  doc.text('Issued',    COL_ISS.x + 1,  y + 4);
+  doc.text('Due',       COL_DUE.x + 1,  y + 4);
+  y += 7;
+
+  if (loans.length === 0) {
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(9);
+    doc.setTextColor(...COL.txtMuted);
+    doc.text('No active loans recorded for this person.', PAGE.MARGIN + 2, y + 5);
+    y += 12;
+  } else {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    const ROW_H_MIN = 6.5;
+    const LINE_H_KIT = 3.6;
+    for (let i = 0; i < loans.length; i++) {
+      const l = loans[i];
+      const nameLines = doc.splitTextToSize(String(l.itemName || '—'), COL_NAME.w - 2);
+      const rowH = Math.max(ROW_H_MIN, nameLines.length * LINE_H_KIT + 2);
+
+      const fill = i % 2 === 0 ? [248, 246, 240] : [255, 255, 255];
+      doc.setFillColor(...fill);
+      doc.rect(PAGE.MARGIN, y, PAGE.CW, rowH, 'F');
+
+      doc.setTextColor(...COL.txtDark);
+      // Tick box — centred vertically in row
+      doc.setDrawColor(...COL.tan);
+      doc.setLineWidth(0.4);
+      doc.rect(COL_CHK.x + 2, y + (rowH - 4) / 2, 4, 4);
+      // Data
+      doc.text(_fitText(doc, String(l.nsn || '—'), COL_NSN.w - 2), COL_NSN.x + 1, y + 4.5);
+      doc.text(nameLines, COL_NAME.x + 1, y + 4.5);
+      doc.text(String(l.qty || 1),         COL_QTY.x + 1,  y + 4.5);
+      doc.text(String(l.issueDate || '—'), COL_ISS.x + 1,  y + 4.5);
+      const dueLabel = l.longTermLoan ? 'Long-term' : (l.dueDate || '—');
+      doc.text(dueLabel,                   COL_DUE.x + 1,  y + 4.5);
+
+      // Row bottom border
+      doc.setLineWidth(0.2);
+      doc.line(PAGE.MARGIN, y + rowH, PAGE.MARGIN + PAGE.CW, y + rowH);
+      y += rowH;
+    }
+    y += 3;
+  }
+
+  // ── Summary line ──
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(...COL.txtDark);
+  doc.text(`Total items on loan: ${loans.length}`, PAGE.MARGIN, y);
+  y += 8;
+
+  // ── Signature blocks ──
+  const SIG_W = (PAGE.CW - 10) / 2;
+  const SIG_Y = y;
+  // Left block — cadet
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(...COL.txtDark);
+  doc.text('CADET SIGNATURE', PAGE.MARGIN, SIG_Y);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setDrawColor(...COL.tan);
+  doc.setLineWidth(0.5);
+  doc.line(PAGE.MARGIN, SIG_Y + 15, PAGE.MARGIN + SIG_W, SIG_Y + 15);
+  doc.setFontSize(7);
+  doc.setTextColor(...COL.txtMuted);
+  doc.text('Signature / Date', PAGE.MARGIN, SIG_Y + 19);
+  // Right block — QM
+  const SIG_RX = PAGE.MARGIN + SIG_W + 10;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(...COL.txtDark);
+  doc.text('QM SIGNATURE', SIG_RX, SIG_Y);
+  doc.setFont('helvetica', 'normal');
+  doc.setLineWidth(0.5);
+  doc.line(SIG_RX, SIG_Y + 15, SIG_RX + SIG_W, SIG_Y + 15);
+  doc.setFontSize(7);
+  doc.setTextColor(...COL.txtMuted);
+  doc.text('Signature / Date', SIG_RX, SIG_Y + 19);
+
+  _drawFooter(doc);
+
+  const safeName = String(cadet.surname || 'cadet').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = `KitChecklist_${safeName}_${svcNo}_${today}.pdf`;
+  return _packageResult(doc, filename);
+}
+
+// -----------------------------------------------------------------------------
+
+/**
+ * Generate an AB174 Board of Survey form for written-off items.
+ *
+ * Lists all inventory items with qtyWrittenOff > 0 (or writtenOff > 0 for
+ * legacy records). Includes NSN, nomenclature, qty written off, condition
+ * at write-off, and free remarks/reason field per item. Signature blocks
+ * for Board members and CO authority.
+ *
+ * @param {object[]} items  Items with writtenOff or qtyWrittenOff > 0.
+ * @param {object}   opts   { unit }
+ */
+export async function generateBoardOfSurvey(items, opts = {}) {
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new Error('generateBoardOfSurvey: no items provided.');
+  }
+  const unit  = opts.unit || {};
+  const today = _todayIsoDate();
+
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  let y = PAGE.MARGIN;
+
+  // ── Army-green header ──
+  y = _drawHeader(doc, y, unit);
+
+  // ── Title band ──
+  doc.setFillColor(...COL.bandFill);
+  doc.rect(PAGE.MARGIN, y, PAGE.CW, 9, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(...COL.armyGreen);
+  doc.text('BOARD OF SURVEY — AB174', PAGE.MARGIN + 2, y + 6);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...COL.txtMuted);
+  doc.text(`Date: ${today}`, PAGE.MARGIN + PAGE.CW, y + 6, { align: 'right' });
+  y += 12;
+
+  // ── Preamble ──
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...COL.txtDark);
+  const preamble = `A Board of Survey was convened to examine the following items of ${unit.unitName || 'the unit'} ` +
+    `(${unit.unitCode || ''}) which have been assessed as beyond economic repair or otherwise requiring formal write-off action.`;
+  doc.text(preamble, PAGE.MARGIN, y, { maxWidth: PAGE.CW });
+  y += 10;
+
+  // ── Items table ──
+  const COL_NUM  = { x: PAGE.MARGIN,       w: 10 };
+  const COL_NSN  = { x: PAGE.MARGIN + 10,  w: 38 };
+  const COL_NAME = { x: PAGE.MARGIN + 48,  w: 68 };
+  const COL_QTY  = { x: PAGE.MARGIN + 116, w: 14 };
+  const COL_COND = { x: PAGE.MARGIN + 130, w: 25 };
+  const COL_REASON = { x: PAGE.MARGIN + 155, w: 25 };
+
+  // Table header
+  doc.setFillColor(...COL.armyGreen);
+  doc.rect(PAGE.MARGIN, y, PAGE.CW, 6, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  doc.setTextColor(255, 255, 255);
+  doc.text('#',        COL_NUM.x + 2,    y + 4);
+  doc.text('NSN',      COL_NSN.x + 1,    y + 4);
+  doc.text('Nomenclature', COL_NAME.x + 1, y + 4);
+  doc.text('Qty W/O',  COL_QTY.x + 1,    y + 4);
+  doc.text('Condition', COL_COND.x + 1,  y + 4);
+  doc.text('Reason',   COL_REASON.x + 1, y + 4);
+  y += 7;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  const ROW_H_MIN_174 = 7;
+  const LINE_H_174    = 3.6;
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const woQty = Number(item.qtyWrittenOff || item.writtenOff) || 0;
+    const nameLines   = doc.splitTextToSize(String(item.name  || '—'), COL_NAME.w - 2);
+    const reasonLines = doc.splitTextToSize(String(item.notes || '—'), COL_REASON.w - 2);
+    const rowH = Math.max(ROW_H_MIN_174,
+      Math.max(nameLines.length, reasonLines.length) * LINE_H_174 + 2.5);
+    const fill = i % 2 === 0 ? [248, 246, 240] : [255, 255, 255];
+    doc.setFillColor(...fill);
+    doc.rect(PAGE.MARGIN, y, PAGE.CW, rowH, 'F');
+    doc.setTextColor(...COL.txtDark);
+    doc.text(String(i + 1), COL_NUM.x + 4, y + 4.5, { align: 'right' });
+    doc.text(_fitText(doc, String(item.nsn || '—'), COL_NSN.w - 2), COL_NSN.x + 1, y + 4.5);
+    doc.text(nameLines, COL_NAME.x + 1, y + 4.5);
+    doc.text(String(woQty), COL_QTY.x + 6, y + 4.5, { align: 'right' });
+    doc.text('Written off', COL_COND.x + 1, y + 4.5);
+    doc.text(reasonLines, COL_REASON.x + 1, y + 4.5);
+    doc.setDrawColor(...COL.borderLight);
+    doc.setLineWidth(0.2);
+    doc.line(PAGE.MARGIN, y + rowH, PAGE.MARGIN + PAGE.CW, y + rowH);
+    y += rowH;
+  }
+  y += 4;
+
+  // ── Survey findings / recommendation ──
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(...COL.armyGreen);
+  doc.text('BOARD FINDINGS AND RECOMMENDATION', PAGE.MARGIN, y);
+  y += 5;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...COL.txtDark);
+  const finding = `The Board has examined the above items and finds that they are beyond economic repair. ` +
+    `The Board recommends that the items be struck off charge from the unit\'s Q-store holdings.`;
+  doc.text(finding, PAGE.MARGIN, y, { maxWidth: PAGE.CW });
+  y += 10;
+
+  // ── Signature blocks — Board members ──
+  const SIG_W = (PAGE.CW - 6) / 3;
+  for (let s = 0; s < 3; s++) {
+    const sx = PAGE.MARGIN + s * (SIG_W + 3);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...COL.txtDark);
+    doc.text(`BOARD MEMBER ${s + 1}`, sx, y);
+    doc.setDrawColor(...COL.tan);
+    doc.setLineWidth(0.4);
+    doc.line(sx, y + 12, sx + SIG_W - 2, y + 12);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    doc.setTextColor(...COL.txtMuted);
+    doc.text('Rank / Name / Signature / Date', sx, y + 15);
+  }
+  y += 20;
+
+  // ── CO approval ──
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(...COL.armyGreen);
+  doc.text('COMMANDING OFFICER AUTHORITY', PAGE.MARGIN, y);
+  y += 5;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...COL.txtDark);
+  doc.text('I approve the write-off of the items listed above in accordance with unit regulations.', PAGE.MARGIN, y, { maxWidth: PAGE.CW });
+  y += 8;
+
+  const approxSigW = PAGE.CW / 2 - 5;
+  doc.setDrawColor(...COL.tan);
+  doc.setLineWidth(0.5);
+  doc.line(PAGE.MARGIN, y + 15, PAGE.MARGIN + approxSigW, y + 15);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(...COL.txtMuted);
+  doc.text(`${unit.coName || 'Commanding Officer'} / Date`, PAGE.MARGIN, y + 18);
+
+  _drawFooter(doc);
+
+  const slug = _unitSlug(unit);
+  const filename = `AB174_BoardOfSurvey_${slug}_${today}.pdf`;
+  return _packageResult(doc, filename);
+}
+
 // -----------------------------------------------------------------------------
 
 function _packageResult(doc, filename) {

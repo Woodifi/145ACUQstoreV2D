@@ -25,6 +25,7 @@
 import * as Storage from '../storage.js';
 import * as AUTH    from '../auth.js';
 import { esc, $, $$, render, fmtDate } from './util.js';
+import { showToast } from './toast.js';
 
 // -----------------------------------------------------------------------------
 // Constants
@@ -51,9 +52,23 @@ const ACTION_LABELS = Object.freeze({
   recovery_reset_failed:   'Recovery reset attempt failed',
   data_export:             'Backup exported',
   data_imported:           'Backup restored',
+  stocktake_writeoff:      'Write-off recorded',
+  user_add:                'User account added',
+  user_update:             'User account updated',
+  user_delete:             'User account deleted',
   login:                   'Login',
   logout:                  'Logout',
   login_failed:            'Login failed',
+  session_unlock:          'Session unlocked',
+  item_note:               'Item note added',
+  loans_cleanup:           'Phantom loan records removed',
+  stocktake_finalise:      'Stocktake finalised',
+  cadet_viewed:            'Cadet record viewed',
+  staff_viewed:            'Staff record viewed',
+  '2fa_enabled':           '2FA enabled',
+  '2fa_disabled':          '2FA disabled',
+  '2fa_backup_used':       '2FA backup code used',
+  '2fa_backup_regen':      '2FA backup codes regenerated',
 });
 
 // Action → CSS modifier. Categorises actions broadly: success / mutation /
@@ -73,20 +88,38 @@ const ACTION_CATEGORY = Object.freeze({
   recovery_reset_failed:   'failure',
   data_export:             'mutation',
   data_imported:           'mutation',
+  stocktake_writeoff:      'failure',
+  user_add:                'mutation',
+  user_update:             'mutation',
+  user_delete:             'mutation',
   login:                   'auth',
   logout:                  'auth',
   login_failed:            'failure',
+  session_unlock:          'auth',
+  item_note:               'mutation',
+  loans_cleanup:           'mutation',
+  stocktake_finalise:      'mutation',
+  cadet_viewed:            'access',
+  staff_viewed:            'access',
+  '2fa_enabled':           'security',
+  '2fa_disabled':          'security',
+  '2fa_backup_used':       'security',
+  '2fa_backup_regen':      'security',
 });
 
 // -----------------------------------------------------------------------------
 // Module state
 // -----------------------------------------------------------------------------
 
-let _root        = null;
-let _filter      = 'all';        // action key or 'all'
-let _search      = '';
-let _renderLimit = PAGE_SIZE;    // pagination cursor — grows on "Load more"
-let _verifyState = null;         // { ok, count, brokenAt?, reason? } | null
+let _root          = null;
+let _controller    = null;         // AbortController — cleaned up on unmount
+let _filter        = 'all';        // action key or 'all'
+let _search        = '';
+let _dateFrom      = '';           // 'YYYY-MM-DD' or '' (no lower bound)
+let _dateTo        = '';           // 'YYYY-MM-DD' or '' (no upper bound)
+let _renderLimit   = PAGE_SIZE;    // pagination cursor — grows on "Load more"
+let _verifyState   = null;         // { ok, count, brokenAt?, reason? } | null
+let _filteredRows  = [];           // current filtered set — used by export
 
 // -----------------------------------------------------------------------------
 // Mount
@@ -95,12 +128,19 @@ let _verifyState = null;         // { ok, count, brokenAt?, reason? } | null
 export async function mount(rootEl) {
   AUTH.requirePermission('audit');
   _root        = rootEl;
+  _controller  = new AbortController();
   _filter      = 'all';
   _search      = '';
+  _dateFrom    = '';
+  _dateTo      = '';
   _renderLimit = PAGE_SIZE;
   _verifyState = null;
   await _render();
-  return function unmount() { _root = null; };
+  return function unmount() {
+    _controller.abort();
+    _controller = null;
+    _root = null;
+  };
 }
 
 // -----------------------------------------------------------------------------
@@ -134,6 +174,15 @@ async function _render() {
       (r.user   || '').toLowerCase().includes(q) ||
       (r.action || '').toLowerCase().includes(q));
   }
+  // Date range filter — compare the ISO timestamp prefix (YYYY-MM-DD) against
+  // the configured from/to dates (inclusive on both ends).
+  if (_dateFrom) {
+    filtered = filtered.filter((r) => r.ts && r.ts.slice(0, 10) >= _dateFrom);
+  }
+  if (_dateTo) {
+    filtered = filtered.filter((r) => r.ts && r.ts.slice(0, 10) <= _dateTo);
+  }
+  _filteredRows     = filtered;          // stash for export
   const filteredLen = filtered.length;
   const visible     = filtered.slice(0, _renderLimit);
 
@@ -152,8 +201,28 @@ async function _render() {
               `<option value="${esc(a)}" ${a === _filter ? 'selected' : ''}>${esc(ACTION_LABELS[a] || a)}</option>`
             ).join('')}
           </select>
+          <div class="aud__date-range" title="Filter by date range">
+            <label class="aud__date-label" for="aud-date-from">From</label>
+            <input type="date" id="aud-date-from" class="aud__date-input"
+                   value="${esc(_dateFrom)}" aria-label="From date">
+            <label class="aud__date-label" for="aud-date-to">To</label>
+            <input type="date" id="aud-date-to" class="aud__date-input"
+                   value="${esc(_dateTo)}" aria-label="To date">
+            ${(_dateFrom || _dateTo) ? `
+              <button type="button" class="btn btn--ghost btn--sm aud__date-clear"
+                      data-action="clear-date-range" title="Clear date filter">✕</button>
+            ` : ''}
+          </div>
         </div>
         <div class="aud__actions">
+          <button type="button" class="btn btn--ghost" data-action="export-csv"
+                  title="Download currently-filtered entries as CSV">
+            ⬇ Export CSV
+          </button>
+          <button type="button" class="btn btn--ghost" data-action="export-json"
+                  title="Download currently-filtered entries as JSON">
+            ⬇ Export JSON
+          </button>
           <button type="button" class="btn btn--ghost" data-action="verify-chain">
             Verify chain integrity
           </button>
@@ -164,7 +233,7 @@ async function _render() {
 
       <div class="aud__meta">
         ${filteredLen} ${filteredLen === 1 ? 'entry' : 'entries'} match
-        ${(_filter !== 'all' || _search) && totalCount !== filteredLen
+        ${(_filter !== 'all' || _search || _dateFrom || _dateTo) && totalCount !== filteredLen
           ? `<span class="aud__meta-of"> of ${totalCount} total</span>`
           : ''}
       </div>
@@ -256,26 +325,98 @@ function _rowHtml(row) {
 // -----------------------------------------------------------------------------
 
 function _wireEventListeners() {
+  const sig = _controller.signal;
   $('.aud__search', _root)?.addEventListener('input', (e) => {
     _search = e.target.value;
     _renderLimit = PAGE_SIZE;   // reset pagination on filter change
     _render();
-  });
+  }, { signal: sig });
   $('.aud__action-filter', _root)?.addEventListener('change', (e) => {
     _filter = e.target.value;
     _renderLimit = PAGE_SIZE;
     _render();
-  });
-  _root.addEventListener('click', _onRootClick);
+  }, { signal: sig });
+  $('#aud-date-from', _root)?.addEventListener('change', (e) => {
+    _dateFrom = e.target.value;
+    _renderLimit = PAGE_SIZE;
+    _render();
+  }, { signal: sig });
+  $('#aud-date-to', _root)?.addEventListener('change', (e) => {
+    _dateTo = e.target.value;
+    _renderLimit = PAGE_SIZE;
+    _render();
+  }, { signal: sig });
+  _root.addEventListener('click', _onRootClick, { signal: sig });
 }
 
 async function _onRootClick(e) {
   const action = e.target.closest('[data-action]')?.dataset.action;
   if (!action) return;
   switch (action) {
-    case 'verify-chain': await _doVerify(e.target.closest('button')); break;
-    case 'load-more':    _renderLimit += PAGE_SIZE; await _render(); break;
+    case 'export-csv':      await _doExportCsv(); break;
+    case 'export-json':     await _doExportJson(); break;
+    case 'verify-chain':    await _doVerify(e.target.closest('button')); break;
+    case 'load-more':       _renderLimit += PAGE_SIZE; await _render(); break;
+    case 'clear-date-range':
+      _dateFrom = '';
+      _dateTo   = '';
+      _renderLimit = PAGE_SIZE;
+      await _render();
+      break;
   }
+}
+
+async function _doExportCsv() {
+  if (_filteredRows.length === 0) { showToast('No entries to export.', 'info'); return; }
+  const header = ['seq', 'timestamp', 'action', 'action_label', 'user', 'description'];
+  const rows = _filteredRows.map((r) => [
+    r.seq,
+    r.ts || '',
+    r.action || '',
+    ACTION_LABELS[r.action] || r.action || '',
+    r.user || '',
+    r.desc || '',
+  ].map(_csvCell).join(','));
+  const csv = [header.join(','), ...rows].join('\r\n');
+  const settings = await Storage.settings.getAll();
+  const code = (settings.unitCode || 'qstore').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+  const date = new Date().toISOString().slice(0, 10);
+  _download(csv, `qstore-audit-${code}-${date}.csv`, 'text/csv');
+  showToast(`Exported ${_filteredRows.length} audit entries as CSV.`, 'success');
+}
+
+async function _doExportJson() {
+  if (_filteredRows.length === 0) { showToast('No entries to export.', 'info'); return; }
+  const data = _filteredRows.map((r) => ({
+    seq:          r.seq,
+    timestamp:    r.ts || '',
+    action:       r.action || '',
+    action_label: ACTION_LABELS[r.action] || r.action || '',
+    user:         r.user || '',
+    description:  r.desc || '',
+  }));
+  const settings = await Storage.settings.getAll();
+  const code = (settings.unitCode || 'qstore').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+  const date = new Date().toISOString().slice(0, 10);
+  _download(JSON.stringify(data, null, 2), `qstore-audit-${code}-${date}.json`, 'application/json');
+  showToast(`Exported ${_filteredRows.length} audit entries as JSON.`, 'success');
+}
+
+function _csvCell(val) {
+  const s = String(val ?? '');
+  return /[,"\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function _download(content, filename, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
 async function _doVerify(button) {

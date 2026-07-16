@@ -65,7 +65,12 @@ const CADET_COLUMN_ALIASES = {
   surname:    ['surname', 'lastname', 'familyname', 'last'],
   given:      ['given', 'givenname', 'givennames', 'firstname', 'first'],
   rank:       ['rank'],
-  plt:        ['plt', 'platoon'],
+  // Structure-aware placement. If company/platoon/section are present they
+  // are written directly; legacy plt is also mapped to platoon for compat
+  // with old Brigade exports that use a single platoon column.
+  company:    ['company', 'coy', 'squadron', 'sqn'],
+  platoon:    ['platoon', 'plt', 'troop', 'section_group'],
+  section:    ['section', 'sec', 'subsection'],
   email:      ['email', 'emailaddress'],
   active:     ['active', 'status'],
   notes:      ['notes', 'comment', 'comments'],
@@ -431,19 +436,32 @@ function _validateCadetRow(raw, idx, columnIdx, bySvcNo) {
   // and the cadets list filters work consistently.
   const personType = _inferPersonType(rank);
 
+  // Structure fields: new schema uses company/platoon/section; legacy uses
+  // plt. If the CSV has the structured columns, populate both for compat.
+  // If only a legacy `platoon` column exists, write platoon (which maps
+  // to both plt and platoon keys) and leave company/section blank.
+  const company  = get('company').trim();
+  const platoon  = get('platoon').trim();
+  const section  = get('section').trim();
+
   const base = {
     _line:     line,
     _status:   status,
     _warnings: warnings,
     svcNo,
     surname,
-    given:    get('given'),
+    given:    get('given').trim(),
     rank,
-    plt:      get('plt'),
+    // Legacy field — kept so existing filters/reports that read `plt` still work.
+    plt:      platoon || get('platoon').trim(),
+    // Structure-aware fields — blank if the CSV doesn't carry them.
+    company,
+    platoon,
+    section,
     personType,
-    email:    get('email'),
+    email:    get('email').trim(),
     active,
-    notes:    get('notes'),
+    notes:    get('notes').trim(),
   };
   if (status === 'new') {
     base.createdAt = new Date().toISOString();
