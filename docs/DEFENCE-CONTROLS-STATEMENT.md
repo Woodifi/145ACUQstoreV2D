@@ -1,521 +1,435 @@
-# QStore IMS — Security, Privacy and Youth Protection Controls Statement
+# QStore IMS — Response to HQ AAC ICT, and Controls Statement
 
-**Status:** DRAFT for internal review — not yet submitted
-**Applies to:** QStore IMS v2.3.0, Defence build (`build.js --defence`)
-**Prepared:** [DATE]
-**Prepared by:** [NAME, APPOINTMENT, UNIT]
-**Classification:** [TO BE DETERMINED BY DEFENCE — see §10]
-
----
-
-## 1. Purpose of this document
-
-This statement describes a unit-level Q-Store inventory system, the personal
-information it holds, the controls applied to that information, and — with equal
-prominence — the limitations and residual risks that remain.
-
-It is **not** a claim of compliance. Compliance is a determination for Defence to
-make, not for a developer to assert. This document is intended to give whoever
-makes that determination an accurate basis on which to make it, including the
-matters that count against the system.
-
-**What is sought:** guidance on the appropriate pathway for a unit-level Q-Store
-capability, and a decision on whether continued use under the controls described
-here is acceptable in the interim.
+**Status:** DRAFT for internal review — not yet sent
+**Responds to:** CPL James Jenkins, Acting Systems Administrator, HQ Australian Army Cadets — email *"Re: In unit Qstore software [SEC=OFFICIAL]"*, 16 July 2026
+**Applies to:** QStore IMS v2.3.0
+**Prepared by:** LT(AAC) Sean Scales, Officer Commanding, 145 ACU Moranbah — [CONFIRM]
+**Date:** [DATE]
+**Classification:** OFFICIAL — [CONFIRM; see §11]
 
 ---
 
-## 2. What QStore is, and what it is not
+## 1. Purpose
 
-QStore IMS is a single-file HTML/JavaScript application for tracking Q-Store
-equipment at unit level: inventory holdings, issues and returns, stocktakes,
-condition and write-off records, and the associated printed forms (Issue Voucher,
-AB189, AB174 Board of Survey, kit checklists, nominal roll).
+This document responds to HQ AAC ICT advice of 16 July 2026, records the controls
+in the software, corrects two inaccuracies in my earlier description of it, and
+proposes a design that removes the objection rather than mitigating it.
 
-**It is not** a personnel management system. It is not proposed as a system of
-record for cadet personal information. It holds identifying data only to the
-extent required to record who holds which item of Commonwealth equipment and to
-produce the forms that must accompany that.
-
-**Current deployment:** [N] units, trial use. [STATE DATES.]
+It is **not** a claim of compliance. Compliance is HQ's determination to make. The
+purpose here is to give that determination an accurate basis — including the
+matters that count against the software.
 
 ---
 
-## 3. The capability gap
+## 2. The test that applies
 
-[**THIS SECTION REQUIRES DOCUMENTARY SUPPORT AND MUST NOT BE ASSERTED WITHOUT IT.**]
+HQ's advice does not turn on where data is stored. It turns on **how long** and
+**in what aggregate**:
 
-Defence Youth Manual, Part 2, Section 4, Chapter 4 (*ADF Cadets Information and
-Communication Technology*) para 4.4.2 describes CadetNet as an approved system
-providing the capacity to electronically manage personnel, logistics, facilities,
-training and cadet activities.
+> *"Being that you're storing the Cadet ID, First and Last Name of all the cadets
+> in your unit; what you've described is not permissible as you're storing a
+> **persistent database of PII, and doing so in aggregate**."*
+>
+> *"Whilst I accept that units can and do run routine reports, maintain roll books
+> and other AAC data offline, **these situations are transitory**. Once there is
+> no enduring need to retain the data on local devices, it should be removed."*
+>
+> — CPL Jenkins, 16 July 2026
 
-It is understood that CadetNet does not currently provide unit-level Q-Store
-equipment tracking, and that this is an acknowledged deficiency.
+The governing distinction is therefore **transitory versus persistent**, not local
+versus cloud. This is accepted without argument. It is recorded here explicitly
+because it is the test the rest of this document is measured against, and because
+my earlier correspondence framed the question in terms of storage location, which
+was the wrong frame.
 
-> **[TO BE COMPLETED]** Cite the written record of that acknowledgement — minute,
-> briefing paper, change request, working group record, or correspondence, with
-> date and originator. If no written record exists, this section must be reframed
-> as an assertion requiring verification by Defence, and the document's request
-> changes accordingly. **Do not submit this section on the strength of a verbal
-> acknowledgement presented as an established fact.**
+HQ's stated remedy for Q records is equally specific:
 
-In the absence of an approved system providing this function, units record
-Q-Store holdings by other local means. The relevant comparison for risk purposes
-is therefore between this system and the arrangements actually in use, rather
-than against a hypothetical approved alternative.
+> *"The same would apply for a physical Q record, where that record needs to be
+> scanned and added to the individual cadets CEA documents."*
+>
+> *"My immediate recommendation would be to produce PDF based exports of your
+> respective cadet Q records, and upload them to the individual members CEA
+> documents."*
+
+The design proposed at §5 implements that recommendation.
 
 ---
 
-## 4. Personal information held
+## 3. The capability gap — acknowledged by HQ
 
-| Data | Held | Encrypted at rest |
+> *"Beyond this, we're aware that there is a **distinct lack of CadetNet
+> capability in terms of individual Q-record management** and will continue to
+> advocate for inclusion of said capability in CEA."*
+>
+> — CPL Jenkins, 16 July 2026
+
+This is HQ's own assessment, offered unprompted. The unit's requirement is not in
+dispute and no approved system currently meets it. In its absence, units record
+Q-Store holdings by other local means — spreadsheets, paper, or nothing.
+
+Nothing in this document seeks to work around that gap. What is proposed is a tool
+that operates **entirely inside** the constraint at §2 while the capability is
+advocated for, and which produces exactly the artefacts (§5) that HQ has said
+should go to CEA.
+
+---
+
+## 4. Current state — and what it does not resolve
+
+Stated plainly, because it is the substance of HQ's objection:
+
+**The software as it exists today holds a persistent, aggregate dataset of cadet
+identifiers (service number, surname, given name, rank) and therefore does not
+meet the test at §2.** Recent changes reduce the exposure; they do not answer the
+objection.
+
+| Change made | Effect | Meets §2? |
 |---|---|---|
-| Cadet surname, given name | Yes | Yes — AES-256-GCM, per field |
-| Cadet email address | **No — removed** | n/a |
-| Cadet free-text notes | **No — removed** | n/a |
-| Service number | Yes | No — used as the record key |
-| Rank, company/platoon/section | Yes | No |
-| Loan records (borrower name, remarks) | Yes | Yes |
-| Staff surname, given name, email, notes | Yes | Yes |
-| User account name, service number, TOTP secret | Yes | Yes |
-| Equipment request requestor name, rank, service number | Yes | **No — see §7.3** |
-| Stocktake "counted by" name | Yes | **No — see §7.3** |
+| Cloud synchronisation removed entirely from the Defence build (compiled out, not disabled — §6.1) | No data leaves the device | **No** — persistence is the objection, not location |
+| Cadet email addresses and free-text notes removed from the schema, with a migration deleting them from existing records (§6.2) | Sensitive information no longer held | **No** — reduces the dataset, does not make it transitory |
+| Encryption, access control, audit (§6.3–§6.6) | Reduces harm from compromise | **No** — controls on a dataset that should not persist |
 
-**The information relates predominantly to minors.** Australian Army Cadets are
-generally aged 12½–20.
-
-**Data minimisation.** Cadet email addresses and free-text notes have been
-removed from the schema, and an automatic migration deletes both from records
-created before the change — the fields are gone from the stored data, not merely
-hidden from the interface. The `notes` field was the primary concern: free text
-about a child attracts health and behavioural information, which is **sensitive
-information** under the *Privacy Act 1988* and attracts stricter handling, and
-none of it is required to record who holds an item of equipment. Staff records
-(adults) retain both fields.
-
-**This data is not de-identified.** A service number is a unique identifier that
-resolves to an individual through the system of record. Identifiability is
-assessed relative to the entity holding the data, and the unit holds both this
-system and access to the system of record — so the individuals remain reasonably
-identifiable, the information remains personal information under the *Privacy Act
-1988* (Cth), and the obligations in that Act apply in full. **No claim of
-de-identification is made.**
-
-What minimisation does achieve is a material reduction in the harm a disclosure
-could cause. To a party without access to the system of record — which is any
-party outside the unit — a service number and an equipment list are not
-reasonably identifiable, and the residual data is of little use. That bears
-directly on the likelihood-of-serious-harm assessment at **s 26WG**. It is
-offered as risk reduction, not as a change in the data's legal status.
+These are worth having on their own merits. **None of them makes the current
+dataset transitory, and I do not present them as doing so.**
 
 ---
 
-## 5. Controls
+## 5. Proposed design — no individual identifiers at all
 
-> **Basis of these statements.** Every control below was verified by reading the
-> implementation on 17 July 2026, not by relying on prior documentation. This
-> distinction is not pedantry: the defect at §9 existed precisely because a
-> documented description of the code was trusted and the code was not re-read.
-> During preparation of this document, one further instance was found — an
-> internal comment describing the account lockout policy stated durations 30
-> times shorter than those the code actually applies. The code was correct and
-> the comment was stale. It has been corrected. **No control is asserted here on
-> the strength of documentation alone.**
+This implements HQ's recommendation rather than seeking an exemption from it.
 
-### 5.1 No cloud egress (Defence build)
+**The software would hold no cadet identifiers of any kind.** No service number,
+no name, no rank. It becomes an equipment accountability tool:
+
+- Stock, condition, stocktake, write-off (AB174), and orders — none of which
+  involve a person.
+- Items issued to an individual are recorded only as **location: individual**,
+  against an **issue number**.
+- The issue document (AB189, Issue Voucher, kit checklist) is produced with
+  identifier fields **blank**, printed, and completed by hand.
+- The completed document is scanned or saved to PDF and **uploaded to that
+  individual's CEA documents** — per HQ's recommendation at §2.
+- The person↔equipment link therefore exists **only in CEA**, which is the system
+  of record for it.
+
+**Effect against the test at §2.** There is no persistent database of PII, in
+aggregate or otherwise, because there is no PII. The residual dataset is equipment
+counts and document reference numbers.
+
+**One qualification, stated rather than glossed.** The issue number is a linkage:
+given the number and access to CEA documents, the unit can identify the holder.
+Identifiability is assessed relative to the entity holding the data, and the unit
+holds both. **No claim of de-identification is made.** What is claimed is narrower
+and, I suggest, sufficient: the software itself holds nothing about any person;
+re-identification requires a manual document lookup in an approved system rather
+than a database query; and the dataset in the software is of no use to anyone who
+obtains it.
+
+**Known consequences, so they are not discovered later:**
+
+- Overdue tracking, discharge recall, and per-person kit checklists are lost as
+  automated functions. Chasing an outstanding item becomes a documents task.
+- Double handling: the issue is recorded once in the software and once in CEA.
+- Free-text fields are the obvious failure mode — a user will otherwise type a
+  name into an activity or location field. Person-adjacent free text must be
+  designed out, not merely discouraged.
+
+**Status: proposed, not built.** It is a substantial change and is not presented
+as existing. It should not proceed without HQ's confirmation that the approach is
+acceptable — which is the question put in my email of 17 July 2026.
+
+---
+
+## 6. Controls
+
+> **Basis of these statements.** Each was verified by reading the implementation
+> on 17 July 2026, not by relying on prior documentation. That distinction matters
+> here: the defect at §10 existed precisely because a documented description of
+> the code was trusted and the code was not re-read. A second instance was found
+> during preparation — an internal comment describing the account lockout policy
+> stated durations thirty times shorter than the code applies. The code was
+> correct; the comment was stale. Both are corrected.
+
+### 6.1 No cloud egress (Defence build)
 
 The Defence build has **no capability to transmit data to third-party cloud
-storage**. This is not a configuration setting that has been switched off — the
-cloud synchronisation code, the Microsoft Authentication Library, and the
-Microsoft Graph endpoints are **not present in the artefact**. They are removed
-at build time.
+storage**. This is not a setting that has been switched off: the synchronisation
+code, the Microsoft Authentication Library, and the Microsoft Graph endpoints are
+**not present in the artefact**. They are removed at build time.
 
-This is stated as a verifiable property rather than an assurance: the delivered
-file can be searched for `graph.microsoft.com`, `msal`, and OneDrive API paths,
-and contains none of them. An automated test (`test-defence-build.mjs`) enforces
-this on every build and will fail if any cloud code re-enters the artefact. The
-test first confirms the *standard* build does contain those strings, so that the
-absence in the Defence build is a meaningful result rather than a vacuous one.
+Stated as a verifiable property rather than an assurance — the delivered file can
+be searched for `graph.microsoft.com`, `msal`, and the OneDrive API paths and
+contains none of them. An automated test enforces this on every build, and first
+confirms the *standard* build does contain those strings, so that their absence is
+a meaningful result rather than a vacuous one.
 
-Data resides in browser-local storage (IndexedDB) on the unit device. It leaves
-only via an operator-initiated encrypted export (§5.5).
+Relevant to Defence Youth Manual Pt 2 S4 Ch4 para 4.4.5(c). **It does not address
+the objection at §2**, and is not offered as doing so.
 
-Relevant requirement: Defence Youth Manual Pt 2 S4 Ch4 para 4.4.5(c) — ADF Cadets
-ICT systems are to be hosted in Defence-approved data centres or ASD-approved
-cloud providers. The Defence build has no hosting component and no cloud
-transmission path.
+### 6.2 Data minimisation
 
-### 5.2 Encryption of personal information at rest
+Cadet email addresses and free-text notes have been removed from the schema, and a
+migration deletes both from records created before the change — gone from the
+stored data, not hidden from the interface. Free text about a child attracts health
+and behavioural information, which is **sensitive information** under the *Privacy
+Act 1988* and attracts stricter handling; none of it is required to record who
+holds an item of equipment. Staff records (adults) retain both fields.
+
+### 6.3 Encryption of personal information at rest
 
 Personal information fields are individually encrypted with **AES-256-GCM** using
-a key generated on, and held on, the device.
+a key generated and held on the device. AES is the only approved symmetric
+algorithm under the ASD *Information Security Manual* — *Guidelines for
+cryptography*, and **ISM-1769** provides that AES-256 is preferred. GCM is an
+authenticated mode; **ISM-0479** prohibits ECB, which is not used.
 
-AES is the only approved symmetric algorithm under the ASD *Information Security
-Manual* — *Guidelines for cryptography*, and **ISM-1769** provides that where AES
-is used, AES-256 is preferred. The implementation uses AES-256. GCM is an
-authenticated mode; **ISM-0479** prohibits ECB, which is not used anywhere.
+> **Correction to my email of 15 July 2026.** I described the software as having
+> "SHA256 encryption". That was inaccurate. SHA-256 is a hash function, not
+> encryption. The correct position is: **AES-256-GCM** for personal information at
+> rest; **HMAC-SHA256** for the audit chain; **argon2id** for PIN hashing.
 
-### 5.3 Access control and authentication
+### 6.4 Access control and authentication
 
 - Per-user PINs hashed with **argon2id**.
-- **TOTP two-factor authentication** (RFC 6238), with SHA-256-hashed single-use
-  backup codes and a replay guard.
-- Role-based access: Commanding Officer, Quartermaster, Staff, Cadet, Read-Only.
-- **Cadet isolation:** accounts with the cadet role can view only their own
-  records; the staff register is inaccessible to them; the login picker discloses
-  surname and first initial only.
-- Escalating lockout on failed PIN attempts: 5 consecutive failures → 15 minutes;
-  10 → 30 minutes; 15 or more → 60 minutes. Lockout state survives a page
-  refresh.
-- Idle auto-lock. Default 15 minutes; the minimum selectable value is 5 minutes
-  and there is no "disabled" option — a stored value of zero is rejected and the
-  default applied. The lock screen requires the PIN, and where two-factor
-  authentication is enabled it requires the second factor as well; the session
-  token is removed from browser storage while locked, so closing the browser
-  while locked does not restore an authenticated session.
+- **TOTP two-factor authentication** (RFC 6238), SHA-256-hashed single-use backup
+  codes, replay guard.
+- Roles: Commanding Officer, Quartermaster, Staff, Cadet, Read-Only.
+- **Cadet isolation:** cadet accounts see only their own records; the staff
+  register is inaccessible to them; the login picker shows surname and first
+  initial only.
+- Escalating lockout: 5 consecutive failures → 15 minutes; 10 → 30; 15+ → 60.
+- Idle auto-lock: default 15 minutes, minimum 5, **no disable option** — a stored
+  zero is rejected and the default applied. The lock screen requires the PIN and,
+  where enabled, the second factor; the session token is removed from browser
+  storage while locked.
 
-### 5.4 Audit
+### 6.5 Audit
 
-Every action is recorded in an append-only audit log. Entries are chained with
-**HMAC-SHA256**, each entry's signature incorporating the previous entry's hash,
-so that retrospective alteration or deletion is detectable. Read access to cadet
-and staff records is itself audited.
+Append-only log, entries chained with **HMAC-SHA256**, each signature
+incorporating the previous entry's hash, so retrospective alteration is
+detectable. Read access to cadet and staff records is itself audited. The
+guarantee is qualified — see §10.
 
-The integrity guarantee this provides is qualified — see §7.1 and §9.
+### 6.6 Backups and key management
 
-### 5.5 Backups
+Export produces an **encrypted file only**; there is no unencrypted option. Key
+derivation is PBKDF2-HMAC-SHA256 at 310,000 iterations with a random 32-byte salt,
+encrypting under AES-256-GCM.
 
-Export produces an **encrypted file only**. There is no unencrypted export
-option. Key derivation is PBKDF2-HMAC-SHA256 at 310,000 iterations, with a random
-32-byte salt per export, encrypting under AES-256-GCM.
-
-> **Attribution note.** The 310,000-iteration figure follows **OWASP** guidance.
-> It is **not** an ASD or ISM requirement: PBKDF2 is not addressed in the ISM's
+> **Attribution.** The 310,000-iteration figure follows **OWASP** guidance. It is
+> **not** an ASD or ISM requirement: PBKDF2 is not addressed in the ISM's
 > *Guidelines for cryptography* and is not an ASD-Approved Cryptographic
-> Algorithm. The same is true of argon2id (§5.3). These are considered
-> appropriate engineering choices; they are **not** presented as ASD-approved,
-> and any assessment should treat them as requiring separate judgement.
-
-### 5.6 Key management
+> Algorithm. The same applies to argon2id. These are considered appropriate
+> engineering choices; they are **not** presented as ASD-approved.
 
 An operator-initiated key rotation re-encrypts all personal information under a
-newly generated key and re-signs the audit chain. See §9 for the circumstances in
-which this was introduced and what it does and does not achieve.
+newly generated key and re-signs the audit chain — see §10 for why it exists and
+what it does not achieve.
 
 ---
 
-## 6. Privacy obligations
+## 7. Privacy obligations
 
 | Obligation | Status |
 |---|---|
-| APP 1 — open and transparent management | Partial — no published privacy policy for this system |
-| APP 3 — collection of solicited personal information | Collection limited to equipment-accountability purpose |
-| APP 5 — notification of collection | **Not implemented — see §7.5** |
-| APP 6 — use or disclosure | Data does not leave the unit device (Defence build) |
-| APP 8 — cross-border disclosure | Not applicable — Defence build has no transmission path |
-| APP 11 — security of personal information | Controls at §5.2–§5.5 |
-| APP 12 / 13 — access and correction | Records are directly viewable and editable by unit staff |
+| APP 1 — open and transparent management | Partial — no published privacy policy for this software |
+| APP 3 — collection of solicited personal information | Minimised (§6.2); eliminated entirely under §5 |
+| APP 5 — notification of collection | **Not implemented — see §8.4** |
+| APP 6 — use or disclosure | Data does not leave the device (Defence build) |
+| APP 8 — cross-border disclosure | Not applicable — no transmission path |
+| APP 11 — security of personal information | Controls at §6 |
+| APP 12 / 13 — access and correction | Records directly viewable and editable by unit staff |
 
-Defence Youth Manual Section 1, Chapter 2 (*Youth Protection Privacy,
-Documentation, and Record Management*) para 50 records the obligation under the
+Defence Youth Manual Section 1, Chapter 2 para 50 records the obligation under the
 *Privacy Act 1988* and **Article 16 of the UN Convention on the Rights of the
 Child**.
 
 ---
 
-## 7. Known limitations and residual risk
+## 8. Known limitations and residual risk
 
-This section is deliberately as detailed as the controls section.
+### 8.1 The dataset is currently persistent
+As at §4 — the substance of HQ's objection, unresolved until §5 is implemented.
 
-### 7.1 The system holds no accreditation
+### 8.2 No accreditation
+DYM Pt 2 S4 Ch4 para 4.4.6 anticipates ADF Cadets ICT systems holding current
+**Defence Digital Group security accreditation** against the ISM. This software
+holds none, has not had an **IRAP assessment**, and has not been independently
+penetration tested. No claim of accreditation is made or implied.
 
-Defence Youth Manual Pt 2 S4 Ch4 para 4.4.6 anticipates that ADF Cadets ICT
-systems maintain a current **Defence Digital Group security accreditation**
-against the ISM. **This system holds no such accreditation**, has not undergone an
-**IRAP assessment**, and has not been penetration tested by an independent party.
-No claim of accreditation is made or implied.
-
-### 7.2 The endpoint is not a Defence-controlled environment
-
-Data resides on a unit-owned device. Removing cloud transmission narrows exposure
-from a third-party tenant to that endpoint; it does not place the data inside a
-Defence-controlled system. If the concern is that cadet information persists
-outside Defence-controlled systems, **the Defence build reduces that exposure but
-does not eliminate it.**
-
-### 7.3 Some personal information is not encrypted at rest
-
+### 8.3 Some personal information is not encrypted at rest
 Equipment-request requestor name, rank and service number, and the stocktake
 "counted by" name, are **stored in plain text**. The encryption module defines
-these fields but the storage layer does not apply it to them. This is a defect,
-it is not yet fixed, and it is disclosed here rather than discovered later.
+these fields but the storage layer does not apply them. This is a defect. It is
+disclosed here rather than found later, and is eliminated entirely under §5.
 
-### 7.4 Device-level compromise is out of scope
+### 8.4 Mandatory privacy statement not present
+DYM Section 1, Chapter 2 para 55 requires a specified privacy statement on all
+documentation and **information technology systems** where Defence collects
+information relating to youth. The software does not carry it. Straightforward
+non-compliance; being remediated.
 
-Encryption at rest protects data if the storage is copied off the device. It does
-not protect against an attacker with live access to an unlocked, running session
-on the device itself. This is a documented and accepted limitation.
+### 8.5 Records management
+Loan and issue history are Commonwealth records. DYM Section 1, Chapter 2 para 67
+records that ADF Cadets members must comply, with criminal penalties under the
+*Archives Act 1983* for unlawful destruction, and **NAA Records Authority
+2019/00457762** governs retention and disposal of cadet records. The software
+implements **no retention schedule and no controlled disposal**. Under §5 the
+Commonwealth record becomes the document in CEA, which resolves this.
 
-### 7.5 Mandatory privacy statement not present
+### 8.6 Device-level compromise is out of scope
+Encryption at rest protects data copied off the device. It does not protect
+against an attacker with live access to an unlocked session on the device itself.
+Documented and accepted.
 
-Defence Youth Manual Section 1, Chapter 2, para 55 requires that a specified
-privacy statement be used on all documentation and **information technology
-systems** where Defence collects information relating to youth. **This system does
-not currently carry that statement.** This is a straightforward non-compliance and
-is being remediated.
-
-### 7.6 Records management is not implemented
-
-Loan and issue history constitutes Commonwealth records. Defence Youth Manual
-Section 1, Chapter 2, para 67 records that ADF Cadets members must comply with
-records management obligations, with criminal penalties under the *Archives Act
-1983* for unlawful destruction. **NAA Records Authority 2019/00457762** (Defence
-Youth and Cadets) governs retention and disposal of cadet records.
-
-The system implements **no retention schedule and no controlled disposal**.
-Records can be deleted by unit staff at will, and a device failure destroys them.
-Removing cloud synchronisation removes what was, in practice, the off-device
-copy — so this risk is **increased**, not reduced, by §5.1, unless disciplined
-encrypted backups are maintained.
-
-### 7.7 No Privacy Impact Assessment
-
+### 8.7 No Privacy Impact Assessment
 A system holding personal information about minors is likely a high privacy risk
 project, for which a **Privacy Impact Assessment** is required of Commonwealth
-agencies. **No PIA has been conducted.**
+agencies. None has been conducted.
 
-### 7.8 Support model and key person risk
+### 8.8 Support model and key person risk
+Maintained by one person. No support agreement, no service level, no independent
+vulnerability management, no source code escrow. **The key person risk is total.**
 
-The system is maintained by a single developer. There is no support agreement, no
-service level, no independent vulnerability management, and no source code
-escrow. **The key person risk is total.**
+### 8.9 Commercial interest — declaration
+I maintain QStore as a commercially licensed product outside ADF Cadets. I am also
+the Officer Commanding of a unit that uses it. That is a conflict of interest and
+is declared here rather than left to be discovered.
 
-### 7.9 Commercial interest — declaration
+**No payment is sought from the Commonwealth.** The Defence build is offered free
+of charge for ADF Cadets use; no licence fee, subscription, or per-unit charge is
+sought now or in future. Terms are at §9. Nothing in this document is a request
+for procurement.
 
-The author maintains QStore as a commercially licensed product outside ADF Cadets
-and is associated with the Australian Army Cadets. That is a conflict of interest
-and is declared here rather than left to be discovered.
+The residual interest, stated so it can be weighed rather than inferred: I retain
+a commercial product line outside ADF Cadets, and adoption would raise its
+profile. That is a real interest, and it is why this declaration exists.
 
-**No payment is sought from the Commonwealth for the Defence build.** It is
-offered free of charge for ADF Cadets youth programmes; no licence fee,
-subscription, or per-unit charge is sought now or in future. The proposed terms
-are at §8. Nothing in this document is a request for procurement.
-
-The residual interest, stated plainly so that it can be weighed rather than
-inferred: the author retains a commercial product line outside ADF Cadets youth
-programmes (§8.5), and adoption of the Defence build would raise the profile of
-that product line. That is a real interest, and it is the reason this declaration
-exists.
-
-> **[TO BE COMPLETED — DO NOT OMIT.]** The author must complete this in their own
-> terms, covering: their appointment and relationship to the Australian Army
-> Cadets; the nature and scale of the commercial product line; and the ownership
-> position at §8.7 — specifically whether any part of QStore was developed while
-> performing cadet duties, on Defence equipment, or using Defence information.
-> **Declared at the outset this is manageable; discovered later it is fatal to
-> the proposal, however sound the software.**
+> **[TO BE COMPLETED]** Confirm the ownership position: whether any part of QStore
+> was developed while performing cadet duties, on Defence equipment, or using
+> Defence information. **You can only license what you own; settle this before any
+> offer, not during assessment.**
 
 ---
 
-## 8. Licensing and intellectual property
+## 9. Licensing
 
-> **Statement of intent, not licence terms.** This section records what is
-> intended. It has not been settled by a lawyer and is **not** an offer capable
-> of acceptance. Binding terms must be drafted and reviewed before any grant is
-> made — a licence to the Commonwealth, from an author with the interest declared
-> at §7.9, touching information about minors, is not a document to settle
-> informally.
+> **Statement of intent, not licence terms.** Not settled by a lawyer, and not an
+> offer capable of acceptance. Binding terms require drafting and review.
 
-### 8.1 Intent
-
-The Defence build is offered to the Commonwealth **free of charge** for use in
-ADF Cadets youth programmes. No licence fee, subscription, or per-unit charge is
-sought, now or later, for that use.
-
-### 8.2 Proposed grant
-
-A royalty-free, non-exclusive, perpetual licence to the Commonwealth to use,
-install, and modify the Defence build **for the purposes of ADF Cadets youth
-programmes**.
-
-### 8.3 Expressly permitted — including paid work
-
-The following are intended to be permitted, and the licence should say so
-explicitly:
-
-- Use across any number of ADF Cadets units.
-- Modification by or for the Commonwealth for its own use.
-- **Engagement of third parties, for payment, to provide services to the
-  Commonwealth in respect of this software** — including hosting, security
-  assessment and accreditation, integration, maintenance, and user support.
-
-The third point is deliberate and load-bearing. Any pathway to accreditation runs
-through paid contractors — an IRAP assessor, a hosting provider, a support
-function. A licence that could be read as prohibiting payment to those parties
-would make the software unadoptable, which serves nobody. **Being paid to
-accredit, host, or support this software for the Commonwealth is not the thing
-this licence restricts.**
-
-### 8.4 Not permitted
-
-- Sale, resale, or sublicensing of the software.
-- Redistribution outside ADF Cadets youth programmes.
-- Incorporation into a product or service offered for sale to any party.
-- Rebadging or distribution as a third party's own product.
-
-### 8.5 Reserved rights
-
-All rights not expressly granted are reserved by the author, including the
-right to license QStore commercially outside ADF Cadets youth programmes. The
-Defence build is a distinct, functionally narrower variant: cloud synchronisation
-is removed at build time and it contains no accounting module. It is not the
-commercial product.
-
-### 8.6 Source access and continuity
-
-Two matters that Defence will raise, addressed here rather than left implicit:
-
-- **Source access for assessment.** Security accreditation requires code review.
-  Source will be made available for assessment purposes. The terms on which it is
-  provided, and whether it extends beyond assessment, require decision.
-- **Continuity.** The software is maintained by one person (§7.8). Defence should
-  not adopt a capability that dies with its author's availability. Source code
-  escrow, or a fallback grant taking effect if maintenance ceases, should form
-  part of any agreement. **[TO BE DECIDED.]**
-
-### 8.7 Ownership
-
-> **[TO BE COMPLETED — settle before any offer is made.]** The author can only
-> license what the author owns. State the position on whether any part of QStore
-> was developed while performing Australian Army Cadets duties, using Defence
-> equipment, facilities, or information, or otherwise in circumstances that may
-> vest or encumber rights in the Commonwealth. **If ownership is not clear, the
-> grant at §8.2 is not the author's to make, and this must be resolved first
-> rather than discovered during assessment.**
+- **Intent:** the Defence build is offered **free of charge** for ADF Cadets use.
+- **Grant:** royalty-free, non-exclusive, perpetual licence to the Commonwealth to
+  use, install and modify it for ADF Cadets purposes.
+- **Expressly permitted, including paid work:** engagement of third parties, for
+  payment, to provide services to the Commonwealth in respect of this software —
+  hosting, security assessment and accreditation, integration, maintenance,
+  support. Any accreditation pathway runs through paid contractors; a licence
+  readable as prohibiting that would make the software unadoptable, which serves
+  nobody. **Being paid to accredit, host or support this software for the
+  Commonwealth is not what this licence restricts.**
+- **Not permitted:** sale, resale, sublicensing, redistribution outside ADF
+  Cadets, incorporation into a product offered for sale, or rebadging as a third
+  party's product.
+- **Reserved:** all other rights, including the commercial line outside ADF
+  Cadets. The Defence build is a distinct, functionally narrower variant.
+- **Source access:** accreditation requires code review; source will be made
+  available for assessment. Terms beyond assessment require decision.
+- **Continuity:** given §8.8, escrow or a fallback grant if maintenance ceases
+  should form part of any agreement. **[TO BE DECIDED]**
 
 ---
 
-## 9. Disclosure — security defect identified and remediated
+## 10. Disclosure — security defect identified and remediated
 
-This is disclosed voluntarily and in full.
+Disclosed voluntarily and in full.
 
-### What the defect was
+**What it was.** The database snapshot included an internal metadata store holding
+two secrets: the AES-256-GCM key protecting all personal information, and the HMAC
+key underwriting the audit chain. The synchronisation routine wrote that snapshot
+to cloud storage as plain JSON, and the file export offered an unencrypted option
+that wrote the same content to disk. **Any such file therefore contained both the
+encrypted personal information and the key required to decrypt it.** The
+encryption control was void for data leaving the device, and audit entries written
+before remediation could be forged by anyone holding such a file.
 
-The application's database snapshot included an internal metadata store. That
-store held two secrets: the AES-256-GCM key protecting all personal information,
-and the HMAC key underwriting the audit chain. The synchronisation routine wrote
-that snapshot to cloud storage as plain JSON, and the file export offered an
-unencrypted option that wrote the same content to disk.
+> **Correction to my email of 15 July 2026.** I stated that "backed up information
+> is also encrypted." **That was not correct**, and I did not know it at the time.
+> The backup was encrypted, but carried its own key. I am correcting the record
+> rather than leaving an inaccurate statement standing.
 
-**The consequence:** any such file contained both the encrypted personal
-information and the key required to decrypt it. **The encryption control was void
-for any data that left the device.** The audit key's exposure additionally means
-audit entries written before remediation could be forged by anyone holding such a
-file.
-
-### How it arose
-
-The routine that restores a snapshot carried a documented justification for
+**How it arose.** The restore routine carried a documented justification for
 including the metadata store — preserving audit chain verifiability across
-devices. That justification is sound, and it referred only to the audit key and
-installation identifier. It predates the introduction of personal-information
-encryption. When the encryption key was later added to the same store, it
-inherited that export path silently, carrying a confident and well-argued
-rationale that had nothing to do with personal information. Subsequent reviews
-saw a considered decision and did not revisit it.
-
+devices. That justification is sound and referred only to the audit key and
+installation identifier. It predates personal-information encryption. When the
+encryption key was later added to the same store it inherited that export path
+silently, carrying a rationale that had nothing to do with personal information.
 No test asserted that key material was absent from exported data. The defect was
 found by reading the code, not by a failure.
 
-### Remediation
+**Remediation.**
 
 | Action | Status |
 |---|---|
 | Cloud transmission removed entirely from the Defence build | Complete |
-| Export encryption made mandatory; unencrypted option removed | Complete |
-| Key rotation implemented (new encryption key, all data re-encrypted) | Complete |
+| Export encryption mandatory; unencrypted option removed | Complete |
+| Key rotation implemented (new key, all data re-encrypted) | Complete |
+| Automated tests asserting key material is absent from exports | Complete |
 | Cloud file deleted from affected storage, including version history | [TO BE CONFIRMED] |
-| Trial units notified and use suspended pending remediation | [TO BE CONFIRMED] |
-| Automated tests asserting key material is absent from exported data | Complete |
+| Trial units notified; use suspended pending remediation | [TO BE CONFIRMED] |
 
-### What rotation does not fix — stated plainly
+**What rotation does not fix.** Rotating the encryption key restores
+confidentiality going forward. **Rotating the audit key does not restore the
+integrity guarantee for entries written before rotation.** The chain is an HMAC
+construction: once the key was exposed, every pre-rotation entry became forgeable,
+and no later action undoes that. Re-signing under a new key makes verification
+pass, but re-signing is exactly what a forger would do. **Only entries after the
+rotation marker carry a meaningful guarantee.** The software records this boundary
+permanently in the audit log, in those terms.
 
-**Rotating the encryption key restores confidentiality going forward.** Data is
-re-encrypted under a new key; the exposed key no longer opens it.
-
-**Rotating the audit key does not restore the integrity guarantee for entries
-written before rotation.** The audit chain is an HMAC construction: once the key
-was exposed, every pre-rotation entry became forgeable, and no subsequent action
-can undo that. Re-signing the chain under a new key makes verification pass, but
-re-signing is exactly what a forger would do — it does not make those entries
-trustworthy. **Only audit entries created after the rotation marker carry a
-meaningful integrity guarantee.** The system records this boundary permanently in
-the audit log in these terms.
-
-### Assessment of exposure
-
-Under **Part IIIC of the *Privacy Act 1988*** an eligible data breach requires
-unauthorised access, unauthorised disclosure, or loss, together with a likelihood
-of serious harm (**s 26WE**, **s 26WG**). Sensitivity is heightened because the
-affected individuals are minors.
-
-**Findings to date:**
+**Exposure assessment.**
 
 | Question | Finding |
 |---|---|
-| Was the affected file or folder ever shared with any party? | **No.** [AUTHOR TO CONFIRM IN OWN TERMS] |
+| Was the affected file or folder ever shared with any party? | **No** |
 | Any known access by an unauthorised person? | [TO BE COMPLETED] |
 | Accounts with access to the storage | [TO BE COMPLETED] |
 | Multi-factor authentication enabled on those accounts? | [TO BE COMPLETED] |
-| Any copy of the file downloaded, emailed, or retained elsewhere? | [TO BE COMPLETED] |
+| Any copy downloaded, emailed, or retained elsewhere? | [TO BE COMPLETED] |
 
-**Preliminary assessment.** The affected file resided in storage controlled by
-the unit and was never shared. On that basis the principal disclosure vector is
-closed, and there may be **no eligible data breach**, since the defect created
-the *capacity* for compromise rather than compromise itself. That assessment is
-not complete until the remaining questions above are answered — an unshared file
-can still be exposed through a compromised or shared account, or through a copy
-taken off the service.
+Under **Part IIIC of the *Privacy Act 1988***, an eligible data breach requires
+unauthorised access, disclosure, or loss, together with a likelihood of serious
+harm (**s 26WE**, **s 26WG**). The file was never shared, which closes the
+principal disclosure vector, and on that basis there may be **no eligible data
+breach** — the defect created the capacity for compromise rather than compromise
+itself. That assessment is not complete until the remaining questions are
+answered. Where there are reasonable grounds to suspect an eligible data breach,
+**s 26WH** requires assessment within **30 days**. Sensitivity is heightened
+because the affected individuals are minors.
 
-**This is a question of fact and must not be assumed in either direction.** Where
-there are reasonable grounds to suspect an eligible data breach, **s 26WH**
-requires assessment to be completed within **30 days**. The conclusion reached,
-and the basis for it, should be recorded here whichever way it falls.
-
-**Note on remediation limits.** Key rotation (§5.6) protects data going forward;
-it does not retrospectively protect the contents of any snapshot already written.
-Any surviving copy of a pre-fix file remains readable by whoever holds it,
-because it carries its own key. Deletion of those files — including version
-history — is therefore a distinct and necessary step, not an alternative to
-rotation.
+**Note.** Rotation and deletion are not alternatives. Any surviving copy of a
+pre-fix file carries its own key and remains readable by whoever holds it.
+Deletion of those files, including version history, is a distinct necessary step.
 
 ---
 
-## 10. Classification
+## 11. Classification
 
-No classification is asserted in this document.
+No classification is asserted. Under the **Protective Security Policy Framework
+(Release 2026)** the originator assesses potential damage (**Requirement 0059**)
+and sets the classification at the **lowest reasonable level** (**Requirement
+0060**).
 
-Under the **Protective Security Policy Framework (Release 2026)**, the originator
-assesses the potential damage from compromise (**Requirement 0059**) and sets the
-classification at the **lowest reasonable level** (**Requirement 0060**).
-
-It is noted that the PSPF statement sometimes quoted as "personal information will
-always be classified at least OFFICIAL: Sensitive" appears within the
-security-clearance vetting context and is scoped to that context. It is **not**
-relied on here as a general rule, and should not be so relied on by any reader of
-this document.
-
-The classification of a unit Q-Store holding equipment-accountability data about
-minors is a matter for Defence to determine.
+The PSPF statement sometimes quoted as "personal information will always be
+classified at least OFFICIAL: Sensitive" appears within the security-clearance
+vetting context and is scoped to it. It is **not** relied on here.
 
 ---
 
-## 11. References
+## 12. References
 
-All references were verified against publicly available primary sources on
-**17 July 2026**. Instruments that are Defence-intranet-only, and could not be
-verified, are **not** cited.
+Verified against publicly available primary sources on **17 July 2026**.
+Instruments that are Defence-intranet-only could not be verified and are **not**
+cited.
 
 **Legislation**
 - *Privacy Act 1988* (Cth), Schedule 1 — Australian Privacy Principles.
@@ -523,42 +437,35 @@ verified, are **not** cited.
 - *Privacy Act 1988* (Cth), **Part IIIC** — Notifiable Data Breaches scheme.
   https://www.oaic.gov.au/privacy/notifiable-data-breaches/about-the-notifiable-data-breaches-scheme
 - *Defence Act 1903* (Cth), **Part V — Australian Defence Force Cadets**, ss 62–62E.
-  Compilation C2026C00299, compilation date 1 July 2026.
-  https://www.legislation.gov.au/C1903A00020/latest/text
-- *Defence Regulation 2016*, **Part 15A — Australian Defence Force Cadets**.
-  (The *Cadet Forces Regulation 2013* is **repealed** and is not the operative
+  Compilation C2026C00299, 1 July 2026. https://www.legislation.gov.au/C1903A00020/latest/text
+- *Defence Regulation 2016*, **Part 15A — Australian Defence Force Cadets**. (The
+  *Cadet Forces Regulation 2013* is **repealed** and is not the operative
   instrument, notwithstanding its continued citation in secondary sources.)
 - *Archives Act 1983* (Cth).
 
 **Defence**
-- *Defence Youth Manual*, Edition 1. Head Reserve and Cadet Support, 11 July 2025.
-  Marked OFFICIAL. — Section 1, Chapter 2 (*Youth Protection Privacy,
-  Documentation, and Record Management*), paras 50, 55, 62, 67.
+- *Defence Youth Manual*, Edition 1, Head Reserve and Cadet Support, 11 July 2025,
+  OFFICIAL — Section 1, Chapter 2, paras 50, 55, 62, 67.
   https://www.defenceyouth.gov.au/media/iobfus5d/defence-youth-manual.pdf
-- *Defence Youth Manual*, Part 2, Section 4, Chapter 4 — *ADF Cadets Information
-  and Communication Technology*, paras 4.4.2, 4.4.5(c), 4.4.6, 4.4.7.
+- *Defence Youth Manual*, Pt 2, S4, Ch4 — *ADF Cadets ICT*, paras 4.4.2, 4.4.5(c),
+  4.4.6, 4.4.7.
   https://www.defenceyouth.gov.au/media/iwifjcvu/section-4-chapter-4-adf-cadets-ict-policy.pdf
-- *Defence Youth Manual*, Part 2, Section 4, Chapter 3 — *ADF Cadets Records
-  Management*.
+- *Defence Youth Manual*, Pt 2, S4, Ch3 — *ADF Cadets Records Management*.
   https://www.defenceyouth.gov.au/media/r4gmwocn/section-4-chapter-3-adf-cadets-records-management-policy.pdf
-- *Defence Youth Safety Framework*.
-  https://www.defenceyouth.gov.au/resources/defence-youth-safety-framework/
-- *Defence Privacy Policy*.
-  https://www.defence.gov.au/about/governance/privacy-policy
+- *Defence Privacy Policy*. https://www.defence.gov.au/about/governance/privacy-policy
 
 **Child safety**
-- *Commonwealth Child Safe Framework*, Second Edition, December 2020. National
-  Office for Child Safety. Applies to all non-corporate Commonwealth entities (§1.4).
+- *Commonwealth Child Safe Framework*, 2nd ed., December 2020, National Office for
+  Child Safety — applies to all non-corporate Commonwealth entities (§1.4).
   https://www.childsafety.gov.au/system/files/2024-05/commonwealth-child-safe-framework-2nd-edition.PDF
-- *National Principles for Child Safe Organisations* (10 principles; endorsed by
-  COAG, 1 February 2019) — key action areas 1.6 and 5.3; Principle 10.
+- *National Principles for Child Safe Organisations* (10 principles; COAG endorsed
+  1 February 2019) — key action areas 1.6, 5.3; Principle 10.
   https://www.childsafety.gov.au/system/files/2026-07/national-principles-for-child-safe-organisations.pdf
 - *UN Convention on the Rights of the Child*, Article 16.
 
 **Security**
-- *Protective Security Policy Framework*, Release 2026. Department of Home
-  Affairs, 1 July 2026 — Requirements 0059, 0060, 0061, 0062; §15.2 (Requirements
-  0109, 0111).
+- *Protective Security Policy Framework*, Release 2026, Department of Home Affairs,
+  1 July 2026 — Requirements 0059, 0060, 0061, 0062.
   https://www.protectivesecurity.gov.au/publications-library/pspf-annual-release-2026
 - *Information Security Manual* — *Guidelines for cryptography*, ASD, June 2026 —
   ISM-1769, ISM-0479.
@@ -573,22 +480,35 @@ verified, are **not** cited.
 - OAIC, *Guide to securing personal information*.
   https://www.oaic.gov.au/privacy/privacy-guidance-for-organisations-and-government-agencies/handling-personal-information/guide-to-securing-personal-information
 
+> **Terminology.** **CEA** is the version 5 platform on which all ADF Cadets
+> administration is conducted, and is the system referred to throughout HQ's
+> correspondence. The *Defence Youth Manual* (Edition 1, 2025) describes
+> **CadetNet** at para 4.4.2 as the approved system for managing personnel,
+> logistics, facilities, training and cadet activities. This document uses each
+> term as its source does, and treats CEA as the operative platform. Note that HQ's
+> own advice uses both in one sentence — *"a distinct lack of CadetNet capability
+> in terms of individual Q-record management … advocate for inclusion of said
+> capability in CEA"* — so the naming appears to be in transition rather than
+> denoting two unrelated systems.
+
 ---
 
-## 12. What is sought
+## 13. What is sought
 
-1. **Guidance on the correct pathway** for a unit-level Q-Store capability, given
-   the gap at §3.
-2. **A decision on interim use** — whether continued trial use under the controls
-   at §5, with the limitations at §7 understood, is acceptable, and on what terms.
-3. **Direction on records management** — application of NAA Records Authority
-   2019/00457762 to locally held Q-Store records (§7.6).
-4. **Identification of a sponsor**, should Defence consider the capability worth
-   pursuing beyond the current units.
-5. **Indication of whether the licensing intent at §8 is workable**, before
-   binding terms are drafted. In particular whether the field-of-use limit and
-   the express permission for paid third-party services (§8.3) fit Defence's
-   requirements, and what is required on source access and continuity (§8.6).
+1. **Confirmation that the design at §5 is permissible** — a unit asset tracking
+   tool holding no individual identifiers, with the person↔equipment link existing
+   only as a document in CEA. This is the question in my email of 17 July 2026.
+2. **Direction on disposal of the current dataset.** On HQ's advice the existing
+   persistent cadet data is not permissible. I propose to extract what is required
+   to CEA documents and delete the local dataset. Confirmation of the correct
+   process is sought, noting the *Archives Act* obligations at §8.5 — I do not
+   intend to destroy a Commonwealth record on my own initiative.
+3. **Acceptance of the CadetNet M365 offer.** CPL Jenkins offered assistance with
+   a solution in CadetNet M365, and a secured staff-only library or list. I would
+   like to take that up.
+4. **Support for the CEA Q-record capability** referred to at §3. If the unit's
+   experience or this software is useful evidence for that business case, it is
+   available for that purpose.
 
 No payment is sought. No decision is sought on the basis of this document alone,
 and no assurance is offered beyond what is stated in it.
@@ -599,13 +519,12 @@ and no assurance is offered beyond what is stated in it.
 
 | | |
 |---|---|
-| Version | 0.1 DRAFT |
+| Version | 0.2 DRAFT — reframed following HQ AAC ICT advice of 16 July 2026 |
 | Author | [NAME] |
-| Reviewed by | [ ] |
-| Software version | QStore IMS v2.3.0, Defence build |
+| Software version | QStore IMS v2.3.0 |
 | Build ID | [STAMP THE DELIVERED BUILD ID] |
 
-**Before submission, complete every `[TO BE COMPLETED]` marker.** Each one is a
-statement of fact that the author must be able to substantiate. They are left
-blank deliberately: a plausible-sounding placeholder that turns out to be wrong
-would do more damage to this submission than an honest gap.
+**Complete every `[TO BE COMPLETED]` / `[CONFIRM]` marker before sending.** Each is
+a statement of fact requiring substantiation. They are blank deliberately: a
+plausible placeholder that turns out to be wrong would do more damage than an
+honest gap.
