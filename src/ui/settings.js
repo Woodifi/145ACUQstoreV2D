@@ -2296,21 +2296,31 @@ async function _doExportData(btn) {
     const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
     const baseFilename = `qstore-backup-${unitTag}-${stamp}`;
 
-    // Offer password protection via a modal. This is non-blocking: the user
-    // can choose plain JSON or an AES-256-GCM encrypted file.
+    // Prompt for the export password. Encryption is NOT optional: the snapshot
+    // carries piiKey and auditKey in its META block, so a plain-JSON export
+    // would publish the key alongside the ciphertext it opens. Import still
+    // accepts legacy plain files so existing backups remain restorable.
     openModal({
       titleHtml: 'Export backup',
       size: 'sm',
       bodyHtml: `
         <p class="modal__body">
-          Password-protect your backup to prevent anyone who finds the file
-          from reading your unit's data. You will need this password to restore.
+          Backups are always encrypted. The snapshot contains the keys that
+          protect cadet personal information, so an unencrypted copy would hand
+          anyone who finds the file both the data and the key to it.
+          You will need this password to restore.
         </p>
+        <div class="modal__warn">
+          <strong>There is no way to recover this password.</strong> Store it
+          with the unit's other credentials. Your live data is unaffected if you
+          lose it &mdash; only this backup file becomes unreadable.
+        </div>
         <form class="form" data-form="export-pw" autocomplete="off">
           <label class="form__field">
-            <span class="form__label">Password <span class="form__optional">(leave blank for unencrypted)</span></span>
-            <input type="password" name="pw" autocomplete="new-password"
-                   placeholder="Leave blank to export without encryption">
+            <span class="form__label">Password</span>
+            <input type="password" name="pw" required minlength="12"
+                   autocomplete="new-password"
+                   placeholder="At least 12 characters">
           </label>
           <label class="form__field">
             <span class="form__label">Confirm password</span>
@@ -2333,23 +2343,24 @@ async function _doExportData(btn) {
           const fd  = new FormData(form);
           const pw  = String(fd.get('pw')  || '');
           const pw2 = String(fd.get('pw2') || '');
-          if (pw && pw !== pw2) {
+          // Encryption is mandatory: exportAll() emits META, and META holds
+          // piiKey and auditKey. An unencrypted export publishes the key that
+          // decrypts the very PII sitting beside it in the same file — the same
+          // defect that put those keys in the OneDrive blob.
+          if (pw.length < 12) {
+            errEl.textContent = 'Password must be at least 12 characters.';
+            return;
+          }
+          if (pw !== pw2) {
             errEl.textContent = 'Passwords do not match.';
             return;
           }
           const submitBtn = form.querySelector('[type="submit"]');
           if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Exporting…'; }
           try {
-            let outStr, filename, mimeType;
-            if (pw) {
-              outStr   = await _encryptBackup(JSON.stringify(snapshot), pw);
-              filename = `${baseFilename}.qstore`;
-              mimeType = 'application/octet-stream';
-            } else {
-              outStr   = JSON.stringify(snapshot);
-              filename = `${baseFilename}.json`;
-              mimeType = 'application/json';
-            }
+            const outStr   = await _encryptBackup(JSON.stringify(snapshot), pw);
+            const filename = `${baseFilename}.qstore`;
+            const mimeType = 'application/octet-stream';
             const blob = new Blob([outStr], { type: mimeType });
             const url  = URL.createObjectURL(blob);
             const a    = document.createElement('a');
@@ -2362,7 +2373,7 @@ async function _doExportData(btn) {
             close();
             await Storage.settings.set('data.lastExport', new Date().toISOString());
             await _render();
-            _flashSuccess(`Backup saved as ${filename}.${pw ? ' (encrypted)' : ''}`);
+            _flashSuccess(`Backup saved as ${filename} (encrypted).`);
           } catch (err) {
             console.error('Export failed:', err);
             errEl.textContent = 'Export failed: ' + (err.message || err);

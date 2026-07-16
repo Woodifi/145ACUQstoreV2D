@@ -509,23 +509,20 @@ const SECTIONS = [
       <ol>
         <li>Go to <strong>Settings → Data backup &amp; restore</strong></li>
         <li>Click <strong>Export backup</strong></li>
-        <li>Choose whether to password-protect the file:
-          <ul>
-            <li><strong>No password</strong> — plain <code>.json</code> file downloaded</li>
-            <li><strong>With password</strong> — encrypted <code>.qstore</code> file; enter and confirm a password</li>
-          </ul>
-        </li>
+        <li>Enter and confirm a password of at least 12 characters</li>
+        <li>An encrypted <code>.qstore</code> file is downloaded</li>
         <li>Store the file off-device in a secure location</li>
       </ol>
       <p>The backup includes all inventory, photos, loans, cadets, users, settings, and the audit chain.</p>
-      <p class="help__note">Encrypted backups use AES-256-GCM with PBKDF2 key derivation. The file is unreadable without the correct password — keep it safe, there is no recovery path.</p>
+      <p class="help__note">Backups are always encrypted; there is no unencrypted option. The backup contains the keys that protect cadet personal information, so an unencrypted copy would give anyone who found the file both the data and the key to read it.</p>
+      <p class="help__note">Encrypted backups use AES-256-GCM with PBKDF2 key derivation. The file is unreadable without the correct password — keep it safe, there is no recovery path. Losing it does not affect your live data; only that backup file becomes unreadable.</p>
 
       <h4>Importing a backup <span class="help__role">OC</span></h4>
       <ol>
         <li>Click <strong>Import backup</strong></li>
         <li>Confirm by typing <strong>OVERWRITE</strong> — this replaces all current data</li>
-        <li>Select the <code>.json</code> or <code>.qstore</code> file</li>
-        <li>If encrypted, enter the password when prompted</li>
+        <li>Select the <code>.qstore</code> file (older <code>.json</code> backups are still accepted)</li>
+        <li>Enter the password when prompted</li>
       </ol>
       <p class="help__warn">Always keep a current backup. Data is stored locally in the browser — clearing browser data will erase it.</p>
 
