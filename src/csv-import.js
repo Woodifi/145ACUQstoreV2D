@@ -71,9 +71,10 @@ const CADET_COLUMN_ALIASES = {
   company:    ['company', 'coy', 'squadron', 'sqn'],
   platoon:    ['platoon', 'plt', 'troop', 'section_group'],
   section:    ['section', 'sec', 'subsection'],
-  email:      ['email', 'emailaddress'],
   active:     ['active', 'status'],
-  notes:      ['notes', 'comment', 'comments'],
+  // No email/notes aliases for cadets: those fields no longer exist on a cadet
+  // record (youth protection). A CSV carrying them is accepted, but the columns
+  // are ignored rather than silently reintroducing the data we just removed.
 };
 
 // Build reverse lookup at module load: alias → canonical.
@@ -459,9 +460,7 @@ function _validateCadetRow(raw, idx, columnIdx, bySvcNo) {
     platoon,
     section,
     personType,
-    email:    get('email').trim(),
     active,
-    notes:    get('notes').trim(),
   };
   if (status === 'new') {
     base.createdAt = new Date().toISOString();

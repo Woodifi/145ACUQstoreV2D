@@ -72,8 +72,8 @@ than against a hypothetical approved alternative.
 | Data | Held | Encrypted at rest |
 |---|---|---|
 | Cadet surname, given name | Yes | Yes — AES-256-GCM, per field |
-| Cadet email address | Yes | Yes |
-| Cadet free-text notes | Yes | Yes |
+| Cadet email address | **No — removed** | n/a |
+| Cadet free-text notes | **No — removed** | n/a |
 | Service number | Yes | No — used as the record key |
 | Rank, company/platoon/section | Yes | No |
 | Loan records (borrower name, remarks) | Yes | Yes |
@@ -85,10 +85,29 @@ than against a hypothetical approved alternative.
 **The information relates predominantly to minors.** Australian Army Cadets are
 generally aged 12½–20.
 
+**Data minimisation.** Cadet email addresses and free-text notes have been
+removed from the schema, and an automatic migration deletes both from records
+created before the change — the fields are gone from the stored data, not merely
+hidden from the interface. The `notes` field was the primary concern: free text
+about a child attracts health and behavioural information, which is **sensitive
+information** under the *Privacy Act 1988* and attracts stricter handling, and
+none of it is required to record who holds an item of equipment. Staff records
+(adults) retain both fields.
+
 **This data is not de-identified.** A service number is a unique identifier that
-resolves to an individual through the system of record. Information keyed to it
-remains personal information under the *Privacy Act 1988* (Cth), and the
-obligations in that Act apply in full.
+resolves to an individual through the system of record. Identifiability is
+assessed relative to the entity holding the data, and the unit holds both this
+system and access to the system of record — so the individuals remain reasonably
+identifiable, the information remains personal information under the *Privacy Act
+1988* (Cth), and the obligations in that Act apply in full. **No claim of
+de-identification is made.**
+
+What minimisation does achieve is a material reduction in the harm a disclosure
+could cause. To a party without access to the system of record — which is any
+party outside the unit — a service number and an equipment list are not
+reasonably identifiable, and the residual data is of little use. That bears
+directly on the likelihood-of-serious-harm assessment at **s 26WG**. It is
+offered as risk reduction, not as a change in the data's legal status.
 
 ---
 
@@ -436,20 +455,40 @@ the audit log in these terms.
 
 ### Assessment of exposure
 
-> **[TO BE COMPLETED — this determines the reportability of the incident.]**
->
-> Establish and record: whether the affected cloud file or folder was ever shared
-> with any party; whether any access by an unauthorised person occurred; the
-> accounts with access; and whether multi-factor authentication was enabled.
->
-> Under **Part IIIC of the *Privacy Act 1988*** an eligible data breach requires
-> unauthorised access, unauthorised disclosure, or loss, together with a
-> likelihood of serious harm (**s 26WE**, **s 26WG**). If the file was never
-> accessible to anyone outside the unit, there may be no eligible data breach.
-> **This is a question of fact and must be answered on evidence, not assumed in
-> either direction.** Where there are reasonable grounds to suspect an eligible
-> data breach, **s 26WH** requires assessment to be completed within **30 days**.
-> Sensitivity is heightened because the affected individuals are minors.
+Under **Part IIIC of the *Privacy Act 1988*** an eligible data breach requires
+unauthorised access, unauthorised disclosure, or loss, together with a likelihood
+of serious harm (**s 26WE**, **s 26WG**). Sensitivity is heightened because the
+affected individuals are minors.
+
+**Findings to date:**
+
+| Question | Finding |
+|---|---|
+| Was the affected file or folder ever shared with any party? | **No.** [AUTHOR TO CONFIRM IN OWN TERMS] |
+| Any known access by an unauthorised person? | [TO BE COMPLETED] |
+| Accounts with access to the storage | [TO BE COMPLETED] |
+| Multi-factor authentication enabled on those accounts? | [TO BE COMPLETED] |
+| Any copy of the file downloaded, emailed, or retained elsewhere? | [TO BE COMPLETED] |
+
+**Preliminary assessment.** The affected file resided in storage controlled by
+the unit and was never shared. On that basis the principal disclosure vector is
+closed, and there may be **no eligible data breach**, since the defect created
+the *capacity* for compromise rather than compromise itself. That assessment is
+not complete until the remaining questions above are answered — an unshared file
+can still be exposed through a compromised or shared account, or through a copy
+taken off the service.
+
+**This is a question of fact and must not be assumed in either direction.** Where
+there are reasonable grounds to suspect an eligible data breach, **s 26WH**
+requires assessment to be completed within **30 days**. The conclusion reached,
+and the basis for it, should be recorded here whichever way it falls.
+
+**Note on remediation limits.** Key rotation (§5.6) protects data going forward;
+it does not retrospectively protect the contents of any snapshot already written.
+Any surviving copy of a pre-fix file remains readable by whoever holds it,
+because it carries its own key. Deletion of those files — including version
+history — is therefore a distinct and necessary step, not an alternative to
+rotation.
 
 ---
 

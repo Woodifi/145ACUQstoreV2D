@@ -34,8 +34,10 @@
 //   active     — boolean. Inactive cadets stay in the list (with a marker)
 //                for historical loan integrity; future Issue/Loans pages
 //                will exclude them from pickers.
-//   email      — optional. Format-validated if present.
-//   notes      — optional free text.
+//   (no email, no notes — removed on youth-protection grounds; a Q-Store does
+//    not need a child's contact details, and free-text notes about a minor
+//    attract health/behavioural information, which is sensitive information
+//    under the Privacy Act.)
 //
 // MUTATIONS RE-FETCH BY KEY
 //   The submit handler always re-reads the cadet from Storage by svcNo
@@ -152,7 +154,6 @@ async function _render() {
       const hay = [
         c.surname, c.given, c.svcNo, c.rank,
         c.plt, c.company, c.platoon, c.section,
-        c.email, c.notes,
       ].join(' ').toLowerCase();
       if (!hay.includes(term)) return false;
     }
@@ -472,7 +473,7 @@ async function _doPrintRoll(button) {
       if (term) {
         const hay = [
           c.surname, c.given, c.svcNo, c.rank,
-          c.plt, c.company, c.platoon, c.section, c.email, c.notes,
+          c.plt, c.company, c.platoon, c.section,
         ].join(' ').toLowerCase();
         if (!hay.includes(term)) return false;
       }
@@ -694,13 +695,6 @@ function _openCadetFormModal({ mode, cadet }) {
         ${structFieldsHtml}
 
         <div class="form__row">
-          <label class="form__field form__field--grow">
-            <span class="form__label">Email</span>
-            <input type="email" name="email" maxlength="120"
-                   value="${esc(c.email || '')}"
-                   spellcheck="false"
-                   placeholder="optional">
-          </label>
           <label class="form__field cad__active-field">
             <span class="form__label">Status</span>
             <label class="form__checkbox-inline">
@@ -711,12 +705,6 @@ function _openCadetFormModal({ mode, cadet }) {
             <span class="form__hint">Inactive cadets stay listed but are excluded from new issues</span>
           </label>
         </div>
-
-        <label class="form__field">
-          <span class="form__label">Notes</span>
-          <textarea name="notes" rows="2" maxlength="500"
-                    placeholder="optional">${esc(c.notes || '')}</textarea>
-        </label>
 
         <div class="form__error" role="alert"></div>
         <div class="form__actions">
@@ -791,8 +779,6 @@ function _readFormData(form, useStruct = false) {
   const rankRaw    = String(fd.get('rank')       || '').trim();
   const surname    = String(fd.get('surname')    || '').trim().toUpperCase();
   const given      = String(fd.get('given')      || '').trim();
-  const email      = String(fd.get('email')      || '').trim();
-  const notes      = String(fd.get('notes')      || '').trim();
   const active     = fd.get('active') === 'on';
 
   // Structure mode: read cascading dropdowns. Legacy mode: read free-text plt.
@@ -819,16 +805,13 @@ function _readFormData(form, useStruct = false) {
   const rank = normalizeRank(rankRaw);
 
   // Email format is permissive but catches typos.
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    throw new Error('Email is not in a valid format.');
-  }
 
   // personType: derive from rank. Same logic the migration uses for
   // legacy records — keeps the inference consistent across all entry
   // points to the cadets store.
   const personType = inferPersonType(rank);
 
-  return { svcNo, rank, surname, given, plt, company, platoon, section, personType, active, email, notes };
+  return { svcNo, rank, surname, given, plt, company, platoon, section, personType, active };
 }
 
 // -----------------------------------------------------------------------------
