@@ -929,6 +929,17 @@ function _syncCryptoSectionHtml(settings) {
       </header>
       ${statusBlock}
       ${body}
+      <div class="settings__status-block settings__status-block--warn" style="margin-top:12px">
+        <strong>Rotate keys after any exposure.</strong>
+        Snapshots written by builds before this one carried the PII and audit
+        keys inside the file. If this unit has ever synced with an older build,
+        those keys must be replaced &mdash; enabling encryption alone just seals
+        the same compromised keys inside a new envelope.
+      </div>
+      <div class="form__actions">
+        <button type="button" class="btn btn--danger"
+                data-action="rotate-keys">Rotate encryption keys…</button>
+      </div>
     </section>
   `;
 }
@@ -1750,6 +1761,7 @@ async function _onRootClick(e) {
     case 'import-cadets-csv': CsvUi.openCadetsCsvImport(); break;
     case 'recovery-generate':    await _doGenerateRecovery(e.target.closest('button')); break;
     case 'sync-crypto-reset':    await _doResetSyncEncryption(); break;
+    case 'rotate-keys':          await _doRotateKeys(); break;
     case 'setup-2fa':            { const s = AUTH.getSession(); if (s?.userId) TotpSetup.openTotpSetup(s.userId); } break;
     case 'manage-2fa':           { const s = AUTH.getSession(); if (s?.userId) TotpSetup.openTotpManage(s.userId); } break;
     case 'logo-remove':          await _doRemoveLogo(); break;
@@ -2647,6 +2659,50 @@ function _openSyncRecoveryCode(formattedCode) {
       });
     },
   });
+}
+
+/**
+ * Rotate piiKey and auditKey. Deliberately an explicit operator action rather
+ * than something that fires on upgrade: it is destructive-ish (every PII record
+ * is rewritten), it must be auditable as a deliberate response to the exposure,
+ * and on a multi-device unit it has to happen once, on the primary device, and
+ * then propagate by sync — an automatic rotation on each device would have them
+ * fighting over last-write-wins with mutually unreadable data.
+ */
+async function _doRotateKeys() {
+  const ok = confirm(
+    'Rotate encryption keys?\n\n'
+    + 'Every cadet, staff, loan and user record will be re-encrypted under a new '
+    + 'key, and the audit chain will be re-signed.\n\n'
+    + 'IMPORTANT:\n'
+    + '  • Do this on the PRIMARY device only, then sync. Other devices must '
+    + 'then Load from cloud — their local data stays encrypted under the old key.\n'
+    + '  • This does NOT clean the cloud copy. Delete the old file from OneDrive, '
+    + 'including version history, or the leaked keys remain retrievable.\n'
+    + '  • Audit entries before this point cannot be made trustworthy again. '
+    + 'They will be re-signed and marked accordingly.\n\n'
+    + 'Continue?'
+  );
+  if (!ok) return;
+
+  const sess = AUTH.getSession();
+  try {
+    showToast('Rotating keys — do not close this tab…', 'info');
+    const result = await Storage.rotateKeys({
+      reason: `operator rotation by ${sess?.name || 'unknown'} following key exposure`,
+    });
+    // Re-sync is required: the cloud copy is still sealed over the old keys.
+    await _render();
+    showToast(
+      `Keys rotated: ${result.records} records re-encrypted, `
+      + `${result.auditEntries} audit entries re-signed. Sync now, then delete `
+      + 'the old OneDrive file including version history.',
+      'success',
+    );
+  } catch (err) {
+    showToast('Key rotation FAILED: ' + (err.message || err)
+      + ' — no changes were made.', 'error');
+  }
 }
 
 async function _doResetSyncEncryption() {

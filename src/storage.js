@@ -1052,6 +1052,149 @@ export const atomic = {
 // Maintenance: export, import, wipe
 // -----------------------------------------------------------------------------
 
+// =============================================================================
+// Key rotation
+// =============================================================================
+// Needed because exportAll() shipped META — and therefore piiKey and auditKey —
+// inside every snapshot pushed to OneDrive. Any blob written by a pre-fix build
+// carries the keys that decrypt it. Sealing future pushes (see backup-crypto.js)
+// stops the bleeding but does NOT help data already protected by a leaked key:
+// turning encryption on merely seals the same burnt keys inside a new envelope.
+// Rotation is what actually retires them.
+//
+// WHAT ROTATION CAN AND CANNOT DO — read this before writing anything about it.
+//
+//   piiKey: rotation genuinely restores confidentiality going forward. Records
+//   are decrypted under the old key and re-encrypted under a fresh one, so the
+//   leaked key no longer opens anything in this database.
+//
+//   auditKey: rotation CANNOT restore the integrity guarantee for entries that
+//   already exist. The chain is HMAC(auditKey, ...). Once the key leaked, every
+//   pre-rotation entry became forgeable, and no local operation undoes that.
+//   Re-signing the chain under a new key is precisely what a forger would do —
+//   it makes verify() pass again, it does not make the old entries trustworthy.
+//   We re-sign so the app keeps working, and we write a permanent marker entry
+//   recording the boundary honestly. Only entries AFTER the marker carry a
+//   meaningful integrity guarantee.
+//
+// Neither operation touches the cloud copy. The old blob must be deleted from
+// OneDrive, INCLUDING VERSION HISTORY, or the leaked keys remain retrievable.
+//
+// Stores carrying encrypted PII in v2: cadets, loans, users, staff.
+// (pii.js also defines field lists for requests/orders/stocktake, but v2's
+// storage layer never applies them — those stores hold plaintext PII. Out of
+// scope here; tracked separately.)
+
+const _PII_STORES = [
+  { store: STORES.CADETS, fields: PII.PII_FIELDS_CADETS },
+  { store: STORES.LOANS,  fields: PII.PII_FIELDS_LOANS  },
+  { store: STORES.USERS,  fields: PII.PII_FIELDS_USERS  },
+  { store: STORES.STAFF,  fields: PII.PII_FIELDS_STAFF  },
+];
+
+/**
+ * Rotate piiKey and auditKey, re-encrypting all PII and re-signing the audit
+ * chain under the new keys.
+ *
+ * Everything is computed in memory first and committed in a SINGLE multi-store
+ * transaction, because the crypto awaits cannot live inside an IDB transaction
+ * (same constraint the audit append path works around). A failure before the
+ * commit leaves the database completely untouched.
+ *
+ * After rotation, other devices must Load from cloud to pick up the new keys —
+ * their local copies are still encrypted under the old piiKey.
+ *
+ * @param {object}  opts
+ * @param {string} [opts.reason]  Recorded in the marker entry.
+ * @returns {Promise<{records:number, auditEntries:number}>}
+ */
+export async function rotateKeys({ reason } = {}) {
+  if (!_db) throw new Error('Storage not initialised.');
+  if (!PII.isReady()) throw new Error('PII key not loaded — cannot rotate.');
+
+  // --- 1. Read and decrypt every PII record under the CURRENT key -----------
+  const decrypted = [];
+  for (const { store, fields } of _PII_STORES) {
+    const rows = await _all(store);
+    decrypted.push({ store, fields, rows: await PII.decryptAll(rows, fields) });
+  }
+
+  // --- 2. Read the audit chain in sequence order ---------------------------
+  const auditRows = await _all(STORES.AUDIT);
+  auditRows.sort((a, b) => (a.seq || 0) - (b.seq || 0));
+
+  // --- 3. Generate the new keys -------------------------------------------
+  const newPiiB64   = _bytesToB64(crypto.getRandomValues(new Uint8Array(32)));
+  const newAuditB64 = _bytesToB64(crypto.getRandomValues(new Uint8Array(32)));
+
+  // --- 4. Re-encrypt PII under the new key --------------------------------
+  // PII.init swaps the module's key. From here the OLD key is gone from memory,
+  // so step 1 must already be complete.
+  await PII.init(newPiiB64);
+  const reEncrypted = [];
+  for (const { store, fields, rows } of decrypted) {
+    const out = [];
+    for (const row of rows) out.push(await PII.encryptRecord(row, fields));
+    reEncrypted.push({ store, rows: out });
+  }
+
+  // --- 5. Re-sign the audit chain under the new auditKey -------------------
+  // Recomputing a hash changes the next entry's prevHash, so walk in order and
+  // rebuild both links as we go.
+  const newAuditKey = await crypto.subtle.importKey(
+    'raw', _b64ToBytes(newAuditB64), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
+  );
+  const resigned = [];
+  let prev = ZERO_HASH;
+  for (const row of auditRows) {
+    const payload = JSON.stringify([prev, row.ts, row.action, row.user || '', row.desc || '']);
+    const sig  = await crypto.subtle.sign('HMAC', newAuditKey, new TextEncoder().encode(payload));
+    const hash = _bytesToHex(new Uint8Array(sig));
+    resigned.push({ ...row, prevHash: prev, hash });
+    prev = hash;
+  }
+
+  // --- 6. Build the marker entry, signed under the new key ------------------
+  const markerTs   = new Date().toISOString();
+  const markerDesc = 'Encryption keys rotated'
+    + (reason ? ` (${reason})` : '')
+    + '. Entries before this point were re-signed with the new audit key and '
+    + 'their integrity is NOT cryptographically assured — the previous key was '
+    + 'exposed. Only entries after this marker carry a verifiable guarantee.';
+  const markerPayload = JSON.stringify([prev, markerTs, 'keys_rotated', 'system', markerDesc]);
+  const markerSig  = await crypto.subtle.sign('HMAC', newAuditKey, new TextEncoder().encode(markerPayload));
+  const marker = {
+    ts: markerTs,
+    action: 'keys_rotated',
+    user: 'system',
+    desc: markerDesc,
+    prevHash: prev,
+    hash: _bytesToHex(new Uint8Array(markerSig)),
+  };
+
+  // --- 7. Commit atomically ------------------------------------------------
+  const storeNames = [STORES.META, STORES.AUDIT, ..._PII_STORES.map((s) => s.store)];
+  const tx = _db.transaction(storeNames, 'readwrite');
+  tx.objectStore(STORES.META).put({ key: 'piiKey',   value: newPiiB64 });
+  tx.objectStore(STORES.META).put({ key: 'auditKey', value: newAuditB64 });
+  for (const { store, rows } of reEncrypted) {
+    const os = tx.objectStore(store);
+    for (const row of rows) os.put(row);
+  }
+  const auditOs = tx.objectStore(STORES.AUDIT);
+  for (const row of resigned) auditOs.put(row);
+  auditOs.add(marker);
+  await _txDone(tx);
+
+  // --- 8. Adopt the new audit key for subsequent appends -------------------
+  _auditKey = await _loadAuditKey();
+
+  return {
+    records: reEncrypted.reduce((n, r) => n + r.rows.length, 0),
+    auditEntries: resigned.length,
+  };
+}
+
 /**
  * Dump the entire database to a plain JS object suitable for JSON
  * serialisation. Photos are encoded as base64 so the result round-trips
