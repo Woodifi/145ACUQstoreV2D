@@ -61,6 +61,15 @@ const isDist  = process.argv.includes('--dist');  // distribution build — no G
 // cloud. A consumer M365 tenant is neither.
 const isDefence = process.argv.includes('--defence');
 
+// A Defence build must never become the GitHub Pages artefact. Pages is the
+// public, general-audience copy; the Defence build is a distinct variant with
+// cloud sync removed, issued to specific units under §8 of
+// docs/DEFENCE-CONTROLS-STATEMENT.md. Publishing it to Pages would silently
+// swap what every non-Defence user downloads, and the next standard build would
+// silently swap it back — a Pages copy whose identity depends on whoever built
+// last. --defence therefore never writes PAGES_OUT.
+const writesPages = !isDist && !isDefence;
+
 // --recipient="Unit Name" embeds the unit name in the filename and dist log.
 const recipientArg = process.argv.find(a => a.startsWith('--recipient='));
 const RECIPIENT = recipientArg ? recipientArg.split('=').slice(1).join('=').trim() : null;
@@ -200,13 +209,16 @@ async function buildOnce() {
     console.log(`  build ID: ${BUILD_ID}  (${BUILD_TS})`);
     if (RECIPIENT) console.log(`  recipient: ${RECIPIENT}`);
     console.log('  GitHub Pages copy: NOT updated (--dist mode)');
-  } else {
+  } else if (writesPages) {
     // Normal build — update both dist/qstore.html and docs/ (GitHub Pages).
     await mkdir(dirname(PAGES_OUT), { recursive: true });
     await Promise.all([
       writeFile(HTML_OUT,  html),
       writeFile(PAGES_OUT, html),
     ]);
+  } else {
+    // --defence without --dist: local artefact only. Never Pages (see writesPages).
+    await writeFile(HTML_OUT, html);
   }
 
   // Sanity check — verify the argon2 encoded-output template literal survived
@@ -244,10 +256,12 @@ async function buildOnce() {
 
   if (!isDist) {
     console.log(`✓ ${HTML_OUT} — ${sizeKb} KB (${ms} ms)`);
-    console.log(`✓ ${PAGES_OUT} — (GitHub Pages copy)`);
+    if (writesPages) console.log(`✓ ${PAGES_OUT} — (GitHub Pages copy)`);
+    else console.log('  GitHub Pages copy: NOT updated (--defence build)');
     console.log(`  js: ${jsKb} KB${isDev ? ' (with inline source map)' : ' (minified)'}`);
     console.log(`  css: ${cssKb} KB`);
     if (!isDev) console.log(`  build ID: ${BUILD_ID}  (${BUILD_TS})`);
+    if (isDefence) console.log('  variant: DEFENCE — cloud sync compiled out');
   }
   return { sizeBytes: html.length, ms };
 }
@@ -372,7 +386,7 @@ async function preflight() {
 
 /**
  * Distribution pre-flight — verifies the working tree is on master, clean,
- * and fully in sync with origin/master before allowing a dist build.
+ * and fully in sync with the remote default branch before allowing a dist build.
  *
  * A dist build from a dirty or unsynced tree would mean the distributed file
  * doesn't match the tracked codebase, breaking the build-ID traceability
@@ -382,7 +396,22 @@ async function preflight() {
 function preflightDist() {
   const git = (cmd) => execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
 
-  // 1 — Must be on master.
+  // Resolve the repository's actual default branch rather than assuming 'master'.
+  // This check previously hardcoded 'master'; in a repository whose default is
+  // 'main' it rejected every build, which meant the guard protected nothing —
+  // it was simply unreachable. Resolving origin/HEAD keeps the intent (only
+  // distribute from the canonical branch) and makes it actually apply.
+  let defaultBranch = 'master';
+  try {
+    defaultBranch = git('git symbolic-ref --short refs/remotes/origin/HEAD').replace(/^origin\//, '');
+  } catch {
+    try {
+      git('git rev-parse --verify origin/main');
+      defaultBranch = 'main';
+    } catch { /* keep 'master' */ }
+  }
+
+  // 1 — Must be on the default branch.
   let branch;
   try {
     branch = git('git rev-parse --abbrev-ref HEAD');
@@ -392,10 +421,10 @@ function preflightDist() {
       'Ensure this is a git repository before building a distribution.'
     );
   }
-  if (branch !== 'master') {
+  if (branch !== defaultBranch) {
     throw new Error(
-      `--dist aborted: working tree is on branch '${branch}', not 'master'.\n` +
-      'Switch to master (git checkout master) before building a distribution.'
+      `--dist aborted: working tree is on branch '${branch}', not '${defaultBranch}'.\n` +
+      `Switch to ${defaultBranch} (git checkout ${defaultBranch}) before building a distribution.`
     );
   }
 
@@ -414,27 +443,27 @@ function preflightDist() {
     );
   }
 
-  // 3 — Local HEAD must match origin/master (no unpushed or unpulled commits).
+  // 3 — Local HEAD must match the remote default branch (no unpushed/unpulled).
   let localHead, remoteHead;
   try {
     localHead  = git('git rev-parse HEAD');
-    remoteHead = git('git rev-parse origin/master');
+    remoteHead = git(`git rev-parse origin/${defaultBranch}`);
   } catch {
-    console.warn('  ⚠  Could not read origin/master ref — skipping remote sync check.');
+    console.warn(`  ⚠  Could not read origin/${defaultBranch} ref — skipping remote sync check.`);
     return;
   }
   if (localHead !== remoteHead) {
     // Determine direction so the error message is actionable.
     let direction = 'out of sync';
     try {
-      const aheadCount  = Number(git(`git rev-list origin/master..HEAD --count`));
-      const behindCount = Number(git(`git rev-list HEAD..origin/master --count`));
-      if (aheadCount > 0 && behindCount === 0) direction = `${aheadCount} commit(s) ahead of origin/master — push before distributing`;
-      else if (behindCount > 0 && aheadCount === 0) direction = `${behindCount} commit(s) behind origin/master — pull before distributing`;
-      else direction = 'diverged from origin/master — resolve the conflict before distributing';
+      const aheadCount  = Number(git(`git rev-list origin/${defaultBranch}..HEAD --count`));
+      const behindCount = Number(git(`git rev-list HEAD..origin/${defaultBranch} --count`));
+      if (aheadCount > 0 && behindCount === 0) direction = `${aheadCount} commit(s) ahead of origin/${defaultBranch} — push before distributing`;
+      else if (behindCount > 0 && aheadCount === 0) direction = `${behindCount} commit(s) behind origin/${defaultBranch} — pull before distributing`;
+      else direction = `diverged from origin/${defaultBranch} — resolve the conflict before distributing`;
     } catch { /* use generic message */ }
     throw new Error(
-      `--dist aborted: local master is ${direction}.\n` +
+      `--dist aborted: local ${defaultBranch} is ${direction}.\n` +
       `  local:  ${localHead.slice(0, 7)}\n` +
       `  remote: ${remoteHead.slice(0, 7)}\n` +
       'Ensure git push/pull is complete so the distributed file matches the repository.'
