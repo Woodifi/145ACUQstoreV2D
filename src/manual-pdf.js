@@ -10,6 +10,12 @@
 // =============================================================================
 
 import { jsPDF }    from 'jspdf';
+
+// True when built with `node build.js --defence`, which resolves cloud.js and
+// sync.js to stubs so no cloud code is bundled. The manual must not document a
+// feature the artefact does not contain.
+const IS_DEFENCE_BUILD =
+  (typeof __QSTORE_DEFENCE__ !== 'undefined') && __QSTORE_DEFENCE__;
 import * as Storage from './storage.js';
 
 // ─── Page geometry (mm) ─────────────────────────────────────────────────────
@@ -346,7 +352,7 @@ function _cover(doc, unitName, dateStr) {
     '2. Getting Started           9.  AAC QStore Orders',
     '3. User Roles & Permissions  10. Audit Log',
     '4. Inventory                 11. Settings',
-    '5. Loans & Returning         12. Cloud Sync (OneDrive)',
+    '5. Loans & Returning         12. ' + (IS_DEFENCE_BUILD ? 'Backups' : 'Cloud Sync (OneDrive)'),
     '6. Equipment Requests        13. Backup & Restore',
     '7. Cadets & Nominal Roll     14-15. PIN Security & Recovery',
     '                             16-19. Kits, QR Codes, Troubleshooting',
@@ -395,7 +401,7 @@ function _toc(doc, db) {
     [9,  'AAC QStore Orders'],
     [10, 'Audit Log'],
     [11, 'Settings'],
-    [12, 'Cloud Sync (OneDrive)'],
+    [12, IS_DEFENCE_BUILD ? 'Backups' : 'Cloud Sync (OneDrive)'],
     [13, 'Backup and Restore'],
     [14, 'PIN Security and Auto-Lock'],
     [15, 'OC PIN Recovery'],
@@ -444,7 +450,7 @@ function _s1(b) {
     'Run stocktakes with detailed condition recording for every item',
     'Import supply orders from the AAC QStore system and receive them into inventory',
     'Print loan vouchers, AB189 forms, stock reports, and QR code labels',
-    'Optionally back up everything automatically to Microsoft OneDrive',
+    ...(IS_DEFENCE_BUILD ? [] : ['Optionally back up everything automatically to Microsoft OneDrive']),
     'Keep a complete, tamper-evident record of every action in the system',
   ]);
   b.gap();
@@ -452,7 +458,9 @@ function _s1(b) {
   b.p('QStore IMS has five roles: Commanding Officer (OC), Quartermaster (QM), Staff, Cadet, and Read-Only. Each role has a different level of access. Every user logs in with a 4-digit PIN. Only the OC can create user accounts and manage PINs.');
   b.gap();
   b.h3('Where your data is kept');
-  b.p('All data is stored inside your web browser on the device running the app. Nothing is sent anywhere unless you set up OneDrive cloud sync. Always keep backup copies stored off the device so data is safe if the browser or device is lost.');
+  b.p(IS_DEFENCE_BUILD
+    ? 'All data is stored inside your web browser on the device running the app. This build has no cloud sync — nothing is ever transmitted off this device. Always keep backup copies stored off the device so data is safe if the browser or device is lost.'
+    : 'All data is stored inside your web browser on the device running the app. Nothing is sent anywhere unless you set up OneDrive cloud sync. Always keep backup copies stored off the device so data is safe if the browser or device is lost.');
   b.callout('QStore IMS is a single self-contained HTML file. Open it in Chrome, Edge, Firefox, or Safari. No installation is required.', 'tip');
 }
 
@@ -983,14 +991,34 @@ function _s11(b) {
   b.h2('Data Backup and Restore');
   b.p('Export and import full data backups. See Section 13 for full instructions.');
 
-  b.h2('Cloud Sync');
-  b.p('Configure automatic OneDrive backup. See Section 12 for setup instructions.');
+  if (!IS_DEFENCE_BUILD) {
+    b.h2('Cloud Sync');
+    b.p('Configure automatic OneDrive backup. See Section 12 for setup instructions.');
+  }
 
   b.h2('About');
   b.p('Shows the app version number, authorship, and licence information.');
 }
 
-function _s12(b) {
+// Section 12 has two forms. The Defence build has no cloud sync compiled in, so
+// documenting the setup would be both wrong and misleading — and it would leave
+// the Azure/OneDrive setup strings in an artefact whose whole claim is that it
+// contains no cloud code. A constant ternary lets esbuild drop the unused body.
+// Section numbering and the table of contents are shared, so the section stays
+// at 12 either way.
+const _s12 = (typeof __QSTORE_DEFENCE__ !== 'undefined' && __QSTORE_DEFENCE__)
+  ? _s12Defence : _s12Standard;
+
+function _s12Defence(b) {
+  b.h1(12, 'Backups');
+  b.p('This build does not include cloud sync. All data is held in this browser\'s storage on this device and is never transmitted to third-party cloud storage.');
+
+  b.h2('Keeping a backup');
+  b.p('Because there is no automatic off-device copy, taking regular manual backups matters. Use Settings → Export data to write an encrypted backup file, and store it somewhere the unit controls.');
+  b.callout('Personal information is encrypted at rest on this device. Export files should be treated as sensitive documents and stored accordingly.', 'note');
+}
+
+function _s12Standard(b) {
   b.h1(12, 'Cloud Sync (OneDrive)');
   b.p('Cloud sync is completely optional. When set up, it automatically backs up all QStore data to a folder in Microsoft OneDrive. This protects against device loss and allows the same data to be accessed from more than one device.');
 

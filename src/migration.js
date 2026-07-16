@@ -329,7 +329,16 @@ async function _migrateSettings(v1) {
   });
 }
 
-async function _migrateOneDriveConfig() {
+// The Defence build has no cloud sync compiled in, so carrying a v1 OneDrive
+// configuration forward would write settings nothing can read — and would leave
+// the endpoint and blob filename in an artefact whose claim is that it contains
+// no cloud code. Ternary rather than an in-body guard so esbuild folds the
+// define and drops the unused branch entirely.
+const _migrateOneDriveConfig = (typeof __QSTORE_DEFENCE__ !== 'undefined' && __QSTORE_DEFENCE__)
+  ? async function _migrateOneDriveConfigDefence() {
+      // Deliberately discard any v1 cloud config rather than migrate it.
+    }
+  : async function _migrateOneDriveConfigStandard() {
   const raw = localStorage.getItem(V1_OD_CFG_KEY);
   if (!raw) return;
   let cfg;
@@ -344,7 +353,7 @@ async function _migrateOneDriveConfig() {
     'cloud.filename': cfg.filename || 'qstore_data.json',
     'cloud.autoSync': cfg.autoSync !== false,
   });
-}
+};
 
 async function _migrateItemsAndPhotos(v1) {
   for (const i of v1.items || []) {

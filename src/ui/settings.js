@@ -30,6 +30,7 @@ import { openModal }   from './modal.js';
 import { esc, $, $$, render, fmtDate } from './util.js';
 import { STAFF_RANKS_CANONICAL, CADET_RANKS } from '../ranks.js';
 import * as Recovery   from '../recovery.js';
+import * as Keyring    from '../sync-keyring.js';
 import * as Migration  from '../migration.js';
 import * as TotpSetup  from './totp-setup.js';
 import * as CsvUi      from './csv-import.js';
@@ -107,6 +108,7 @@ async function _render() {
         ${_totpSectionHtml(totpUser)}
         ${_securitySectionHtml(settings)}
         ${_cloudSectionHtml(settings, status)}
+        ${_syncCryptoSectionHtml(settings)}
         ${_dataSectionHtml(settings)}
         ${_subscriptionSectionHtml(licenseState)}
         ${_aboutSectionHtml()}
@@ -861,7 +863,142 @@ function _totpSectionHtml(user) {
   `;
 }
 
-function _cloudSectionHtml(settings, status) {
+// -----------------------------------------------------------------------------
+// Cloud sync encryption section
+// -----------------------------------------------------------------------------
+// The snapshot pushed to OneDrive contains the META store, and META contains
+// piiKey (the key protecting all cadet PII) and auditKey. Without an envelope
+// the blob is self-decrypting. This section is what turns the envelope on.
+// Sync refuses to push until it is configured — see sync.js _push().
+
+// True when this artefact was built with `node build.js --defence`, which
+// resolves cloud.js/sync.js to stubs so no cloud code is bundled at all.
+const IS_DEFENCE_BUILD =
+  (typeof __QSTORE_DEFENCE__ !== 'undefined') && __QSTORE_DEFENCE__;
+
+// Assigned via a constant ternary rather than guarded with an early return, so
+// esbuild can constant-fold __QSTORE_DEFENCE__ and DROP the unused branch
+// entirely. An `if (IS_DEFENCE_BUILD) return ''` at the top of a function
+// declaration leaves the whole body — including every cloud string — sitting in
+// the artefact where a reviewer greps it. Dead code still reads as cloud code.
+const _syncCryptoSectionHtml = (typeof __QSTORE_DEFENCE__ !== 'undefined' && __QSTORE_DEFENCE__)
+  // Defence build has no blob to seal, but rotation must stay reachable: a unit
+  // migrating off a pre-fix build has compromised keys in its local database
+  // whether or not this build can sync.
+  ? _defenceKeyRotationSectionHtml
+  : function _syncCryptoSectionHtmlImpl(settings) {
+  // Nothing to configure if cloud sync is switched off entirely.
+  if (settings['cloud.disabled'] === true) return '';
+
+  const configured = Keyring.isConfigured();
+
+  const statusBlock = configured
+    ? `<div class="settings__status-block settings__status-block--ok">
+         <span class="badge badge--success">Encrypted</span>
+         Snapshots pushed to cloud are sealed on this device. The cloud copy
+         cannot be read without the sync passphrase or the recovery code.
+       </div>`
+    : `<div class="settings__status-block settings__status-block--warn">
+         <span class="badge badge--neutral">Not set up</span>
+         <strong>Cloud sync is blocked until you set a passphrase.</strong>
+         Snapshots contain the encryption key for cadet personal information,
+         so they must never be written to cloud storage unsealed.
+       </div>`;
+
+  const body = configured
+    ? `<div class="form__actions">
+         <button type="button" class="btn btn--outline"
+                 data-action="sync-crypto-reset">Reset encryption (re-key this device)</button>
+       </div>`
+    : `<form class="form" data-form="sync-crypto-setup" autocomplete="off">
+         <label class="form__field">
+           <span class="form__label">Sync passphrase</span>
+           <input type="password" name="passphrase" minlength="12" required
+                  autocomplete="new-password" placeholder="At least 12 characters">
+         </label>
+         <label class="form__field">
+           <span class="form__label">Confirm passphrase</span>
+           <input type="password" name="confirm" minlength="12" required
+                  autocomplete="new-password">
+         </label>
+         <p class="settings__section-hint">
+           Every device that syncs this unit's data needs this same passphrase
+           entered once. It is not stored in the cloud copy and cannot be
+           recovered from it &mdash; which is the point.
+         </p>
+         <div class="form__actions">
+           <button type="submit" class="btn btn--primary"
+                   data-action="sync-crypto-setup">Turn on cloud encryption</button>
+         </div>
+       </form>`;
+
+  return `
+    <section class="settings__section" data-section="sync-crypto">
+      <header class="settings__section-header">
+        <h2 class="settings__section-title">Cloud sync encryption</h2>
+        <p class="settings__section-hint">
+          Seals the snapshot before it leaves this device. You will be given a
+          one-shot recovery code &mdash; the only way back in if the passphrase
+          is lost.
+        </p>
+      </header>
+      ${statusBlock}
+      ${body}
+      <div class="settings__status-block settings__status-block--warn" style="margin-top:12px">
+        <strong>Rotate keys after any exposure.</strong>
+        Snapshots written by builds before this one carried the PII and audit
+        keys inside the file. If this unit has ever synced with an older build,
+        those keys must be replaced &mdash; enabling encryption alone just seals
+        the same compromised keys inside a new envelope.
+      </div>
+      <div class="form__actions">
+        <button type="button" class="btn btn--danger"
+                data-action="rotate-keys">Rotate encryption keys…</button>
+      </div>
+    </section>
+  `;
+};
+
+/**
+ * Defence build: no sync, so no passphrase and no envelope — but a unit that
+ * previously ran a pre-fix build still has keys in its local database that were
+ * published to OneDrive, so rotation must remain reachable.
+ */
+function _defenceKeyRotationSectionHtml() {
+  return `
+    <section class="settings__section" data-section="sync-crypto">
+      <header class="settings__section-header">
+        <h2 class="settings__section-title">Encryption keys</h2>
+        <p class="settings__section-hint">
+          This build has no cloud sync. Data stays in this browser's storage on
+          this device and is never written to third-party cloud storage.
+        </p>
+      </header>
+      <div class="settings__status-block settings__status-block--ok">
+        <span class="badge badge--success">No cloud egress</span>
+        Cloud sync is not present in this build &mdash; it is compiled out, not
+        switched off.
+      </div>
+      <div class="settings__status-block settings__status-block--warn" style="margin-top:12px">
+        <strong>Rotate if this unit ever synced with an older build.</strong>
+        Snapshots written by builds before this one carried the encryption keys
+        inside the file. If any such snapshot reached cloud storage, the keys in
+        this database must be replaced.
+      </div>
+      <div class="form__actions">
+        <button type="button" class="btn btn--danger"
+                data-action="rotate-keys">Rotate encryption keys…</button>
+      </div>
+    </section>
+  `;
+}
+
+// Same constant-ternary treatment: in the Defence build this whole body — Azure
+// client ID, folder, blob filename, sign-in controls — must not merely be
+// unreachable, it must be absent from the artefact.
+const _cloudSectionHtml = (typeof __QSTORE_DEFENCE__ !== 'undefined' && __QSTORE_DEFENCE__)
+  ? () => ''
+  : function _cloudSectionHtmlImpl(settings, status) {
   // Cloud sync requires a stable HTTP(S) origin for the OAuth redirect URI.
   // file:// origins can't be registered in Azure, so we disable the config
   // UI entirely and explain the situation rather than silently failing.
@@ -1000,7 +1137,7 @@ function _cloudSectionHtml(settings, status) {
       `}
     </section>
   `;
-}
+};
 
 function _cloudUnavailableFileProtocolHtml() {
   return `
@@ -1390,6 +1527,14 @@ function _wireEventListeners() {
   const keyForm = $('form[data-form="activate-key"]', _root);
   if (keyForm) keyForm.addEventListener('submit', _onActivateKey);
 
+  const syncCryptoForm = $('form[data-form="sync-crypto-setup"]', _root);
+  if (syncCryptoForm) {
+    syncCryptoForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      _doSetupSyncEncryption(e.currentTarget);
+    });
+  }
+
   const logoInput = $('input[data-target="logo-file-input"]', _root);
   if (logoInput) logoInput.addEventListener('change', _onLogoFileChange);
 
@@ -1613,7 +1758,12 @@ async function _onSaveUnit(e) {
   }
 }
 
-async function _onSaveConfig(e) {
+// Cloud config form handler. The form never renders in the Defence build, but
+// an unreachable handler still ships its strings — including the blob filename
+// — into the artefact. Ternary so esbuild drops it.
+const _onSaveConfig = (typeof __QSTORE_DEFENCE__ !== 'undefined' && __QSTORE_DEFENCE__)
+  ? async function _onSaveConfigDefence(e) { e.preventDefault(); }
+  : async function _onSaveConfigStandard(e) {
   e.preventDefault();
   const form = e.currentTarget;
   const errEl = $('.form__error', form);
@@ -1652,7 +1802,7 @@ async function _onSaveConfig(e) {
   } catch (err) {
     errEl.textContent = err.message || 'Could not save settings.';
   }
-}
+};
 
 async function _onRootClick(e) {
   const action = e.target.closest('[data-action]')?.dataset.action;
@@ -1669,6 +1819,8 @@ async function _onRootClick(e) {
     case 'import-items-csv':  CsvUi.openItemsCsvImport();  break;
     case 'import-cadets-csv': CsvUi.openCadetsCsvImport(); break;
     case 'recovery-generate':    await _doGenerateRecovery(e.target.closest('button')); break;
+    case 'sync-crypto-reset':    await _doResetSyncEncryption(); break;
+    case 'rotate-keys':          await _doRotateKeys(); break;
     case 'setup-2fa':            { const s = AUTH.getSession(); if (s?.userId) TotpSetup.openTotpSetup(s.userId); } break;
     case 'manage-2fa':           { const s = AUTH.getSession(); if (s?.userId) TotpSetup.openTotpManage(s.userId); } break;
     case 'logo-remove':          await _doRemoveLogo(); break;
@@ -2017,7 +2169,18 @@ async function _doLoadFromCloud() {
           return;
         }
         try {
-          const result = await Sync.loadFromCloud();
+          let result = await Sync.loadFromCloud();
+          // Sealed blob and this device holds no key — ask for the passphrase
+          // or recovery code, then retry once with it. unlockFrom() caches the
+          // recovered blob key, so later syncs on this device won't prompt.
+          if (!result.ok && result.needsSecret) {
+            const secret = await _promptSyncSecret();
+            if (!secret) {
+              errEl.textContent = 'Cancelled — the cloud copy is encrypted and cannot be read without it.';
+              return;
+            }
+            result = await Sync.loadFromCloud({ secret });
+          }
           if (!result.ok) {
             errEl.textContent = (result.error?.message) || 'Download failed.';
             return;
@@ -2025,6 +2188,13 @@ async function _doLoadFromCloud() {
           if (!result.imported) {
             errEl.textContent = 'No data file found in OneDrive yet.';
             return;
+          }
+          if (result.legacy) {
+            showToast(
+              'Loaded an UNENCRYPTED cloud backup. Its keys are compromised — '
+              + 'set a sync passphrase and re-sync, then purge the old OneDrive file.',
+              'warn',
+            );
           }
           close();
           // Force a full reload so every page picks up the new data.
@@ -2126,21 +2296,31 @@ async function _doExportData(btn) {
     const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
     const baseFilename = `qstore-backup-${unitTag}-${stamp}`;
 
-    // Offer password protection via a modal. This is non-blocking: the user
-    // can choose plain JSON or an AES-256-GCM encrypted file.
+    // Prompt for the export password. Encryption is NOT optional: the snapshot
+    // carries piiKey and auditKey in its META block, so a plain-JSON export
+    // would publish the key alongside the ciphertext it opens. Import still
+    // accepts legacy plain files so existing backups remain restorable.
     openModal({
       titleHtml: 'Export backup',
       size: 'sm',
       bodyHtml: `
         <p class="modal__body">
-          Password-protect your backup to prevent anyone who finds the file
-          from reading your unit's data. You will need this password to restore.
+          Backups are always encrypted. The snapshot contains the keys that
+          protect cadet personal information, so an unencrypted copy would hand
+          anyone who finds the file both the data and the key to it.
+          You will need this password to restore.
         </p>
+        <div class="modal__warn">
+          <strong>There is no way to recover this password.</strong> Store it
+          with the unit's other credentials. Your live data is unaffected if you
+          lose it &mdash; only this backup file becomes unreadable.
+        </div>
         <form class="form" data-form="export-pw" autocomplete="off">
           <label class="form__field">
-            <span class="form__label">Password <span class="form__optional">(leave blank for unencrypted)</span></span>
-            <input type="password" name="pw" autocomplete="new-password"
-                   placeholder="Leave blank to export without encryption">
+            <span class="form__label">Password</span>
+            <input type="password" name="pw" required minlength="12"
+                   autocomplete="new-password"
+                   placeholder="At least 12 characters">
           </label>
           <label class="form__field">
             <span class="form__label">Confirm password</span>
@@ -2163,23 +2343,24 @@ async function _doExportData(btn) {
           const fd  = new FormData(form);
           const pw  = String(fd.get('pw')  || '');
           const pw2 = String(fd.get('pw2') || '');
-          if (pw && pw !== pw2) {
+          // Encryption is mandatory: exportAll() emits META, and META holds
+          // piiKey and auditKey. An unencrypted export publishes the key that
+          // decrypts the very PII sitting beside it in the same file — the same
+          // defect that put those keys in the OneDrive blob.
+          if (pw.length < 12) {
+            errEl.textContent = 'Password must be at least 12 characters.';
+            return;
+          }
+          if (pw !== pw2) {
             errEl.textContent = 'Passwords do not match.';
             return;
           }
           const submitBtn = form.querySelector('[type="submit"]');
           if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Exporting…'; }
           try {
-            let outStr, filename, mimeType;
-            if (pw) {
-              outStr   = await _encryptBackup(JSON.stringify(snapshot), pw);
-              filename = `${baseFilename}.qstore`;
-              mimeType = 'application/octet-stream';
-            } else {
-              outStr   = JSON.stringify(snapshot);
-              filename = `${baseFilename}.json`;
-              mimeType = 'application/json';
-            }
+            const outStr   = await _encryptBackup(JSON.stringify(snapshot), pw);
+            const filename = `${baseFilename}.qstore`;
+            const mimeType = 'application/octet-stream';
             const blob = new Blob([outStr], { type: mimeType });
             const url  = URL.createObjectURL(blob);
             const a    = document.createElement('a');
@@ -2192,7 +2373,7 @@ async function _doExportData(btn) {
             close();
             await Storage.settings.set('data.lastExport', new Date().toISOString());
             await _render();
-            _flashSuccess(`Backup saved as ${filename}.${pw ? ' (encrypted)' : ''}`);
+            _flashSuccess(`Backup saved as ${filename} (encrypted).`);
           } catch (err) {
             console.error('Export failed:', err);
             errEl.textContent = 'Export failed: ' + (err.message || err);
@@ -2460,6 +2641,200 @@ async function _doGenerateRecovery(button) {
   } finally {
     if (button) button.disabled = false;
   }
+}
+
+// =============================================================================
+// Cloud sync encryption — setup, recovery-code display, reset, unlock
+// =============================================================================
+
+async function _doSetupSyncEncryption(form) {
+  const pass    = form.elements.passphrase.value;
+  const confirm_ = form.elements.confirm.value;
+  const btn     = $('button[data-action="sync-crypto-setup"]', form);
+
+  if (pass !== confirm_) {
+    showToast('Passphrases do not match.', 'warn');
+    return;
+  }
+  if (!pass || pass.length < 12) {
+    showToast('Passphrase must be at least 12 characters.', 'warn');
+    return;
+  }
+
+  if (btn) btn.disabled = true;
+  try {
+    const { recoveryCodeFormatted } = await Keyring.setup(pass);
+    const sess = AUTH.getSession();
+    await Storage.audit.append({
+      action: 'sync_encryption_enabled',
+      user:   sess?.name || 'unknown',
+      desc:   'Cloud sync encryption enabled; blob key wrapped under passphrase and recovery code.',
+    });
+    await _render();
+    _openSyncRecoveryCode(recoveryCodeFormatted);
+  } catch (err) {
+    showToast('Could not enable cloud encryption: ' + (err.message || err), 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+/**
+ * Show-once display for the sync recovery code. Mirrors the OC PIN recovery
+ * modal deliberately — same shape, same drawer in the unit safe, so it reads as
+ * the same kind of object to the user. This code is NOT stored anywhere in
+ * recoverable form; only an argon2id hash is kept, and a hash cannot derive a
+ * key. If this is lost along with the passphrase, the cloud copy is
+ * unrecoverable — local data is unaffected.
+ */
+function _openSyncRecoveryCode(formattedCode) {
+  openModal({
+    titleHtml: 'Cloud sync recovery code',
+    size:      'sm',
+    bodyHtml:  `
+      <p class="modal__body">
+        Write this down and store it OFF this device. You will not see it again.
+        It is the only way to read the cloud copy if the sync passphrase is lost.
+      </p>
+      <div class="recovery-code__display" role="textbox" aria-readonly="true"
+           aria-label="Sync recovery code">${esc(formattedCode)}</div>
+      <div class="modal__warn">
+        <strong>Store this code OFF this device.</strong> A printed copy in a
+        sealed envelope in the unit safe is appropriate. Anyone with this code
+        can decrypt the unit's cloud backup, including cadet personal
+        information.
+      </div>
+      <form class="form" data-form="ack-sync-recovery">
+        <label class="form__field">
+          <input type="checkbox" name="ack" required>
+          I have stored this code somewhere safe.
+        </label>
+        <div class="form__actions">
+          <button type="button" class="btn btn--ghost" data-action="print-sync-code">Print</button>
+          <button type="submit" class="btn btn--primary" disabled
+                  data-action="ack-submit">Done</button>
+        </div>
+      </form>
+    `,
+    onMount(panel, close) {
+      const form = $('form[data-form="ack-sync-recovery"]', panel);
+      const cb   = $('input[name="ack"]', panel);
+      const btn  = $('button[data-action="ack-submit"]', panel);
+      cb.addEventListener('change', () => { btn.disabled = !cb.checked; });
+      $('button[data-action="print-sync-code"]', panel)
+        .addEventListener('click', () => window.print());
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        if (cb.checked) close();
+      });
+    },
+  });
+}
+
+/**
+ * Rotate piiKey and auditKey. Deliberately an explicit operator action rather
+ * than something that fires on upgrade: it is destructive-ish (every PII record
+ * is rewritten), it must be auditable as a deliberate response to the exposure,
+ * and on a multi-device unit it has to happen once, on the primary device, and
+ * then propagate by sync — an automatic rotation on each device would have them
+ * fighting over last-write-wins with mutually unreadable data.
+ */
+async function _doRotateKeys() {
+  const ok = confirm(
+    'Rotate encryption keys?\n\n'
+    + 'Every cadet, staff, loan and user record will be re-encrypted under a new '
+    + 'key, and the audit chain will be re-signed.\n\n'
+    + 'IMPORTANT:\n'
+    + '  • Do this on the PRIMARY device only, then sync. Other devices must '
+    + 'then Load from cloud — their local data stays encrypted under the old key.\n'
+    + '  • This does NOT clean the cloud copy. Delete the old file from OneDrive, '
+    + 'including version history, or the leaked keys remain retrievable.\n'
+    + '  • Audit entries before this point cannot be made trustworthy again. '
+    + 'They will be re-signed and marked accordingly.\n\n'
+    + 'Continue?'
+  );
+  if (!ok) return;
+
+  const sess = AUTH.getSession();
+  try {
+    showToast('Rotating keys — do not close this tab…', 'info');
+    const result = await Storage.rotateKeys({
+      reason: `operator rotation by ${sess?.name || 'unknown'} following key exposure`,
+    });
+    // Re-sync is required: the cloud copy is still sealed over the old keys.
+    await _render();
+    showToast(
+      `Keys rotated: ${result.records} records re-encrypted, `
+      + `${result.auditEntries} audit entries re-signed. Sync now, then delete `
+      + 'the old OneDrive file including version history.',
+      'success',
+    );
+  } catch (err) {
+    showToast('Key rotation FAILED: ' + (err.message || err)
+      + ' — no changes were made.', 'error');
+  }
+}
+
+async function _doResetSyncEncryption() {
+  const ok = confirm(
+    'Reset cloud sync encryption?\n\n'
+    + 'This device will generate a NEW passphrase and recovery code. The '
+    + 'existing cloud copy stays sealed under the OLD keys and this device will '
+    + 'no longer be able to read it until it is overwritten by a fresh sync.\n\n'
+    + 'Other devices will need the new passphrase.\n\nContinue?'
+  );
+  if (!ok) return;
+  Keyring.clear();
+  const sess = AUTH.getSession();
+  await Storage.audit.append({
+    action: 'sync_encryption_reset',
+    user:   sess?.name || 'unknown',
+    desc:   'Cloud sync encryption keyring cleared; re-key required before next sync.',
+  });
+  await _render();
+  showToast('Sync encryption reset — set a new passphrase to re-enable syncing.', 'info');
+}
+
+/**
+ * Prompt for the passphrase or recovery code when loading a sealed blob onto a
+ * device that has no keyring (a second device, or one that has been reset).
+ * Resolves to the secret string, or null if the user cancels.
+ */
+function _promptSyncSecret() {
+  return new Promise((resolve) => {
+    let settled = false;
+    openModal({
+      titleHtml: 'Cloud backup is encrypted',
+      size:      'sm',
+      bodyHtml:  `
+        <p class="modal__body">
+          This device does not hold the key for this unit's cloud backup. Enter
+          the sync passphrase, or the recovery code if the passphrase is lost.
+        </p>
+        <form class="form" data-form="sync-unlock" autocomplete="off">
+          <label class="form__field">
+            <span class="form__label">Passphrase or recovery code</span>
+            <input type="password" name="secret" required autocomplete="off">
+          </label>
+          <div class="form__actions">
+            <button type="submit" class="btn btn--primary">Unlock</button>
+          </div>
+        </form>
+      `,
+      onMount(panel, close) {
+        const form = $('form[data-form="sync-unlock"]', panel);
+        form.addEventListener('submit', (e) => {
+          e.preventDefault();
+          const v = form.elements.secret.value;
+          if (!v) return;
+          settled = true;
+          close();
+          resolve(v);
+        });
+      },
+      onClose() { if (!settled) resolve(null); },
+    });
+  });
 }
 
 // Local copy of the recovery-display modal — settings.js can't import from

@@ -92,7 +92,12 @@ const ARGON_PARAMS = {
 // escalating delay. Stored in localStorage so a page refresh doesn't reset it.
 // State is cleared on successful login.
 //
-// Thresholds: 5 → 30 s, 10 → 5 min, 15 → 30 min.
+// Thresholds: 5 → 15 min, 10 → 30 min, 15+ → 60 min. See _lockoutDurationMs.
+// (This comment previously read "5 → 30 s, 10 → 5 min, 15 → 30 min" — the
+// pre-hardening values. The code was corrected and the comment was not, leaving
+// a confident description that understated the control by a factor of 30. Same
+// failure mode as the piiKey export defect: the prose was trusted, the code was
+// not read. If you change the durations, change this line.)
 // localStorage key: qstore_lockout_<userId>
 
 const LOCKOUT_THRESHOLD = 5;
