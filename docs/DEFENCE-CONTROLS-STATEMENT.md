@@ -4,7 +4,7 @@
 **Applies to:** QStore IMS v2.3.0, Defence build (`build.js --defence`)
 **Prepared:** [DATE]
 **Prepared by:** [NAME, APPOINTMENT, UNIT]
-**Classification:** [TO BE DETERMINED BY DEFENCE — see §9]
+**Classification:** [TO BE DETERMINED BY DEFENCE — see §10]
 
 ---
 
@@ -96,7 +96,7 @@ obligations in that Act apply in full.
 
 > **Basis of these statements.** Every control below was verified by reading the
 > implementation on 17 July 2026, not by relying on prior documentation. This
-> distinction is not pedantry: the defect at §8 existed precisely because a
+> distinction is not pedantry: the defect at §9 existed precisely because a
 > documented description of the code was trusted and the code was not re-read.
 > During preparation of this document, one further instance was found — an
 > internal comment describing the account lockout policy stated durations 30
@@ -163,7 +163,7 @@ Every action is recorded in an append-only audit log. Entries are chained with
 so that retrospective alteration or deletion is detectable. Read access to cadet
 and staff records is itself audited.
 
-The integrity guarantee this provides is qualified — see §7.1 and §8.
+The integrity guarantee this provides is qualified — see §7.1 and §9.
 
 ### 5.5 Backups
 
@@ -181,7 +181,7 @@ option. Key derivation is PBKDF2-HMAC-SHA256 at 310,000 iterations, with a rando
 ### 5.6 Key management
 
 An operator-initiated key rotation re-encrypts all personal information under a
-newly generated key and re-signs the audit chain. See §8 for the circumstances in
+newly generated key and re-signs the audit chain. See §9 for the circumstances in
 which this was introduced and what it does and does not achieve.
 
 ---
@@ -274,17 +274,110 @@ escrow. **The key person risk is total.**
 
 ### 7.9 Commercial interest — declaration
 
-> **[TO BE COMPLETED — DO NOT OMIT.]** QStore is a commercially licensed product.
-> The author is associated with the Australian Army Cadets. This constitutes a
-> conflict of interest, which must be declared here in full and in the author's
-> own terms: the nature of the commercial interest, the intellectual property
-> position, whether any development used Defence time or resources, and the
-> proposed disposition (licence, transfer, or gift). **Declared at the outset this
-> is manageable; discovered later it is fatal to the proposal.**
+The author maintains QStore as a commercially licensed product outside ADF Cadets
+and is associated with the Australian Army Cadets. That is a conflict of interest
+and is declared here rather than left to be discovered.
+
+**No payment is sought from the Commonwealth for the Defence build.** It is
+offered free of charge for ADF Cadets youth programmes; no licence fee,
+subscription, or per-unit charge is sought now or in future. The proposed terms
+are at §8. Nothing in this document is a request for procurement.
+
+The residual interest, stated plainly so that it can be weighed rather than
+inferred: the author retains a commercial product line outside ADF Cadets youth
+programmes (§8.5), and adoption of the Defence build would raise the profile of
+that product line. That is a real interest, and it is the reason this declaration
+exists.
+
+> **[TO BE COMPLETED — DO NOT OMIT.]** The author must complete this in their own
+> terms, covering: their appointment and relationship to the Australian Army
+> Cadets; the nature and scale of the commercial product line; and the ownership
+> position at §8.7 — specifically whether any part of QStore was developed while
+> performing cadet duties, on Defence equipment, or using Defence information.
+> **Declared at the outset this is manageable; discovered later it is fatal to
+> the proposal, however sound the software.**
 
 ---
 
-## 8. Disclosure — security defect identified and remediated
+## 8. Licensing and intellectual property
+
+> **Statement of intent, not licence terms.** This section records what is
+> intended. It has not been settled by a lawyer and is **not** an offer capable
+> of acceptance. Binding terms must be drafted and reviewed before any grant is
+> made — a licence to the Commonwealth, from an author with the interest declared
+> at §7.9, touching information about minors, is not a document to settle
+> informally.
+
+### 8.1 Intent
+
+The Defence build is offered to the Commonwealth **free of charge** for use in
+ADF Cadets youth programmes. No licence fee, subscription, or per-unit charge is
+sought, now or later, for that use.
+
+### 8.2 Proposed grant
+
+A royalty-free, non-exclusive, perpetual licence to the Commonwealth to use,
+install, and modify the Defence build **for the purposes of ADF Cadets youth
+programmes**.
+
+### 8.3 Expressly permitted — including paid work
+
+The following are intended to be permitted, and the licence should say so
+explicitly:
+
+- Use across any number of ADF Cadets units.
+- Modification by or for the Commonwealth for its own use.
+- **Engagement of third parties, for payment, to provide services to the
+  Commonwealth in respect of this software** — including hosting, security
+  assessment and accreditation, integration, maintenance, and user support.
+
+The third point is deliberate and load-bearing. Any pathway to accreditation runs
+through paid contractors — an IRAP assessor, a hosting provider, a support
+function. A licence that could be read as prohibiting payment to those parties
+would make the software unadoptable, which serves nobody. **Being paid to
+accredit, host, or support this software for the Commonwealth is not the thing
+this licence restricts.**
+
+### 8.4 Not permitted
+
+- Sale, resale, or sublicensing of the software.
+- Redistribution outside ADF Cadets youth programmes.
+- Incorporation into a product or service offered for sale to any party.
+- Rebadging or distribution as a third party's own product.
+
+### 8.5 Reserved rights
+
+All rights not expressly granted are reserved by the author, including the
+right to license QStore commercially outside ADF Cadets youth programmes. The
+Defence build is a distinct, functionally narrower variant: cloud synchronisation
+is removed at build time and it contains no accounting module. It is not the
+commercial product.
+
+### 8.6 Source access and continuity
+
+Two matters that Defence will raise, addressed here rather than left implicit:
+
+- **Source access for assessment.** Security accreditation requires code review.
+  Source will be made available for assessment purposes. The terms on which it is
+  provided, and whether it extends beyond assessment, require decision.
+- **Continuity.** The software is maintained by one person (§7.8). Defence should
+  not adopt a capability that dies with its author's availability. Source code
+  escrow, or a fallback grant taking effect if maintenance ceases, should form
+  part of any agreement. **[TO BE DECIDED.]**
+
+### 8.7 Ownership
+
+> **[TO BE COMPLETED — settle before any offer is made.]** The author can only
+> license what the author owns. State the position on whether any part of QStore
+> was developed while performing Australian Army Cadets duties, using Defence
+> equipment, facilities, or information, or otherwise in circumstances that may
+> vest or encumber rights in the Commonwealth. **If ownership is not clear, the
+> grant at §8.2 is not the author's to make, and this must be resolved first
+> rather than discovered during assessment.**
+
+---
+
+## 9. Disclosure — security defect identified and remediated
 
 This is disclosed voluntarily and in full.
 
@@ -360,7 +453,7 @@ the audit log in these terms.
 
 ---
 
-## 9. Classification
+## 10. Classification
 
 No classification is asserted in this document.
 
@@ -379,7 +472,7 @@ minors is a matter for Defence to determine.
 
 ---
 
-## 10. References
+## 11. References
 
 All references were verified against publicly available primary sources on
 **17 July 2026**. Instruments that are Defence-intranet-only, and could not be
@@ -443,7 +536,7 @@ verified, are **not** cited.
 
 ---
 
-## 11. What is sought
+## 12. What is sought
 
 1. **Guidance on the correct pathway** for a unit-level Q-Store capability, given
    the gap at §3.
@@ -453,9 +546,13 @@ verified, are **not** cited.
    2019/00457762 to locally held Q-Store records (§7.6).
 4. **Identification of a sponsor**, should Defence consider the capability worth
    pursuing beyond the current units.
+5. **Indication of whether the licensing intent at §8 is workable**, before
+   binding terms are drafted. In particular whether the field-of-use limit and
+   the express permission for paid third-party services (§8.3) fit Defence's
+   requirements, and what is required on source access and continuity (§8.6).
 
-No decision is sought on the basis of this document alone, and no assurance is
-offered beyond what is stated in it.
+No payment is sought. No decision is sought on the basis of this document alone,
+and no assurance is offered beyond what is stated in it.
 
 ---
 
