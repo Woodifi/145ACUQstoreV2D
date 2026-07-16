@@ -46,6 +46,21 @@ const isWatch = process.argv.includes('--watch');
 const isDev   = process.argv.includes('--dev') || isWatch;
 const isDist  = process.argv.includes('--dist');  // distribution build — no GitHub Pages output
 
+// --defence builds the Defence/cadet variant: cloud sync is COMPILED OUT, not
+// merely disabled. src/cloud.js and src/sync.js are resolved to their stubs, so
+// @azure/msal-browser and the Microsoft Graph calls never enter the bundle.
+//
+// Why compile-out rather than the existing 'cloud.disabled' setting: a setting
+// is a runtime claim ("we turned it off"), which a reviewer has to take on
+// trust and an operator can flip back. Compiling it out makes "this build has
+// no cloud egress path" a property of the artefact, verifiable by grepping it —
+// which is exactly what test-defence-build.mjs does.
+//
+// Driver: Defence Youth Manual Pt 2 S4 Ch4 para 4.4.5(c) — ADF Cadets ICT
+// systems must be hosted in Defence-approved data centres or ASD-approved
+// cloud. A consumer M365 tenant is neither.
+const isDefence = process.argv.includes('--defence');
+
 // --recipient="Unit Name" embeds the unit name in the filename and dist log.
 const recipientArg = process.argv.find(a => a.startsWith('--recipient='));
 const RECIPIENT = recipientArg ? recipientArg.split('=').slice(1).join('=').trim() : null;
@@ -74,6 +89,30 @@ function _buildTimestamp() {
 const BUILD_ID = isDev ? 'dev' : _generateBuildId();
 const BUILD_TS = isDev ? 'dev' : _buildTimestamp();
 
+/**
+ * Redirect cloud.js / sync.js to their stubs in the Defence build.
+ *
+ * An esbuild `alias` won't do here: the same module is imported by different
+ * specifiers depending on the importer's depth ('./cloud.js' from sync.js,
+ * '../cloud.js' from ui/settings.js), and alias matches the specifier as
+ * written. onResolve matches the resolved shape instead, so every importer is
+ * covered regardless of relative depth.
+ *
+ * The filter requires a path separator before the name, so 'sync-keyring.js'
+ * and 'csv-import.js' are untouched.
+ */
+const defenceStubPlugin = {
+  name: 'defence-stub-cloud',
+  setup(build) {
+    build.onResolve({ filter: /\/(cloud|sync)\.js$/ }, (args) => {
+      // Don't rewrite the stubs' own resolution back onto themselves.
+      if (args.importer.includes('.stub.js')) return null;
+      const which = args.path.endsWith('/cloud.js') ? 'cloud' : 'sync';
+      return { path: join(__dirname, `src/${which}.stub.js`) };
+    });
+  },
+};
+
 const ESBUILD_OPTS = {
   entryPoints: [ENTRY],
   bundle: true,
@@ -85,11 +124,13 @@ const ESBUILD_OPTS = {
   legalComments: 'none',
   write: false,        // we want the bytes back, not a file on disk
   logLevel: 'warning', // suppress info chatter, keep warnings + errors
+  plugins: isDefence ? [defenceStubPlugin] : [],
   // Inject build-time constants into the bundle as string literals.
   // These survive minification and make every build uniquely identifiable.
   define: {
     __QSTORE_BUILD_ID__: JSON.stringify(BUILD_ID),
     __QSTORE_BUILD_TS__: JSON.stringify(BUILD_TS),
+    __QSTORE_DEFENCE__:  JSON.stringify(isDefence),
   },
 };
 

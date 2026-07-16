@@ -871,7 +871,22 @@ function _totpSectionHtml(user) {
 // the blob is self-decrypting. This section is what turns the envelope on.
 // Sync refuses to push until it is configured — see sync.js _push().
 
-function _syncCryptoSectionHtml(settings) {
+// True when this artefact was built with `node build.js --defence`, which
+// resolves cloud.js/sync.js to stubs so no cloud code is bundled at all.
+const IS_DEFENCE_BUILD =
+  (typeof __QSTORE_DEFENCE__ !== 'undefined') && __QSTORE_DEFENCE__;
+
+// Assigned via a constant ternary rather than guarded with an early return, so
+// esbuild can constant-fold __QSTORE_DEFENCE__ and DROP the unused branch
+// entirely. An `if (IS_DEFENCE_BUILD) return ''` at the top of a function
+// declaration leaves the whole body — including every cloud string — sitting in
+// the artefact where a reviewer greps it. Dead code still reads as cloud code.
+const _syncCryptoSectionHtml = (typeof __QSTORE_DEFENCE__ !== 'undefined' && __QSTORE_DEFENCE__)
+  // Defence build has no blob to seal, but rotation must stay reachable: a unit
+  // migrating off a pre-fix build has compromised keys in its local database
+  // whether or not this build can sync.
+  ? _defenceKeyRotationSectionHtml
+  : function _syncCryptoSectionHtmlImpl(settings) {
   // Nothing to configure if cloud sync is switched off entirely.
   if (settings['cloud.disabled'] === true) return '';
 
@@ -942,9 +957,48 @@ function _syncCryptoSectionHtml(settings) {
       </div>
     </section>
   `;
+};
+
+/**
+ * Defence build: no sync, so no passphrase and no envelope — but a unit that
+ * previously ran a pre-fix build still has keys in its local database that were
+ * published to OneDrive, so rotation must remain reachable.
+ */
+function _defenceKeyRotationSectionHtml() {
+  return `
+    <section class="settings__section" data-section="sync-crypto">
+      <header class="settings__section-header">
+        <h2 class="settings__section-title">Encryption keys</h2>
+        <p class="settings__section-hint">
+          This build has no cloud sync. Data stays in this browser's storage on
+          this device and is never written to third-party cloud storage.
+        </p>
+      </header>
+      <div class="settings__status-block settings__status-block--ok">
+        <span class="badge badge--success">No cloud egress</span>
+        Cloud sync is not present in this build &mdash; it is compiled out, not
+        switched off.
+      </div>
+      <div class="settings__status-block settings__status-block--warn" style="margin-top:12px">
+        <strong>Rotate if this unit ever synced with an older build.</strong>
+        Snapshots written by builds before this one carried the encryption keys
+        inside the file. If any such snapshot reached cloud storage, the keys in
+        this database must be replaced.
+      </div>
+      <div class="form__actions">
+        <button type="button" class="btn btn--danger"
+                data-action="rotate-keys">Rotate encryption keys…</button>
+      </div>
+    </section>
+  `;
 }
 
-function _cloudSectionHtml(settings, status) {
+// Same constant-ternary treatment: in the Defence build this whole body — Azure
+// client ID, folder, blob filename, sign-in controls — must not merely be
+// unreachable, it must be absent from the artefact.
+const _cloudSectionHtml = (typeof __QSTORE_DEFENCE__ !== 'undefined' && __QSTORE_DEFENCE__)
+  ? () => ''
+  : function _cloudSectionHtmlImpl(settings, status) {
   // Cloud sync requires a stable HTTP(S) origin for the OAuth redirect URI.
   // file:// origins can't be registered in Azure, so we disable the config
   // UI entirely and explain the situation rather than silently failing.
@@ -1083,7 +1137,7 @@ function _cloudSectionHtml(settings, status) {
       `}
     </section>
   `;
-}
+};
 
 function _cloudUnavailableFileProtocolHtml() {
   return `
@@ -1704,7 +1758,12 @@ async function _onSaveUnit(e) {
   }
 }
 
-async function _onSaveConfig(e) {
+// Cloud config form handler. The form never renders in the Defence build, but
+// an unreachable handler still ships its strings — including the blob filename
+// — into the artefact. Ternary so esbuild drops it.
+const _onSaveConfig = (typeof __QSTORE_DEFENCE__ !== 'undefined' && __QSTORE_DEFENCE__)
+  ? async function _onSaveConfigDefence(e) { e.preventDefault(); }
+  : async function _onSaveConfigStandard(e) {
   e.preventDefault();
   const form = e.currentTarget;
   const errEl = $('.form__error', form);
@@ -1743,7 +1802,7 @@ async function _onSaveConfig(e) {
   } catch (err) {
     errEl.textContent = err.message || 'Could not save settings.';
   }
-}
+};
 
 async function _onRootClick(e) {
   const action = e.target.closest('[data-action]')?.dataset.action;
