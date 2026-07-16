@@ -58,8 +58,9 @@ export function openCadetsCsvImport() {
     schemaHint: `
       <p><strong>Expected columns:</strong> <code>svcNo</code>,
       <code>surname</code> (required); <code>given</code>, <code>rank</code>,
-      <code>plt</code>, <code>email</code>, <code>active</code>,
-      <code>notes</code> (optional).</p>
+      <code>plt</code>, <code>active</code> (optional).</p>
+      <p class="csv__note">Cadet records hold no email address or notes field.
+      Those columns are ignored if present.</p>
       <p>Rank values are normalised — <code>Cdt</code>, <code>cdt</code>,
       <code>CDT</code> all become <code>CDT</code>. The active flag accepts
       true/false/yes/no/1/0.</p>

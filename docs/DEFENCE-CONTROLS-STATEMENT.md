@@ -72,8 +72,8 @@ than against a hypothetical approved alternative.
 | Data | Held | Encrypted at rest |
 |---|---|---|
 | Cadet surname, given name | Yes | Yes — AES-256-GCM, per field |
-| Cadet email address | Yes | Yes |
-| Cadet free-text notes | Yes | Yes |
+| Cadet email address | **No — removed** | n/a |
+| Cadet free-text notes | **No — removed** | n/a |
 | Service number | Yes | No — used as the record key |
 | Rank, company/platoon/section | Yes | No |
 | Loan records (borrower name, remarks) | Yes | Yes |
@@ -85,10 +85,29 @@ than against a hypothetical approved alternative.
 **The information relates predominantly to minors.** Australian Army Cadets are
 generally aged 12½–20.
 
+**Data minimisation.** Cadet email addresses and free-text notes have been
+removed from the schema, and an automatic migration deletes both from records
+created before the change — the fields are gone from the stored data, not merely
+hidden from the interface. The `notes` field was the primary concern: free text
+about a child attracts health and behavioural information, which is **sensitive
+information** under the *Privacy Act 1988* and attracts stricter handling, and
+none of it is required to record who holds an item of equipment. Staff records
+(adults) retain both fields.
+
 **This data is not de-identified.** A service number is a unique identifier that
-resolves to an individual through the system of record. Information keyed to it
-remains personal information under the *Privacy Act 1988* (Cth), and the
-obligations in that Act apply in full.
+resolves to an individual through the system of record. Identifiability is
+assessed relative to the entity holding the data, and the unit holds both this
+system and access to the system of record — so the individuals remain reasonably
+identifiable, the information remains personal information under the *Privacy Act
+1988* (Cth), and the obligations in that Act apply in full. **No claim of
+de-identification is made.**
+
+What minimisation does achieve is a material reduction in the harm a disclosure
+could cause. To a party without access to the system of record — which is any
+party outside the unit — a service number and an equipment list are not
+reasonably identifiable, and the residual data is of little use. That bears
+directly on the likelihood-of-serious-harm assessment at **s 26WG**. It is
+offered as risk reduction, not as a change in the data's legal status.
 
 ---
 

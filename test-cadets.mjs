@@ -43,10 +43,13 @@ await Storage.init({ dbName: 'qstore_test_cadets' });
 
 // -----------------------------------------------------------------------------
 console.log('[1] Storage.cadets CRUD round-trip');
+// No email/notes: cadet records no longer carry either (youth protection —
+// see _stripCadetContactFields in storage.js). Seeding them here would be
+// seeding fields the schema has dropped, and the init migration strips them
+// anyway. Staff records still have both.
 const cadet1 = {
   svcNo: '8512345', surname: 'SMITH', given: 'John',
   rank: 'CDT', plt: '1', personType: 'cadet', active: true,
-  email: 'j.smith@example.com', notes: '',
   createdAt: new Date().toISOString(),
 };
 await Storage.cadets.put(cadet1);

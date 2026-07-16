@@ -166,7 +166,13 @@ export async function decryptAll(records, fields) {
 // Field lists (exported constants — used in storage.js and tests)
 // ---------------------------------------------------------------------------
 
-export const PII_FIELDS_CADETS        = ['surname', 'given', 'email', 'notes'];
+// Cadet records hold no email address and no free-text notes. Both were removed
+// on youth-protection grounds: `notes` was free text about a child and in
+// practice attracts health and behavioural information — which is *sensitive
+// information* under the Privacy Act, a stricter category than ordinary personal
+// information, and none of it is needed to track who holds a rifle.
+// Staff (adults) retain both.
+export const PII_FIELDS_CADETS        = ['surname', 'given'];
 export const PII_FIELDS_STAFF         = ['surname', 'given', 'email', 'notes'];
 export const PII_FIELDS_LOANS         = ['borrowerName', 'remarks'];
 export const PII_FIELDS_EXPENSE_CLAIMS = ['claimantName', 'description', 'receiptRef', 'reviewNotes'];

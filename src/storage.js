@@ -231,6 +231,51 @@ async function _loadOrGenPiiKey() {
   // One-time migration: encrypt any cadet records that pre-date PII encryption
   // (i.e. records where PII fields are still stored as plain text).
   await _migratePlainTextCadets();
+  // One-time migration: strip email/notes from existing cadet records.
+  await _stripCadetContactFields();
+}
+
+/**
+ * Remove `email` and `notes` from every cadet record.
+ *
+ * Deleting the fields from the schema and the form stops NEW data being
+ * collected; it does nothing about the values already sitting in a unit's
+ * database. Without this, every cadet added before the change keeps their email
+ * address and notes indefinitely — encrypted, unreachable from the UI, and
+ * invisible. Dead PII you cannot see is worse than PII you can: it is still in
+ * every export and every backup, and nobody remembers it is there.
+ *
+ * `notes` is the field this is really about. It is free text about a child, and
+ * in practice free text about a child accumulates health and behavioural
+ * information — sensitive information under the Privacy Act, a stricter category
+ * than ordinary personal information, and never required to track equipment.
+ *
+ * Runs once per record: after the first pass the fields are absent and the
+ * `in` checks are false, so the loop finds nothing to do. Deliberately silent
+ * about the values it removes — logging them would defeat the point.
+ */
+async function _stripCadetContactFields() {
+  try {
+    const tx    = _db.transaction(STORES.CADETS, 'readwrite');
+    const store = tx.objectStore(STORES.CADETS);
+    const rows  = await _reqDone(store.getAll());
+    let   count = 0;
+    for (const row of rows) {
+      if ('email' in row || 'notes' in row) {
+        delete row.email;
+        delete row.notes;
+        store.put(row);
+        count++;
+      }
+    }
+    await _txDone(tx);
+    if (count > 0) {
+      console.info(`[storage] Removed email/notes from ${count} cadet record(s).`);
+    }
+  } catch (err) {
+    console.warn('[storage] Cadet contact-field strip error:', err);
+    // Non-fatal — retried on next init.
+  }
 }
 
 async function _migratePlainTextCadets() {
