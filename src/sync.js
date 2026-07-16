@@ -43,6 +43,8 @@
 
 import * as Storage from './storage.js';
 import { getProvider, handlePopupAuth } from './cloud.js';
+import { sealEnvelope, openWithBlobKey, isEnvelope } from './backup-crypto.js';
+import * as Keyring from './sync-keyring.js';
 
 // Re-export so shell.js can call Sync.handlePopupAuth() without importing cloud.js directly.
 export { handlePopupAuth };
@@ -121,7 +123,7 @@ export async function syncNow() {
  *
  * Callers (the settings page) MUST prompt the user before invoking this.
  */
-export async function loadFromCloud() {
+export async function loadFromCloud({ secret } = {}) {
   const provider = getProvider();
   if (!provider.isSignedIn()) {
     return { ok: false, error: new Error('Not signed in to OneDrive.') };
@@ -130,10 +132,38 @@ export async function loadFromCloud() {
   _lastError = null;
   _emitStatus();
   try {
-    const snapshot = await provider.read();
-    if (!snapshot) {
+    const raw = await provider.read();
+    if (!raw) {
       return { ok: true, imported: false };
     }
+
+    let snapshot;
+    let legacy = false;
+
+    if (isEnvelope(raw)) {
+      const blobKey = Keyring.getBlobKey();
+      if (blobKey) {
+        snapshot = await openWithBlobKey(raw, blobKey);
+      } else if (secret) {
+        // Second device, or this one after a keyring clear: recover the blob
+        // key from whichever slot the supplied secret opens, then cache it.
+        ({ payload: snapshot } = await Keyring.unlockFrom(raw, secret));
+      } else {
+        return {
+          ok: false,
+          needsSecret: true,
+          error: new Error('This cloud backup is encrypted. Enter the sync passphrase or a recovery code.'),
+        };
+      }
+    } else {
+      // Unsealed blob written by a pre-fix build. Accept it so units can
+      // recover their data, but mark it: this file carried piiKey and auditKey
+      // in the clear, so both keys must be treated as compromised and rotated,
+      // and the file purged from OneDrive including its version history.
+      legacy = true;
+      snapshot = raw;
+    }
+
     // Validate the snapshot before importing — we don't want to wipe local
     // data and discover the snapshot is malformed.
     if (typeof snapshot !== 'object' || !snapshot.schemaVersion) {
@@ -149,9 +179,11 @@ export async function loadFromCloud() {
     await Storage.audit.append({
       action: 'data_imported',
       user:   'cloud-sync',
-      desc:   `Loaded snapshot from cloud (${snapshot.exportedAt || 'unknown date'}).`,
+      desc:   `Loaded ${legacy ? 'UNENCRYPTED (pre-fix) ' : 'encrypted '}snapshot from cloud `
+            + `(${snapshot.exportedAt || 'unknown date'}).`
+            + (legacy ? ' Keys in this blob are compromised — rotate and purge the cloud file.' : ''),
     });
-    return { ok: true, imported: true };
+    return { ok: true, imported: true, legacy };
   } catch (err) {
     _lastError = err.message || String(err);
     return { ok: false, error: err };
@@ -225,6 +257,15 @@ async function _push() {
       if (!provider.isSignedIn()) {
         throw new Error('Not signed in to OneDrive.');
       }
+      // The snapshot contains META, and META contains piiKey and auditKey.
+      // It must never reach the provider unsealed — see backup-crypto.js.
+      const blobKey = Keyring.getBlobKey();
+      if (!blobKey) {
+        throw new Error(
+          'Cloud sync encryption is not set up. Configure a sync passphrase in '
+          + 'Settings before syncing.',
+        );
+      }
       const snapshot = await Storage.exportAll();
       // Annotate the snapshot with sync metadata so we can show it in the
       // settings UI of any device that downloads.
@@ -232,7 +273,7 @@ async function _push() {
         pushedAt: new Date().toISOString(),
         pushedBy: provider.getAccount()?.username || 'unknown',
       };
-      await provider.write(snapshot);
+      await provider.write(await sealEnvelope(snapshot, blobKey, Keyring.getSlots()));
     } catch (err) {
       _lastError = err.message || String(err);
       throw err;
