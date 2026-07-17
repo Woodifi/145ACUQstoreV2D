@@ -7,13 +7,35 @@
 // =============================================================================
 
 import { render, $ } from './util.js';
+import { generateUserManual, downloadUserManual } from '../manual-pdf.js';
+import { showToast } from './toast.js';
 
 let _root = null;
 
 export async function mount(rootEl) {
   _root = rootEl;
   _render();
-  return function unmount() { _root = null; };
+
+  // The manual generator has existed since it was written and has NEVER been
+  // imported — `git log -S manual-pdf -- src/` returns nothing. Its own header
+  // says "Called from the Help page via 'Download Manual PDF'". There was no
+  // such button, and the link offered instead pointed at a MANUAL.md that does
+  // not exist in this repository, in a repository that is private. So the
+  // manual was unreachable and the fallback was broken twice over.
+  const onClick = async (e) => {
+    if (!e.target.closest('[data-action="download-manual"]')) return;
+    try {
+      downloadUserManual(await generateUserManual());
+    } catch (err) {
+      showToast('Could not generate the manual: ' + (err.message || err), 'error');
+    }
+  };
+  _root.addEventListener('click', onClick);
+
+  return function unmount() {
+    _root?.removeEventListener('click', onClick);
+    _root = null;
+  };
 }
 
 // -----------------------------------------------------------------------------
@@ -552,10 +574,13 @@ function _render() {
       <header class="help__header">
         <h1 class="help__title">Help &amp; Quick Reference</h1>
         <p class="help__subtitle">
-          Click a section to expand it. For the full manual see
-          <a href="https://github.com/Woodifi/145ACUQstoreV2D/blob/master/MANUAL.md"
-             target="_blank" rel="noopener" class="help__manual-link">MANUAL.md on GitHub ↗</a>.
+          Click a section to expand it, or download the full manual as a PDF.
         </p>
+        <div class="form__actions" style="margin:8px 0">
+          <button type="button" class="btn btn--outline btn--sm" data-action="download-manual">
+            ⎙ Download full manual (PDF)
+          </button>
+        </div>
         <input type="search" class="help__search" placeholder="Search help…" aria-label="Search help">
       </header>
 
