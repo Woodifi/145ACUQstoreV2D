@@ -2410,6 +2410,21 @@ async function _performImport(file, btn) {
       showToast('Backup restored. The page will now reload.', 'success', 2000);
       location.reload();
     };
+
+    // An older backup files adults in the cadet list. Storage moves them to the
+    // staff establishment on import; say so, because the operator will otherwise
+    // count the cadet records themselves, get a different number, and have no
+    // way to tell whether the difference is a fix or a loss.
+    const movedHtml = legacyPersonData?.staffReclassified > 0
+      ? `<p class="modal__body">
+           <strong>${esc(String(legacyPersonData.staffReclassified))} adult record(s)</strong>
+           in the backup were filed as cadets by an older build and have been moved to the
+           <strong>staff establishment</strong>. They are not cadet data: they are not
+           counted above, they do not need extracting, and they will not be removed. Check
+           the Staff page after the reload.
+         </p>`
+      : '';
+
     if (legacyPersonData?.total > 0) {
       const bits = [];
       if (legacyPersonData.cadets)   bits.push(`${legacyPersonData.cadets} cadet record(s)`);
@@ -2434,6 +2449,7 @@ async function _performImport(file, btn) {
             These are Commonwealth records. Do not leave them here, and do not
             delete them before they are in CEA.
           </p>
+          ${movedHtml}
           <div class="form__actions">
             <button type="button" class="btn btn--primary" data-action="ack-legacy-import">
               Understood — reload
@@ -2446,6 +2462,14 @@ async function _performImport(file, btn) {
         },
       });
       return;   // reload happens on acknowledgement, not before it
+    }
+    // No cadet data, but adults may still have been moved — the modal above is
+    // the legacy-PII warning and must not open for a backup that carries none.
+    // A toast is proportionate here: nothing is required of the operator.
+    if (legacyPersonData?.staffReclassified > 0) {
+      showToast(
+        `${legacyPersonData.staffReclassified} adult record(s) moved from the cadet list `
+        + 'to the staff establishment.', 'success', 5000);
     }
     reloadNow();
   } catch (err) {
