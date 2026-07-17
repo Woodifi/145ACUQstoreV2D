@@ -84,7 +84,7 @@ So person-adjacent free text is **removed**, not discouraged:
 | Field | Disposition |
 |---|---|
 | loan `remarks` | ~~DONE~~ — curated vocabulary (4 surfaces) |
-| loan `lineNotes` | Per-line, still free text — see findings, step 8 |
+| loan `lineNotes` | ~~DONE~~ — removed entirely |
 | activity / location name | ~~DONE~~ — managed list (step 2) |
 | stocktake `countedBy` | PENDING — operator's name, an adult |
 | request `notes` | ~~DONE~~ — module removed (step 5) |
@@ -160,11 +160,23 @@ because it is about the item.
 `AUTH.getSession()?.name`, i.e. the operator. An adult. Same unanswered question
 as staff, users and the orders requestor. Left alone deliberately.
 
-**`lineNotes` remains free text.** Per-line notes on an issue ("size 10", "spare
-set") are genuinely per-line and a fixed vocabulary fits them badly. It is a
-smaller surface than `remarks` — it sits against an item line, not against the
-issue — but it is a surface. **Flagged, not fixed.** It needs a decision:
-constrain it, delete it, or accept it.
+**`lineNotes` — REMOVED** (follow-up to step 8). A free-text box against every
+issued item line. Smaller surface than `remarks`, same surface: a box next to an
+issued item collects "Smith's, size 10". A fixed vocabulary fits per-line notes
+badly, so it was deleted rather than constrained; equipment observations belong
+in the item's maintenance log, which is retained because it is about the item.
+
+New loans carry no `notes`. Legacy rows may, and they stay VISIBLE — labelled
+"Notes (legacy)" — until extraction and disposal. Hiding them would hide exactly
+what needs extracting.
+
+Removing it also surfaced a stale comment claiming to "intentionally preserve
+lineNotes across the toggle", describing a field that no longer existed. That is
+the same defect class as the piiKey docstring: prose asserting behaviour the code
+does not have.
+
+**Still free text, still pending the adults question:** `orders.js` "QM Notes",
+and `stocktakeCounts.countedBy`.
 
 ## Findings from step 7
 

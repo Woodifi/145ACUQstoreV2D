@@ -155,7 +155,11 @@ function _freshIssueState()  {
 // whichever grouping the loan carries.
 function _freshReturnState() { return { dest: '', refsChecked: new Set() }; }
 function _freshLine()        {
-  return { itemId: '', qty: 1, nonStock: false, nonStockDesc: '', nonStockNsn: '', lineNotes: '', existingLoan: false };
+  // No lineNotes. It was a free-text box against every item line — a smaller
+  // surface than `remarks` but the same one: a box next to an issued item
+  // collects "Smith's, size 10". Equipment observations belong in the item's
+  // maintenance log, which is retained because it is about the item.
+  return { itemId: '', qty: 1, nonStock: false, nonStockDesc: '', nonStockNsn: '', existingLoan: false };
 }
 
 function _firstAllowedTab() {
@@ -471,12 +475,6 @@ function _issueLineHtml(line, index, allItems) {
         ${optsNonstockLabel}
         ${optsExistingLoan}
         ${optsNsn}
-        <label class="form__field loan__line-notes-field">
-          <input type="text" data-line-field="lineNotes"
-                 placeholder="Notes (optional)"
-                 value="${esc(line.lineNotes || '')}"
-                 maxlength="200">
-        </label>
       </div>
     </div>
   `;
@@ -571,7 +569,6 @@ function _wireIssueTab(body, locations, allItems) {
         line.existingLoan = false;   // mutually exclusive
       }
       line.nonStockNsn = '';
-      // Intentionally preserve lineNotes across the toggle.
       _render();
     });
 
@@ -617,11 +614,6 @@ function _wireIssueTab(body, locations, allItems) {
         if (Number.isFinite(n) && n > 0) _issueState.lines[idx].qty = Math.floor(n);
       });
     }
-
-    // Notes field (both modes).
-    $('input[data-line-field="lineNotes"]', lineEl)?.addEventListener('input', (e) => {
-      _issueState.lines[idx].lineNotes = e.target.value;
-    });
 
     // Qty field (both modes).
     $('input[data-line-field="qty"]', lineEl)?.addEventListener('input', (e) => {
@@ -745,7 +737,7 @@ async function _submitIssue(body) {
       // Non-stock line — description required; NSN optional.
       const desc = ln.nonStockDesc.trim();
       if (!desc) { lineErrors.push(`Line ${num}: enter an item description.`); continue; }
-      resolvedLines.push({ nonStock: true, existingLoan: false, desc, nsn: ln.nonStockNsn.trim(), qty, lineNotes: ln.lineNotes || '' });
+      resolvedLines.push({ nonStock: true, existingLoan: false, desc, nsn: ln.nonStockNsn.trim(), qty });
     } else {
       // Standard inventory line (may be an existing-loan recording).
       if (!ln.itemId) { lineErrors.push(`Line ${num}: choose an item from the list.`); continue; }
@@ -753,7 +745,7 @@ async function _submitIssue(body) {
       if (!item) { lineErrors.push(`Line ${num}: item no longer exists.`); continue; }
       // existingLoan = true → item was issued before Q-Store; onLoan increments
       // but onHand is NOT decreased (stock was already out at implementation time).
-      resolvedLines.push({ nonStock: false, existingLoan: !!ln.existingLoan, item, qty, lineNotes: ln.lineNotes || '' });
+      resolvedLines.push({ nonStock: false, existingLoan: !!ln.existingLoan, item, qty });
     }
   }
 
@@ -806,7 +798,6 @@ async function _submitIssue(body) {
           existingLoan: false,
           condition:    'serviceable',
           remarks,
-          notes:        r.lineNotes,
           active:       true,
           issuedBy:     sessionUser,
         };
@@ -839,7 +830,6 @@ async function _submitIssue(body) {
           existingLoan: true,
           condition:    item.condition || 'serviceable',
           remarks,
-          notes:        r.lineNotes,
           active:       true,
           issuedBy:     sessionUser,
         };
@@ -874,7 +864,6 @@ async function _submitIssue(body) {
           existingLoan: false,
           condition:    item.condition || 'serviceable',
           remarks,
-          notes:        r.lineNotes,
           active:       true,
           issuedBy:     sessionUser,
         };
@@ -1705,7 +1694,11 @@ function _allRowHtml(loan, today, canReturn) {
           <div><dt>Issued</dt><dd>${esc(loan.issueDate || '—')}</dd></div>
           <div><dt>Purpose</dt><dd>${esc(loan.purpose || '—')}</dd></div>
           <div><dt>Due</dt><dd>${loan.longTermLoan ? 'Long-term' : esc(loan.dueDate || '—')}</dd></div>
-          ${loan.notes ? `<div><dt>Notes</dt><dd>${esc(loan.notes)}</dd></div>` : ''}
+          ${/* Legacy only. New loans carry no notes; rows written by an earlier
+                build may, and those stay visible until the data is extracted to
+                CEA and disposed of per HQ direction. Hiding them would hide
+                exactly what needs extracting. */''}
+          ${loan.notes ? `<div><dt>Notes (legacy)</dt><dd>${esc(loan.notes)}</dd></div>` : ''}
         </dl>
       </td>
     </tr>
