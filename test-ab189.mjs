@@ -54,8 +54,8 @@ const baseLoan = {
   itemName:     'Slouch hat',
   nsn:          '8470-66-001-0001',
   qty:          1,
-  borrowerSvc:  '8512345',
-  borrowerName: 'CDT JONES',
+  location:     'individual',
+  issueNo:      'ISS-2001',
   purpose:      'Initial Issue',
   issueDate:    '2026-05-06',
   dueDate:      '2026-12-31',
@@ -72,15 +72,15 @@ expect(typeof r1.bytes === 'number' && r1.bytes > 1000,
   `bytes is a sensible PDF size (got ${r1.bytes})`);
 expect(typeof r1.filename === 'string' && r1.filename.endsWith('.pdf'),
   `filename ends in .pdf (got ${r1.filename})`);
-eq(r1.filename, 'AB189_8512345_2026-05-06.pdf',
-  'filename pattern matches AB189_<svc>_<date>.pdf');
+eq(r1.filename, 'AB189_ISS-2001_2026-05-06.pdf',
+  'filename carries the issue ref, not a service number: AB189_<issue>_<date>.pdf');
 expect(r1.blob && typeof r1.blob.size === 'number',
   `result includes a Blob (size=${r1.blob?.size})`);
 eq(r1.blob.type, 'application/pdf', 'Blob type is application/pdf');
 eq(r1.blob.size, r1.bytes, 'Blob size matches reported bytes');
 
 // -----------------------------------------------------------------------------
-console.log('\n[2] Batch AB189 (3 loans, same borrower, mixed dates allowed)');
+console.log('\n[2] Batch AB189 (3 loans, same issue, mixed dates allowed)');
 const batch = [
   { ...baseLoan, ref: 'LN-1001', itemId: 'I-002', itemName: 'Webbing belt',  nsn: '8465-66-001-0002', qty: 1 },
   { ...baseLoan, ref: 'LN-1002', itemId: 'I-003', itemName: 'Bush hat',      nsn: '8470-66-001-0003', qty: 1 },
@@ -88,7 +88,7 @@ const batch = [
 ];
 const r2 = await Pdf.generateAB189(batch, { unit: sampleUnit, cadet: sampleCadet });
 expect(r2.bytes > 1000, `batch AB189 has sensible size (${r2.bytes} bytes)`);
-eq(r2.filename, 'AB189_8512345_2026-05-06.pdf', 'batch uses first loan svc+date for filename');
+eq(r2.filename, 'AB189_ISS-2001_2026-05-06.pdf', 'batch uses first loan issue+date for filename');
 
 // -----------------------------------------------------------------------------
 console.log('\n[3] AB189 allows mixed issueDates (unlike Issue Voucher)');
@@ -104,16 +104,16 @@ try {
 expect(!threw, 'mixed issueDates does NOT throw (unlike Issue Voucher)');
 
 // -----------------------------------------------------------------------------
-console.log('\n[4] Precondition: mismatched borrower throws');
+console.log('\n[4] Precondition: mismatched issue/destination throws');
 threw = false; let err = null;
 try {
   await Pdf.generateAB189([
     baseLoan,
-    { ...baseLoan, borrowerSvc: '9999999' },
+    { ...baseLoan, issueNo: 'ISS-9999' },  // different issue document
   ], { unit: sampleUnit });
 } catch (e) { threw = true; err = e; }
-expect(threw, 'mismatched borrower throws');
-expect(err && /borrower/i.test(err.message), `error mentions "borrower" (got: ${err?.message})`);
+expect(threw, 'mismatched issue/destination throws');
+expect(err && /issue|destination/i.test(err.message), `error mentions issue/destination (got: ${err?.message})`);
 
 // -----------------------------------------------------------------------------
 console.log('\n[5] Empty / null input throws');

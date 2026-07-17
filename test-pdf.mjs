@@ -5,7 +5,7 @@
 //   - The function produces a valid PDF byte stream (starts with %PDF-,
 //     ends with %%EOF, contains the expected content as text).
 //   - Single-loan voucher and batch voucher both work.
-//   - Batch precondition: loans with mismatched borrower or date are
+//   - Batch precondition: loans with mismatched issue/destination or date are
 //     rejected with a clear error.
 //   - Filename pattern is correct.
 //   - Long item names are truncated rather than overflowing.
@@ -56,8 +56,8 @@ const baseLoan = {
   itemName:     'Slouch hat',
   nsn:          '8470-66-001-0001',
   qty:          1,
-  borrowerSvc:  '8512345',
-  borrowerName: 'CDT SMITH',
+  location:     'individual',
+  issueNo:      'ISS-1001',
   purpose:      'Initial Issue',
   issueDate:    '2026-05-06',
   dueDate:      '2026-12-31',
@@ -74,8 +74,8 @@ expect(typeof r1.bytes === 'number' && r1.bytes > 1000,
   `bytes is a sensible PDF size (got ${r1.bytes})`);
 expect(typeof r1.filename === 'string' && r1.filename.endsWith('.pdf'),
   `filename ends in .pdf (got ${r1.filename})`);
-eq(r1.filename, 'IssueVoucher_8512345_2026-05-06.pdf',
-  'filename pattern matches IssueVoucher_<svc>_<date>.pdf');
+eq(r1.filename, 'IssueVoucher_ISS-1001_2026-05-06.pdf',
+  'filename carries the issue ref, not a service number: IssueVoucher_<issue>_<date>.pdf');
 expect(r1.blob && typeof r1.blob.size === 'number',
   `result includes a Blob (size=${r1.blob?.size})`);
 eq(r1.blob.type, 'application/pdf', 'Blob type is application/pdf');
@@ -95,7 +95,7 @@ expect(head.startsWith('%PDF-'),  `PDF starts with %PDF- magic (got "${head}")`)
 expect(tail.includes('%%EOF'),    `PDF ends with %%EOF (got "${tail}")`);
 
 // -----------------------------------------------------------------------------
-console.log('\n[3] Batch voucher (3 loans, same borrower + date)');
+console.log('\n[3] Batch voucher (3 loans, same issue + date)');
 const batch = [
   { ...baseLoan, ref: 'LN-1001', itemId: 'I-002', itemName: 'Webbing belt',  nsn: '8465-66-001-0002', qty: 1 },
   { ...baseLoan, ref: 'LN-1002', itemId: 'I-003', itemName: 'Bush hat',      nsn: '8470-66-001-0003', qty: 1 },
@@ -103,19 +103,19 @@ const batch = [
 ];
 const r3 = await Pdf.generateIssueVoucher(batch, { unit: sampleUnit });
 expect(r3.bytes > 1000, `batch PDF has sensible size (got ${r3.bytes})`);
-eq(r3.filename, 'IssueVoucher_8512345_2026-05-06.pdf', 'batch uses first loan ref/date for filename');
+eq(r3.filename, 'IssueVoucher_ISS-1001_2026-05-06.pdf', 'batch uses first loan issue/date for filename');
 
 // -----------------------------------------------------------------------------
-console.log('\n[4] Batch precondition: mismatched borrower throws');
+console.log('\n[4] Batch precondition: mismatched issue/destination throws');
 let threw = false; let err = null;
 try {
   await Pdf.generateIssueVoucher([
     baseLoan,
-    { ...baseLoan, borrowerSvc: '9999999' },  // different borrower
+    { ...baseLoan, issueNo: 'ISS-9999' },  // different issue document
   ], { unit: sampleUnit });
 } catch (e) { threw = true; err = e; }
-expect(threw, 'mismatched borrower throws');
-expect(err && /borrower/i.test(err.message), `error mentions "borrower" (got: ${err?.message})`);
+expect(threw, 'mismatched issue/destination throws');
+expect(err && /issue|destination/i.test(err.message), `error mentions issue/destination (got: ${err?.message})`);
 
 // -----------------------------------------------------------------------------
 console.log('\n[5] Batch precondition: mismatched issueDate throws');
@@ -173,38 +173,9 @@ expect(r9.bytes > 1000, `long-name voucher generates (${r9.bytes} bytes)`);
 // =============================================================================
 // REPORTS — nominal roll, stock-on-hand, outstanding loans
 // =============================================================================
-console.log('\n[10] Nominal roll: small list, single page');
-const cadetsSmall = [
-  { rank: 'CDT', surname: 'SMITH', given: 'John', svcNo: '8512345', plt: '1', active: true },
-  { rank: 'CDT', surname: 'JONES', given: 'Mary', svcNo: '8512346', plt: '2', active: true },
-];
-const roll1 = await Pdf.generateNominalRoll(cadetsSmall, { unit: sampleUnit });
-expect(roll1.bytes > 1000, `roll PDF generated (${roll1.bytes} bytes)`);
-expect(roll1.filename.startsWith('NominalRoll_'),
-  `filename starts with NominalRoll_ (got ${roll1.filename})`);
-eq(roll1.blob.type, 'application/pdf', 'roll Blob type is PDF');
-
-console.log('\n[11] Nominal roll: large list forces pagination');
-// 80 cadets pushes us onto multiple pages. We can't easily count pages
-// from a Blob in Node without a PDF parser, but we can confirm the
-// generator doesn't throw and produces a meaningfully-larger file.
-const cadetsBig = [];
-for (let i = 0; i < 80; i++) {
-  cadetsBig.push({
-    rank: 'CDT', surname: `SUR${i}`, given: `Given${i}`,
-    svcNo: `${85123000 + i}`, plt: '1', active: true,
-  });
-}
-const roll2 = await Pdf.generateNominalRoll(cadetsBig, { unit: sampleUnit });
-expect(roll2.bytes > roll1.bytes * 5,
-  `large roll is significantly larger than small (${roll2.bytes} > 5 * ${roll1.bytes})`);
-
-console.log('\n[12] Nominal roll: empty list still produces a valid PDF');
-// Edge: a unit with no cadets, or a filter that matches nothing. The PDF
-// should still be generated (with just a header) — caller can decide
-// whether to actually offer the print.
-const rollEmpty = await Pdf.generateNominalRoll([], { unit: sampleUnit });
-expect(rollEmpty.bytes > 1000, `empty roll still has a header (${rollEmpty.bytes} bytes)`);
+// [10]-[12] Nominal roll tests removed with the generator. A nominal roll is by
+// definition a list of cadets; this build has none. Deleted rather than skipped
+// — a skipped test for a deleted feature is a to-do nobody does.
 
 console.log('\n[13] Stock report: produces valid PDF with totals');
 const itemsSample = [
@@ -240,7 +211,7 @@ expect(loansR.filename.startsWith('OutstandingLoans_'),
 
 console.log('\n[16] All reports use sanitised unit slug in filename');
 const evilUnit = { unitName: 'Unit / With \\ Slashes', unitCode: '..\\evil' };
-const r = await Pdf.generateNominalRoll(cadetsSmall, { unit: evilUnit });
+const r = await Pdf.generateStockReport(itemsSample, { unit: evilUnit });
 expect(!r.filename.includes('/') && !r.filename.includes('\\') && !r.filename.includes('..'),
   `unit slug is sanitised (got ${r.filename})`);
 

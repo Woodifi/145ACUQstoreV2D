@@ -192,8 +192,13 @@ loans.js: `pdf.js` (17), `requests.js` (20), `ims-reports.js` (8),
 3. ~~**Cadets module**~~ — DONE. Page and `ui/cadets.js` deleted; demo seed no
    longer creates cadets; `Storage.cadets.put()` refuses all writes. The STORE
    and its rows remain — see "Removal is not disposal" below.
-4. **PDFs** — nominal roll removed; AB189 / voucher / checklist print with blank
-   identifier fields and the issue number.
+4. ~~**PDFs**~~ — DONE. `generateNominalRoll` and `generateCadetKitChecklist`
+   deleted (no callers once the Cadets page went). Voucher/AB189 batch on
+   issue+date instead of borrower+date, print recipient blocks BLANK with ruled
+   lines for hand completion, and carry the issue number. Filenames now use the
+   issue reference — a service number no longer appears in a filename, which
+   matters: filenames leak into file managers, mail attachments and screen
+   shares long before anyone opens the document.
 5. **Requests** — requestor fields removed.
 6. **CSV import** — cadet import removed.
 6a. **v1 import** — removed or rewritten. It currently writes person-carrying
