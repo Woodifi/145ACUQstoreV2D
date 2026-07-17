@@ -123,16 +123,43 @@ prerequisite to deleting it, and issue/loan history may be a record. Destroying 
 Commonwealth record on our own initiative is not a decision this codebase gets to
 make — see DYM S1 Ch2 para 67 and the *Archives Act 1983*.
 
+## Findings from step 2
+
+**The v1 import reintroduces PII, and the fail-closed guard caught it.**
+`test-v1-import.mjs` now fails with:
+
+> `Loan carries a person identifier (borrowerName/borrowerSvc). This build
+> records location + issueNo only.`
+
+That is the guard working. `migration.js` imports v1 loans complete with
+`borrowerName`/`borrowerSvc`, so a unit upgrading from v1 would have silently
+repopulated the database with cadet identifiers — into a build whose entire
+authority rests on not carrying them. Had `loans.put()` merely encrypted what it
+was given, nothing would have failed and nobody would have looked. **The v1
+import path must be removed or rewritten** (build order step 6a below).
+
+**`listForCadet` callers outside loans.js.** All five are in `ui/cadets.js`,
+which step 3 removes. No action needed beyond doing step 3.
+
+**Modules still carrying borrower fields** — all are later steps, none block
+loans.js: `pdf.js` (17), `requests.js` (20), `ims-reports.js` (8),
+`dashboard.js` (1), `inventory.js` (1).
+
 ## Build order
 
-1. **Schema + storage** — loans lose `borrowerName`/`borrowerSvc`, gain
-   `location` + `issueNo`. Index on `issueNo`.
-2. **Loans UI** — borrower picker → location/activity picker + issue number.
+1. ~~**Schema + storage**~~ — DONE. Loans lose `borrowerName`/`borrowerSvc`,
+   gain `location` + `issueNo`. Index on `issueNo`. `put()` fails closed.
+2. ~~**Loans UI**~~ — DONE. Destination select replaces the borrower picker;
+   returns and the all-loans view group by issue/destination; AB189 and voucher
+   print with recipient fields blank; the discharged flag and phantom-borrower
+   cleanup are gone (both required a person record to compare against).
 3. **Cadets module** — removed.
 4. **PDFs** — nominal roll removed; AB189 / voucher / checklist print with blank
    identifier fields and the issue number.
 5. **Requests** — requestor fields removed.
 6. **CSV import** — cadet import removed.
+6a. **v1 import** — removed or rewritten. It currently writes person-carrying
+    loans and is rejected by `loans.put()`. See findings above.
 7. **Login** — cadet role removed.
 8. **Free text** — per the table above.
 9. **Migration** — gated on §13.1.

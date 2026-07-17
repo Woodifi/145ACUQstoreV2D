@@ -1,28 +1,4 @@
 // =============================================================================
-// ⚠ WORK IN PROGRESS — THIS MODULE IS BROKEN AT RUNTIME. DO NOT SHIP.
-// =============================================================================
-// Mid-refactor for the identifier-free build (docs/IDENTIFIER-FREE-DESIGN.md,
-// step 2). The issue path has been converted from borrower → destination; the
-// render/wire functions, the return tab, and the all-loans tab have NOT.
-//
-// Known dangling references (each throws ReferenceError when reached):
-//   _borrowerPickerHtml   — deleted; still called from _renderIssueTab and
-//                           _renderReturnTab
-//   _issueState.svcNo     — replaced by .location / .issueNo
-//   _issueState.unitLoan  — removed; every issue is now what unitLoan was
-//   Storage.loans.listForCadet — removed; use listForIssue(issueNo)
-//
-// NOTE: `node build.js` SUCCEEDS on this file. esbuild resolves an unknown
-// local call to a global reference rather than an error, so a clean build is
-// not evidence that this module works. It does not. The failure only appears
-// when a user opens the Loans page.
-//
-// Remaining: ~127 borrower references across _renderIssueTab, _wireIssueTab,
-// _renderReturnTab, _wireReturnTab, _renderAllTab, _allRowHtml, _wireAllTab,
-// _quickReturnLoan, _bulkReturnLoans, and the voucher/AB189 helpers.
-// =============================================================================
-
-// =============================================================================
 // QStore IMS v2 — Loans page (Issue / Return / All loans)
 // =============================================================================
 // Single page with three internal tabs. The data model is one loan = one
@@ -125,7 +101,7 @@ let _root        = null;
 let _activeTab   = null;          // 'issue' | 'return' | 'all'
 let _allFilter   = 'active';      // 'active' | 'returned' | 'overdue' | 'all'
 let _allSearch   = '';
-let _allBorrower = '';            // svcNo of selected borrower, '' = show all
+let _allDest = '';                // selected destination (issueNo or location), '' = all
 let _allSelected = new Set();     // refs of loans selected for bulk return
 let _defaultDueDays = 7;          // loaded from settings on each issue-tab render
 
@@ -153,7 +129,7 @@ export async function mount(rootEl) {
   _root        = rootEl;
   _allFilter   = 'active';
   _allSearch   = '';
-  _allBorrower = '';
+  _allDest = '';
   _allSelected.clear();
   // Preserve _issueState if the user navigated away mid-issue — only reset
   // if there is no in-progress state (null = first mount, or explicitly reset).
@@ -174,7 +150,10 @@ export async function mount(rootEl) {
 function _freshIssueState()  {
   return { location: '', issueNo: '', lines: [_freshLine()], longTermLoan: false, purpose: '' };
 }
-function _freshReturnState() { return { svcNo: '', refsChecked: new Set() }; }
+// Returns are selected by destination, not by person. `dest` is the issue
+// number for an individual issue, or the location for an activity issue —
+// whichever grouping the loan carries.
+function _freshReturnState() { return { dest: '', refsChecked: new Set() }; }
 function _freshLine()        {
   return { itemId: '', qty: 1, nonStock: false, nonStockDesc: '', nonStockNsn: '', lineNotes: '', existingLoan: false };
 }
@@ -245,18 +224,15 @@ async function _renderIssueTab(body) {
     ? parseInt(dueDaysSetting, 10)
     : 7;
 
-  const [cadets, staffList] = await Promise.all([Storage.cadets.list(), Storage.staff.list()]);
-  const items  = await Storage.items.list();
-  const activeCadets = [...cadets.filter((c) => c.active !== false), ...staffList.filter((s) => s.active !== false)];
+  const items     = await Storage.items.list();
+  const locations = await Locations.list(Storage);
 
-  // Resolve the currently-selected borrower (if any) so we can show their
-  // name and any existing active loans alongside the form.
-  const allPersonnel = [...cadets, ...staffList];
-  const borrower = _issueState.svcNo
-    ? allPersonnel.find((c) => c.svcNo === _issueState.svcNo) || null
-    : null;
-  const borrowerActiveLoans = borrower
-    ? (await Storage.loans.listForCadet(borrower.svcNo)).filter((l) => l.active === true)
+  // No personnel are loaded, because none are stored. The old form showed the
+  // selected borrower's existing active loans alongside the picker; there is no
+  // borrower to look up. The equivalent — what else is out on this issue
+  // document — is available on the All tab by issue number.
+  const issueActiveLoans = _issueState.issueNo
+    ? (await Storage.loans.listForIssue(_issueState.issueNo)).filter((l) => l.active === true)
     : [];
 
   // All items with computed availability (avail = onHand - onLoan).
@@ -271,22 +247,8 @@ async function _renderIssueTab(body) {
     <div class="loan__issue">
       <div class="loan__issue-form">
 
-        <h3 class="loan__heading">1. Borrower</h3>
-        <label class="loan__unit-loan-toggle">
-          <input type="checkbox" data-issue-field="unitLoan"
-                 ${_issueState.unitLoan ? 'checked' : ''}>
-          <span>Unit / Activity loan</span>
-          <span class="form__hint">Tick for hired items or equipment assigned to an activity rather than an individual.</span>
-        </label>
-        ${_issueState.unitLoan
-          ? `<label class="form__field">
-               <span class="form__label">Activity / description *</span>
-               <input type="text" name="activityName" data-issue-field="activityName"
-                      maxlength="120" placeholder="e.g. Annual Camp 2026 — Abseiling gear"
-                      value="${esc(_issueState.activityName)}">
-             </label>`
-          : _borrowerPickerHtml('issue', _issueState.svcNo, activeCadets, borrower)
-        }
+        <h3 class="loan__heading">1. Destination</h3>
+        ${_destinationPickerHtml('issue', _issueState.location, locations, _issueState.issueNo)}
 
         <h3 class="loan__heading">2. Items
           <button type="button" class="btn btn--ghost btn--sm loan__load-kit"
@@ -347,29 +309,32 @@ async function _renderIssueTab(body) {
         </div>
       </div>
 
-      ${borrower ? `
+      ${_issueState.issueNo ? `
         <aside class="loan__sidebar">
-          <h4 class="loan__sidebar-title">${esc(borrower.rank)} ${esc(borrower.surname)}</h4>
-          <p class="loan__sidebar-meta">Service No. ${esc(borrower.svcNo)} · Plt ${esc(borrower.plt || '—')}</p>
-          ${borrowerActiveLoans.length > 0 ? `
-            <h5 class="loan__sidebar-subhead">Currently holding</h5>
+          <h4 class="loan__sidebar-title">Issue ${esc(_issueState.issueNo)}</h4>
+          <p class="loan__sidebar-meta">
+            Write this number on the issue document. The document records the
+            recipient and is filed in their CEA documents.
+          </p>
+          ${issueActiveLoans.length > 0 ? `
+            <h5 class="loan__sidebar-subhead">Already out on this issue</h5>
             <ul class="loan__sidebar-list">
-              ${borrowerActiveLoans.map((l) => `
+              ${issueActiveLoans.map((l) => `
                 <li>
                   <span class="loan__sidebar-ref">${esc(l.ref)}</span>
                   ${esc(l.itemName)} × ${l.qty}
-                  <span class="loan__sidebar-due">due ${esc(l.dueDate)}</span>
+                  <span class="loan__sidebar-due">due ${esc(l.dueDate || '—')}</span>
                 </li>`).join('')}
             </ul>
           ` : `
-            <p class="loan__sidebar-empty">No active loans.</p>
+            <p class="loan__sidebar-empty">Nothing issued against this number yet.</p>
           `}
         </aside>
       ` : ''}
     </div>
   `;
 
-  _wireIssueTab(body, activeCadets, allItemsWithAvail);
+  _wireIssueTab(body, locations, allItemsWithAvail);
 }
 
 function _issueLinesHtml(lines, availableItems) {
@@ -507,15 +472,7 @@ function _issueLineHtml(line, index, allItems) {
   `;
 }
 
-function _wireIssueTab(body, activeCadets, allItems) {
-  // Unit-loan toggle — swaps cadet picker for activity text field.
-  const unitLoanCb = $('input[data-issue-field="unitLoan"]', body);
-  unitLoanCb?.addEventListener('change', () => {
-    _issueState.unitLoan = unitLoanCb.checked;
-    _issueState.svcNo = '';
-    _render();
-  });
-
+function _wireIssueTab(body, locations, allItems) {
   // Long-term loan toggle — disables due-date field (blocked when Initial Issue selected).
   const ltlCb = $('input[data-issue-field="longTermLoan"]', body);
   ltlCb?.addEventListener('change', () => {
@@ -543,27 +500,27 @@ function _wireIssueTab(body, activeCadets, allItems) {
     }
   });
 
-  // Borrower picker (cadet mode).
-  const borrowerInput  = $('input[data-borrower-search="issue"]', body);
-  const borrowerHidden = $('input[data-borrower-id="issue"]', body);
-  const _onBorrowerChange = () => {
-    const val   = borrowerInput.value;
-    const match = activeCadets.find((c) =>
-      `${c.rank} ${c.surname} (${c.svcNo})` === val);
-    borrowerHidden.value = match ? match.svcNo : '';
-    if (match && match.svcNo !== _issueState.svcNo) {
-      _issueState.svcNo = match.svcNo;
-      _render();
+  // Destination select. A change to INDIVIDUAL allocates the issue-document
+  // number here rather than at submit, so the QM can write it onto the paper
+  // before handing anything over. Allocating early can burn a number if the
+  // form is abandoned — that is deliberate: a gap in the sequence is harmless,
+  // whereas an issue handed over without its number on it is a broken link to
+  // CEA, and the number is the ONLY link.
+  const destSelect = $('select[data-destination="issue"]', body);
+  destSelect?.addEventListener('change', async () => {
+    const next = destSelect.value;
+    if (next === _issueState.location) return;
+    _issueState.location = next;
+    if (Locations.isIndividual(next)) {
+      if (!_issueState.issueNo) {
+        _issueState.issueNo = await Locations.nextIssueNo(Storage);
+      }
+    } else {
+      _issueState.issueNo = '';
     }
-  };
-  borrowerInput?.addEventListener('input',  _onBorrowerChange);
-  borrowerInput?.addEventListener('change', _onBorrowerChange);
-
-  // Activity name input (unit-loan mode) — keep state in sync on blur.
-  const activityInput = $('input[data-issue-field="activityName"]', body);
-  activityInput?.addEventListener('input', () => {
-    _issueState.activityName = activityInput.value;
+    _render();
   });
+
 
   // Per-line wiring.
   $$('.loan__line', body).forEach((lineEl) => {
@@ -735,6 +692,12 @@ async function _submitIssue(body) {
   const issueNo = Locations.isIndividual(location)
     ? (_issueState.issueNo || await Locations.nextIssueNo(Storage))
     : '';
+  // How the destination reads in the audit log and on screen. For an individual
+  // issue this is the document number, never a person — the audit trail must not
+  // become the place a name gets recorded after we removed it everywhere else.
+  const destLabel = Locations.isIndividual(location)
+    ? `issue ${issueNo}`
+    : Locations.label(location);
   if (Locations.isIndividual(location) && !issueNo) {
     errEl.textContent = 'Could not allocate an issue document number.';
     return;
@@ -823,7 +786,7 @@ async function _submitIssue(body) {
         await Storage.audit.append({
           action: 'issue',
           user:   sessionUser,
-          desc:   `${ref}: [non-stock] ${r.desc} × ${r.qty} issued to ${borrowerName} for ${purpose}`,
+          desc:   `${ref}: [non-stock] ${r.desc} × ${r.qty} issued to ${destLabel} for ${purpose}`,
         });
         created.push(loan);
       } else if (r.existingLoan) {
@@ -860,7 +823,7 @@ async function _submitIssue(body) {
         await Storage.audit.append({
           action: 'issue',
           user:   sessionUser,
-          desc:   `${ref}: [existing issue] ${item.name} × ${qty} recorded for ${borrowerName} — no stock deduction`,
+          desc:   `${ref}: [existing issue] ${item.name} × ${qty} recorded against ${destLabel} — no stock deduction`,
         });
         created.push(loan);
       } else {
@@ -904,7 +867,7 @@ async function _submitIssue(body) {
         await Storage.audit.append({
           action: 'issue',
           user:   sessionUser,
-          desc:   `${ref}: ${item.name} × ${qty} issued to ${borrowerName} for ${purpose}`,
+          desc:   `${ref}: ${item.name} × ${qty} issued to ${destLabel} for ${purpose}`,
         });
         created.push(loan);
       }
@@ -927,7 +890,7 @@ async function _submitIssue(body) {
     size:      'sm',
     bodyHtml: `
       <p class="modal__body">
-        Issued to <strong>${esc(borrowerName)}</strong> for ${esc(purpose)}${longTermLoan ? ' — long-term loan' : `, due ${esc(dueDate)}`}.
+        Issued to <strong>${esc(destLabel)}</strong> for ${esc(purpose)}${longTermLoan ? ' — long-term loan' : `, due ${esc(dueDate)}`}.
       </p>
       <ul class="loan__confirm-list">
         ${created.map((l) =>
@@ -936,7 +899,7 @@ async function _submitIssue(body) {
       </ul>
       <div class="form__actions">
         <button type="button" class="btn btn--ghost" data-action="print-batch-voucher"
-                title="Issue Voucher — internal record of items issued to this borrower. Print and file with the loan.">
+                title="Issue Voucher — print, complete the recipient details by hand, and upload to their CEA documents.">
           ⎙ Issue Voucher
         </button>
         <button type="button" class="btn btn--ghost" data-action="print-batch-ab189"
@@ -988,51 +951,51 @@ async function _submitIssue(body) {
 async function _renderReturnTab(body) {
   AUTH.requirePermission('return');
 
-  const [cadets, staffList] = await Promise.all([Storage.cadets.list(), Storage.staff.list()]);
-  const allPersonnel = [...cadets, ...staffList];
-
-  // Borrowers shown in the picker = cadets/staff with at least one active loan.
-  // Walking listForCadet for every person would be O(N) queries; faster
-  // to fetch all loans once and group.
+  // No personnel are loaded — none are stored. Returns are grouped by the thing
+  // the loan actually carries: the issue-document number for an individual
+  // issue, or the destination for an activity issue.
   const allLoans    = await Storage.loans.list();
   const activeLoans = allLoans.filter((l) => l.active === true);
-  const svcsWithLoans = new Set(activeLoans.map((l) => l.borrowerSvc));
 
-  // Eligible borrowers: cadets/staff with at least one active loan.
-  const eligibleCadets = allPersonnel.filter((c) => svcsWithLoans.has(c.svcNo));
-
-  // Virtual "borrower" entry for unit/activity loans (borrowerSvc = UNIT-LOAN).
-  const hasUnitLoans = activeLoans.some((l) => l.borrowerSvc === 'UNIT-LOAN');
-  const allEligible  = hasUnitLoans
-    ? [...eligibleCadets, { svcNo: 'UNIT-LOAN', rank: '', surname: 'Unit / Activity Loans', plt: '' }]
-    : eligibleCadets;
+  const destOf = (l) => l.issueNo || l.location || '';
+  const destsWithLoans = new Set(activeLoans.map(destOf).filter(Boolean));
 
   // Clear stale selection.
-  if (_returnState.svcNo && !svcsWithLoans.has(_returnState.svcNo)) {
-    _returnState.svcNo = '';
+  if (_returnState.dest && !destsWithLoans.has(_returnState.dest)) {
+    _returnState.dest = '';
     _returnState.refsChecked.clear();
   }
 
-  const isUnitLoanView = _returnState.svcNo === 'UNIT-LOAN';
-  const borrower = (!isUnitLoanView && _returnState.svcNo)
-    ? allPersonnel.find((c) => c.svcNo === _returnState.svcNo) || null
-    : null;
-  const borrowerLoans = _returnState.svcNo
-    ? activeLoans.filter((l) => l.borrowerSvc === _returnState.svcNo)
+  const destLoans = _returnState.dest
+    ? activeLoans.filter((l) => destOf(l) === _returnState.dest)
     : [];
+
+  const destOptions = [...destsWithLoans].sort();
 
   body.innerHTML = `
     <div class="loan__return">
-      <h3 class="loan__heading">1. Borrower</h3>
-      ${_borrowerPickerHtml('return', _returnState.svcNo, allEligible, borrower || (isUnitLoanView ? { svcNo: 'UNIT-LOAN', rank: '', surname: 'Unit / Activity Loans' } : null))}
+      <h3 class="loan__heading">1. Issue or destination</h3>
+      <label class="form__field">
+        <span class="form__label">Returning from</span>
+        <select data-return-dest required>
+          <option value="">Select…</option>
+          ${destOptions.map((d) =>
+            `<option value="${esc(d)}"${d === _returnState.dest ? ' selected' : ''}>` +
+            `${esc(Locations.label(d))}</option>`).join('')}
+        </select>
+        <span class="form__hint">
+          Issues to individuals are listed by their issue-document number. Check
+          the document to confirm the person returning matches.
+        </span>
+      </label>
 
-      ${(borrower || isUnitLoanView) ? `
+      ${_returnState.dest ? `
         <h3 class="loan__heading">2. Items to return</h3>
-        ${borrowerLoans.length === 0
-          ? `<p class="loan__empty">No active loans for ${isUnitLoanView ? 'unit / activity loans' : 'this borrower'}.</p>`
+        ${destLoans.length === 0
+          ? `<p class="loan__empty">No active loans against this issue or destination.</p>`
           : `
             <div class="loan__return-list">
-              ${borrowerLoans.map((l) => _returnLoanRowHtml(l)).join('')}
+              ${destLoans.map((l) => _returnLoanRowHtml(l)).join('')}
               <div class="loan__return-actions">
                 <button type="button" class="btn btn--ghost btn--sm"
                         data-action="return-select-all">Select all</button>
@@ -1073,7 +1036,7 @@ async function _renderReturnTab(body) {
     </div>
   `;
 
-  _wireReturnTab(body, allEligible, borrowerLoans);
+  _wireReturnTab(body, destLoans);
 }
 
 function _returnLoanRowHtml(loan) {
@@ -1082,7 +1045,8 @@ function _returnLoanRowHtml(loan) {
   const badges  = [
     loan.nonStock     ? `<span class="loan__badge loan__badge--nonstock">Non-stock</span>` : '',
     loan.longTermLoan ? `<span class="loan__badge loan__badge--longterm">Long-term</span>` : '',
-    loan.unitLoan     ? `<span class="loan__badge loan__badge--unitloan">Unit loan</span>` : '',
+    (loan.location && !Locations.isIndividual(loan.location))
+      ? `<span class="loan__badge loan__badge--unitloan">${esc(Locations.label(loan.location))}</span>` : '',
     loan.existingLoan ? `<span class="loan__badge loan__badge--existing" title="Recorded as existing issue — stock not deducted at issue time">Existing</span>` : '',
   ].join('');
   return `
@@ -1102,19 +1066,14 @@ function _returnLoanRowHtml(loan) {
   `;
 }
 
-function _wireReturnTab(body, eligibleCadets, borrowerLoans) {
-  const borrowerInput  = $('input[data-borrower-search="return"]', body);
-  const borrowerHidden = $('input[data-borrower-id="return"]', body);
-  borrowerInput?.addEventListener('input', () => {
-    const val = borrowerInput.value;
-    const match = eligibleCadets.find((c) =>
-      `${c.rank} ${c.surname} (${c.svcNo})` === val);
-    borrowerHidden.value = match ? match.svcNo : '';
-    if (match && match.svcNo !== _returnState.svcNo) {
-      _returnState.svcNo = match.svcNo;
-      _returnState.refsChecked.clear();
-      _render();
-    }
+function _wireReturnTab(body, destLoans) {
+  const destSelect = $('select[data-return-dest]', body);
+  destSelect?.addEventListener('change', () => {
+    const next = destSelect.value;
+    if (next === _returnState.dest) return;
+    _returnState.dest = next;
+    _returnState.refsChecked.clear();
+    _render();
   });
 
   // Loan checkbox toggles.
@@ -1133,7 +1092,7 @@ function _wireReturnTab(body, eligibleCadets, borrowerLoans) {
     const action = e.target.closest('[data-action]')?.dataset.action;
     if (!action) return;
     if (action === 'return-select-all') {
-      borrowerLoans.forEach((l) => _returnState.refsChecked.add(l.ref));
+      destLoans.forEach((l) => _returnState.refsChecked.add(l.ref));
       await _render();
     } else if (action === 'return-select-none') {
       _returnState.refsChecked.clear();
@@ -1259,7 +1218,7 @@ async function _submitReturn(body) {
       await Storage.audit.append({
         action: 'return',
         user:   sessionUser,
-        desc:   `${ref}: ${loan.itemName} × ${loan.qty} returned by ${loan.borrowerName} — ${condition}${loan.nonStock ? ' [non-stock]' : ''}`,
+        desc:   `${ref}: ${loan.itemName} × ${loan.qty} returned from ${esc(Locations.label(loan.issueNo || loan.location || ''))} — ${condition}${loan.nonStock ? ' [non-stock]' : ''}`,
       });
       returned++;
     } catch (err) {
@@ -1447,68 +1406,38 @@ async function _renderAllTab(body) {
   const cadetMode = AUTH.isCadet();
   const ownSvcNo  = session?.svcNo || null;
 
-  let [all, cadets, staffList] = await Promise.all([
-    Storage.loans.list(),
-    Storage.cadets.list(),
-    Storage.staff.list(),
-  ]);
+  let all = await Storage.loans.list();
 
   if (cadetMode) {
-    // Restrict loan data to the logged-in cadet's loans only.
-    // A cadet with no svcNo linked sees nothing.
-    all      = ownSvcNo ? all.filter(l => l.borrowerSvc === ownSvcNo) : [];
-    // Restrict personnel data — no other people's records exposed.
-    cadets   = ownSvcNo ? cadets.filter(c => c.svcNo === ownSvcNo) : [];
-    staffList = [];
+    // A cadet sees nothing, and that is correct rather than a regression.
+    // Loans no longer carry who holds them, so the tool cannot determine which
+    // loans are "theirs" — that link exists only on the issue document in CEA.
+    // Showing an unfiltered list would expose the unit's whole loan book to a
+    // cadet account; showing a filtered one is impossible. Empty is the only
+    // honest answer. The cadet role itself is removed in a later step.
+    all = [];
   }
 
-  const allPersonnelHist = [...cadets, ...staffList];
   const today = _todayLocalIsoDate();
 
-  // Build a sorted list of borrowers who have at least one loan record,
-  // for the person-picker datalist. Use denormalised borrowerName from the
-  // loan records so it matches even if the cadet record was later removed.
-  const borrowerMap = new Map();
-  all.forEach((l) => {
-    if (l.borrowerSvc && !borrowerMap.has(l.borrowerSvc)) {
-      borrowerMap.set(l.borrowerSvc, l.borrowerName || l.borrowerSvc);
-    }
-  });
-  // Enrich with live personnel records where possible (rank may have changed).
-  const cadetSvcSet = new Set(allPersonnelHist.map((c) => c.svcNo));
-  allPersonnelHist.forEach((c) => {
-    if (borrowerMap.has(c.svcNo)) {
-      borrowerMap.set(c.svcNo, `${c.rank || ''} ${c.surname || ''} ${c.firstName ? c.firstName.charAt(0) + '.' : ''}`.trim());
-    }
-  });
+  // Destinations that appear on at least one loan, for the filter. Grouped by
+  // issue number where the items went to a person, by location otherwise.
+  // No personnel are loaded, because none are stored: there is no borrower map
+  // to build, no discharged list to flag, and no phantom borrowers to detect —
+  // all three concepts required a person record to compare against.
+  const destOfLoan = (l) => l.issueNo || l.location || '';
+  const destOptions = [...new Set(all.map(destOfLoan).filter(Boolean))]
+    .sort()
+    .map((d) => ({ dest: d, label: Locations.label(d) }));
 
-  // Discharged / inactive personnel — still holding active loans. We flag those
-  // rows in the All Loans view so the QM can see what needs chasing.
-  const dischargedSvcs = new Set(
-    allPersonnelHist.filter((c) => c.active === false).map((c) => c.svcNo),
-  );
+  const selectedDestLabel = _allDest ? Locations.label(_allDest) : '';
 
-  // Detect phantom borrowers — in loan records but absent from the cadet list
-  // and not a UNIT-LOAN entry. These are typically v1 sample-data remnants.
-  const phantomBorrowers = [...borrowerMap.entries()]
-    .filter(([svc]) => svc !== 'UNIT-LOAN' && !cadetSvcSet.has(svc))
-    .map(([svc, name]) => ({ svc, name }));
-
-  const borrowerOptions = [...borrowerMap.entries()]
-    .sort((a, b) => a[1].localeCompare(b[1]))
-    .map(([svc, name]) => ({ svc, name }));
-
-  // Resolved selected borrower name (for the chip label).
-  const selectedBorrowerName = _allBorrower
-    ? (borrowerMap.get(_allBorrower) || _allBorrower)
-    : '';
-
-  // Apply borrower → status filter → text search (most restrictive first).
+  // Apply destination → status filter → text search (most restrictive first).
   const _isOverdue = (l) => !l.longTermLoan && l.active === true && l.dueDate && l.dueDate < today;
 
   let filtered = all;
-  if (_allBorrower) {
-    filtered = filtered.filter((l) => l.borrowerSvc === _allBorrower);
+  if (_allDest) {
+    filtered = filtered.filter((l) => destOfLoan(l) === _allDest);
   }
   if (_allFilter === 'active') {
     filtered = filtered.filter((l) => l.active === true);
@@ -1520,7 +1449,7 @@ async function _renderAllTab(body) {
   if (_allSearch) {
     const q = _allSearch.toLowerCase();
     filtered = filtered.filter((l) =>
-      [l.ref, l.itemName, l.nsn, l.borrowerName, l.borrowerSvc, l.purpose, l.remarks]
+      [l.ref, l.itemName, l.nsn, l.location, l.issueNo, l.purpose, l.remarks]
         .join(' ').toLowerCase().includes(q));
   }
   // Sort: issueDate desc, tie-break ref desc (keeps batches together).
@@ -1531,17 +1460,15 @@ async function _renderAllTab(body) {
 
   const canReturn = AUTH.can('return');
 
-  // Pill counts respect the borrower filter so the numbers are meaningful
-  // in person-view (e.g. "3 active for this person").
-  const scope = _allBorrower ? all.filter((l) => l.borrowerSvc === _allBorrower) : all;
+  // Pill counts respect the destination filter so the numbers stay meaningful
+  // when scoped (e.g. "3 active on this issue").
+  const scope = _allDest ? all.filter((l) => destOfLoan(l) === _allDest) : all;
   const filterCounts = {
     all:      scope.length,
     active:   scope.filter((l) => l.active === true).length,
     returned: scope.filter((l) => l.active === false).length,
     overdue:  scope.filter(_isOverdue).length,
   };
-
-  const datalistId = 'loan-all-borrower-list';
 
   body.innerHTML = `
     <div class="loan__all">
@@ -1551,47 +1478,27 @@ async function _renderAllTab(body) {
           ${!cadetMode ? `
           <div class="loan__borrower-row">
             <div class="loan__borrower-pick">
-              <input type="search"
-                     class="loan__borrower-search"
-                     list="${datalistId}"
-                     placeholder="Filter by person…"
-                     aria-label="Filter loans by borrower"
-                     value="${esc(selectedBorrowerName)}"
-                     autocomplete="off">
-              <datalist id="${datalistId}">
-                ${borrowerOptions.map((b) =>
-                  `<option value="${esc(b.name)}" data-svc="${esc(b.svc)}"></option>`
-                ).join('')}
-              </datalist>
-              ${_allBorrower ? `
+              <select data-all-dest aria-label="Filter loans by issue or destination">
+                <option value="">All issues and destinations</option>
+                ${destOptions.map((d) =>
+                  `<option value="${esc(d.dest)}"${d.dest === _allDest ? ' selected' : ''}>` +
+                  `${esc(d.label)}</option>`).join('')}
+              </select>
+              ${_allDest ? `
                 <button type="button" class="btn btn--sm btn--ghost loan__borrower-clear"
-                        data-action="clear-borrower" title="Show all borrowers">✕ Clear</button>
+                        data-action="clear-dest" title="Show all">✕ Clear</button>
               ` : ''}
             </div>
-            ${_allBorrower ? `
+            ${_allDest ? `
               <span class="loan__borrower-banner">
-                Showing loans for <strong>${esc(selectedBorrowerName)}</strong>
+                Showing loans for <strong>${esc(selectedDestLabel)}</strong>
               </span>
             ` : ''}
           </div>
-
-          ${phantomBorrowers.length > 0 ? `
-            <div class="loan__phantom-warn" role="alert">
-              <span>⚠ ${phantomBorrowers.length} borrower${phantomBorrowers.length === 1 ? '' : 's'} in loan records
-              not found in the cadet list:
-              <strong>${phantomBorrowers.map((b) => esc(b.name)).join(', ')}</strong>.
-              These may be leftover sample or imported data.</span>
-              <button type="button" class="btn btn--sm btn--danger loan__phantom-remove"
-                      data-action="remove-phantom-borrowers"
-                      title="Delete all loan records for these phantom borrowers">
-                Remove
-              </button>
-            </div>
-          ` : ''}
           ` : ''}
 
           <input type="search" class="loan__all-search"
-                 placeholder="Search ref, item, borrower, NSN…"
+                 placeholder="Search ref, item, issue, destination, NSN…"
                  aria-label="Search loans"
                  value="${esc(_allSearch)}">
           <div class="loan__all-pills">
@@ -1637,7 +1544,7 @@ async function _renderAllTab(body) {
 
       <div class="loan__meta">
         ${filtered.length} ${filtered.length === 1 ? 'loan' : 'loans'} shown
-        ${(_allBorrower || _allSearch || _allFilter !== 'all') && all.length !== filtered.length
+        ${(_allDest || _allSearch || _allFilter !== 'all') && all.length !== filtered.length
           ? `<span class="loan__meta-of"> of ${all.length} total</span>` : ''}
       </div>
 
@@ -1646,15 +1553,15 @@ async function _renderAllTab(body) {
           ? `<div class="loan__empty">
                <p>No loans match the current filters.</p>
              </div>`
-          : _allTableHtml(filtered, today, canReturn, dischargedSvcs)}
+          : _allTableHtml(filtered, today, canReturn)}
       </div>
     </div>
   `;
 
-  _wireAllTab(body, borrowerOptions, phantomBorrowers);
+  _wireAllTab(body);
 }
 
-function _allTableHtml(loans, today, canReturn, dischargedSvcs = new Set()) {
+function _allTableHtml(loans, today, canReturn) {
   return `
     <table class="loan__table">
       <thead>
@@ -1664,7 +1571,7 @@ function _allTableHtml(loans, today, canReturn, dischargedSvcs = new Set()) {
           <th>Issued</th>
           <th>Item</th>
           <th>Qty</th>
-          <th>Borrower</th>
+          <th>Issued to</th>
           <th>Purpose</th>
           <th>Due</th>
           <th>Status</th>
@@ -1672,19 +1579,20 @@ function _allTableHtml(loans, today, canReturn, dischargedSvcs = new Set()) {
         </tr>
       </thead>
       <tbody>
-        ${loans.map((l) => _allRowHtml(l, today, canReturn, dischargedSvcs)).join('')}
+        ${loans.map((l) => _allRowHtml(l, today, canReturn)).join('')}
       </tbody>
     </table>
   `;
 }
 
-function _allRowHtml(loan, today, canReturn, dischargedSvcs = new Set()) {
+function _allRowHtml(loan, today, canReturn) {
   const overdue     = !loan.longTermLoan && loan.active === true && loan.dueDate && loan.dueDate < today;
-  // Discharged: borrower has been made inactive but still holds this loan.
-  const discharged  = loan.active === true
-    && loan.borrowerSvc
-    && loan.borrowerSvc !== 'UNIT-LOAN'
-    && dischargedSvcs.has(loan.borrowerSvc);
+  // The "discharged" flag is gone. It marked loans still held by someone who had
+  // left the unit — which required a person record to compare against, and there
+  // are none. This is a real capability loss and it is recorded as such in
+  // docs/IDENTIFIER-FREE-DESIGN.md: chasing kit from a departing member is now a
+  // documents task in CEA, not something this tool can surface.
+  const discharged  = false;
 
   let statusBadge;
   if (loan.active === false) {
@@ -1701,7 +1609,8 @@ function _allRowHtml(loan, today, canReturn, dischargedSvcs = new Set()) {
   }
   const typeBadges = [
     loan.nonStock    ? `<span class="loan__badge loan__badge--nonstock"  title="Not from IMS stock">NS</span>` : '',
-    loan.unitLoan    ? `<span class="loan__badge loan__badge--unitloan"  title="Unit/Activity loan">Unit</span>` : '',
+    (loan.location && !Locations.isIndividual(loan.location))
+      ? `<span class="loan__badge loan__badge--unitloan" title="Issued to an activity or location">Activity</span>` : '',
     loan.existingLoan ? `<span class="loan__badge loan__badge--existing" title="Existing issue — stock not deducted">Exist</span>` : '',
   ].join('');
 
@@ -1732,8 +1641,8 @@ function _allRowHtml(loan, today, canReturn, dischargedSvcs = new Set()) {
       </td>
       <td class="loan__qty">${loan.qty}</td>
       <td>
-        <div>${esc(loan.borrowerName || '')}</div>
-        ${loan.borrowerSvc && loan.borrowerSvc !== 'UNIT-LOAN' ? `<div class="loan__nsn">${esc(loan.borrowerSvc)}</div>` : ''}
+        <div>${esc(Locations.label(loan.location || ''))}</div>
+        ${loan.issueNo ? `<div class="loan__nsn">${esc(loan.issueNo)}</div>` : ''}
       </td>
       <td>${esc(loan.purpose || '')}</td>
       <td class="loan__date">${loan.longTermLoan ? '<em>Long-term</em>' : esc(loan.dueDate || '')}</td>
@@ -1773,36 +1682,18 @@ function _allRowHtml(loan, today, canReturn, dischargedSvcs = new Set()) {
   `;
 }
 
-function _wireAllTab(body, borrowerOptions = [], phantomBorrowers = []) {
-  // Borrower picker — match typed text against the datalist options by name.
-  const borrowerInput = $('.loan__borrower-search', body);
-  if (borrowerInput) {
-    borrowerInput.addEventListener('change', () => {
-      const val = borrowerInput.value.trim();
-      if (!val) {
-        _allBorrower = '';
-        _renderAllTab(body);
-        return;
-      }
-      const match = borrowerOptions.find((b) => b.name === val);
-      const newSvc = match ? match.svc : '';
-      if (newSvc !== _allBorrower) {
-        _allBorrower = newSvc;
-        _renderAllTab(body);
-      }
-    });
-    // Also respond to the user clearing the field with the × in a search input.
-    borrowerInput.addEventListener('search', () => {
-      if (!borrowerInput.value) {
-        _allBorrower = '';
-        _renderAllTab(body);
-      }
-    });
-  }
+function _wireAllTab(body) {
+  // Destination filter. A select over the destinations actually present, so
+  // there is no typed value to match and nothing to mistype.
+  $('select[data-all-dest]', body)?.addEventListener('change', (e) => {
+    const next = e.target.value;
+    if (next === _allDest) return;
+    _allDest = next;
+    _renderAllTab(body);
+  });
 
-  // Clear borrower button.
-  $('[data-action="clear-borrower"]', body)?.addEventListener('click', () => {
-    _allBorrower = '';
+  $('[data-action="clear-dest"]', body)?.addEventListener('click', () => {
+    _allDest = '';
     _renderAllTab(body);
   });
 
@@ -1819,49 +1710,13 @@ function _wireAllTab(body, borrowerOptions = [], phantomBorrowers = []) {
       _wireAllTab(body);
     });
   });
-  // Phantom borrower cleanup — delete all loan records for borrowers not in cadets.
-  $('[data-action="remove-phantom-borrowers"]', body)?.addEventListener('click', async () => {
-    if (!phantomBorrowers.length) return;
-    const names = phantomBorrowers.map((b) => b.name).join(', ');
-    const deleteLabel = phantomBorrowers.length === 1 ? 'Delete 1 borrower' : `Delete ${phantomBorrowers.length} borrowers`;
-    openModal({
-      titleHtml: 'Remove phantom loan records?',
-      size: 'sm',
-      bodyHtml: `
-        <p>The following borrowers appear in loan records but are not in the cadet list:</p>
-        <ul style="margin:8px 0 12px 20px">
-          ${phantomBorrowers.map((b) => `<li><strong>${esc(b.name)}</strong> (${esc(b.svc)})</li>`).join('')}
-        </ul>
-        <p>All loan records for these borrowers will be permanently deleted. This cannot be undone.</p>
-        <div class="form__actions" style="margin-top:16px">
-          <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
-          <button type="button" class="btn btn--danger" data-action="confirm-remove-phantoms">${esc(deleteLabel)}</button>
-        </div>
-      `,
-      async onMount(panel, close) {
-        panel.querySelector('[data-action="confirm-remove-phantoms"]')?.addEventListener('click', async () => {
-          const sessionUser = AUTH.getSession()?.name || 'unknown';
-          const allLoans = await Storage.loans.list();
-          const phantomSvcs = new Set(phantomBorrowers.map((b) => b.svc));
-          const toDelete = allLoans.filter((l) => phantomSvcs.has(l.borrowerSvc));
-          for (const loan of toDelete) {
-            await Storage.loans.remove(loan.ref);
-          }
-          await Storage.audit.append({
-            action: 'loans_cleanup',
-            user:   sessionUser,
-            desc:   `Deleted ${toDelete.length} phantom loan record(s) for: ${names}`,
-          });
-          close();
-          if (_allBorrower && phantomSvcs.has(_allBorrower)) _allBorrower = '';
-          await _renderAllTab(body);
-          _wireAllTab(body);
-          showToast(`Removed ${toDelete.length} loan record(s) for ${phantomBorrowers.length} phantom borrower(s).`, 'success');
-          Sync.notifyChanged();
-        });
-      },
-    });
-  });
+  // The phantom-borrower cleanup that lived here has been removed. It deleted
+  // loan records whose borrower was absent from the cadet list — a comparison
+  // that needs a cadet list, and there is none. More to the point, a control
+  // whose job is to bulk-delete loan records on a heuristic has no place in a
+  // build where the loan record is all that remains of an issue: the person is
+  // only on the document in CEA. Disposal is an operator decision taken against
+  // HQ's direction, not something inferred from a missing join.
 
   // Row checkbox — select/deselect for bulk return.
   body.querySelectorAll('[data-action="select-row"]').forEach((chk) => {
@@ -1948,7 +1803,7 @@ function _wireAllTab(body, borrowerOptions = [], phantomBorrowers = []) {
       if (_allSearch) {
         const q = _allSearch.toLowerCase();
         active = active.filter((l) =>
-          [l.ref, l.itemName, l.nsn, l.borrowerName, l.borrowerSvc, l.purpose, l.remarks]
+          [l.ref, l.itemName, l.nsn, l.location, l.issueNo, l.purpose, l.remarks]
             .join(' ').toLowerCase().includes(q));
       }
       // Sort by dueDate asc (oldest due-date first → most overdue at top).
@@ -2184,7 +2039,7 @@ async function _bulkReturnLoans(refs, body) {
             await Storage.audit.append({
               action: 'return',
               user:   sessionUser,
-              desc:   `${ref}: ${current.itemName} × ${current.qty} returned by ${current.borrowerName} — ${condition} [bulk]`,
+              desc:   `${ref}: ${current.itemName} × ${current.qty} returned from ${current.issueNo || current.location || '—'} — ${condition} [bulk]`,
             });
             returned++;
           } catch (err) {
@@ -2298,7 +2153,7 @@ async function _quickReturnLoan(ref, body) {
     bodyHtml: `
       <dl class="loan__detail-dl" style="margin-bottom:16px">
         <div><dt>Item</dt><dd>${esc(loan.itemName || '—')} × ${loan.qty}</dd></div>
-        <div><dt>Borrower</dt><dd>${esc(loan.borrowerName || '—')}</dd></div>
+        <div><dt>Issued to</dt><dd>${esc(loan.issueNo || Locations.label(loan.location || '') || '—')}</dd></div>
         <div><dt>Issued</dt><dd>${esc(loan.issueDate || '—')}</dd></div>
         ${loan.longTermLoan ? '<div><dt>Due</dt><dd>Long-term</dd></div>' : `<div><dt>Due</dt><dd>${esc(loan.dueDate || '—')}</dd></div>`}
       </dl>
@@ -2415,7 +2270,7 @@ async function _quickReturnLoan(ref, body) {
           await Storage.audit.append({
             action: 'return',
             user:   sessionUser,
-            desc:   `${ref}: ${current.itemName} × ${current.qty} returned by ${current.borrowerName} — ${condition}${current.nonStock ? ' [non-stock]' : ''}`,
+            desc:   `${ref}: ${current.itemName} × ${current.qty} returned from ${current.issueNo || current.location || '—'} — ${condition}${current.nonStock ? ' [non-stock]' : ''}`,
           });
 
           Sync.notifyChanged();
@@ -2581,10 +2436,13 @@ async function _printVoucherForLoanRef(ref) {
   const loan = await Storage.loans.get(ref);
   if (!loan) throw new Error(`Loan ${ref} not found.`);
 
-  // Find the whole batch — all loans for this borrower on this day.
-  // listForCadet uses the borrowerSvc index; we filter for the issueDate.
-  const allForBorrower = await Storage.loans.listForCadet(loan.borrowerSvc);
-  const batch = allForBorrower
+  // Find the whole batch — everything issued against the same document (or the
+  // same destination, where no document was raised) on the same day.
+  const groupKey = loan.issueNo || loan.location || '';
+  const siblings = loan.issueNo
+    ? await Storage.loans.listForIssue(loan.issueNo)
+    : (await Storage.loans.list()).filter((l) => (l.location || '') === groupKey);
+  const batch = siblings
     .filter((l) => l.issueDate === loan.issueDate)
     // Sort by ref so the voucher rows appear in issue order, which is
     // what the user expects when they look at LN-1043 through LN-1047
@@ -2592,9 +2450,9 @@ async function _printVoucherForLoanRef(ref) {
     .sort((a, b) => (a.ref || '').localeCompare(b.ref || ''));
 
   if (batch.length === 0) {
-    // Shouldn't happen — `loan` itself is in the listForCadet result.
-    // Defensive in case of storage anomaly.
-    throw new Error(`Could not find any loans for ${loan.borrowerSvc} on ${loan.issueDate}.`);
+    // Shouldn't happen — `loan` itself is in the sibling result. Defensive in
+    // case of storage anomaly.
+    throw new Error(`Could not find any loans for ${groupKey} on ${loan.issueDate}.`);
   }
   await _printVoucherForLoans(batch);
 }
@@ -2603,28 +2461,35 @@ async function _printAB189ForLoans(loans) {
   if (!Array.isArray(loans) || loans.length === 0) {
     throw new Error('No loans provided to print.');
   }
-  const unit  = await Storage.settings.getAll();
-  const cadet = await Storage.cadets.get(loans[0].borrowerSvc)
-            || await Storage.staff.get(loans[0].borrowerSvc);
-  const result = await generateAB189(loans, { unit, cadet: cadet || null });
+  const unit = await Storage.settings.getAll();
+  // `cadet: null` is the whole point. The AB189 prints with the recipient fields
+  // BLANK; whoever receives the items completes them by hand, and the completed
+  // form is uploaded to that member's CEA documents. This tool has no name to
+  // put there and must not acquire one — HQ AAC ICT, 17 July 2026.
+  const result = await generateAB189(loans, { unit, cadet: null });
   downloadPdf(result);
   const refs = loans.map((l) => l.ref).join(', ');
+  const label = loans[0].issueNo || Locations.label(loans[0].location || '');
   await Storage.audit.append({
     action: 'pdf_ab189',
     user:   AUTH.getSession()?.name || 'unknown',
-    desc:   `AB189 printed for ${loans[0].borrowerName || loans[0].borrowerSvc} — ${loans.length} item(s): ${refs}`,
+    desc:   `AB189 printed for ${label} — ${loans.length} item(s): ${refs}. `
+          + 'Recipient details completed by hand; file to CEA documents.',
   });
 }
 
 async function _printAB189ForLoanRef(ref) {
   const loan = await Storage.loans.get(ref);
   if (!loan) throw new Error(`Loan ${ref} not found.`);
-  const allForBorrower = await Storage.loans.listForCadet(loan.borrowerSvc);
-  const batch = allForBorrower
+  const groupKey = loan.issueNo || loan.location || '';
+  const siblings = loan.issueNo
+    ? await Storage.loans.listForIssue(loan.issueNo)
+    : (await Storage.loans.list()).filter((l) => (l.location || '') === groupKey);
+  const batch = siblings
     .filter((l) => l.issueDate === loan.issueDate)
     .sort((a, b) => (a.ref || '').localeCompare(b.ref || ''));
   if (batch.length === 0) {
-    throw new Error(`Could not find any loans for ${loan.borrowerSvc} on ${loan.issueDate}.`);
+    throw new Error(`Could not find any loans for ${groupKey} on ${loan.issueDate}.`);
   }
   await _printAB189ForLoans(batch);
 }
