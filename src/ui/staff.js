@@ -237,14 +237,21 @@ function _staffRowHtml(s, canManage) {
 /**
  * Moves staff-typed rows OUT of the legacy cadets store into `staff`.
  *
- * Retained deliberately even though the cadets module is gone. This is
- * relocation, not disposal: these rows are adults miscategorised as cadets by an
- * older build, and moving them to the store they belong in is the opposite of
- * destroying them. It also shrinks the legacy cadet data that still has to be
- * extracted to CEA before disposal (§13.1).
+ * NO LONGER THE PRIMARY MECHANISM, and was never adequate as one. It matches
+ * `personType === 'staff'` exactly, so it never saw the adults an older build
+ * recorded with no personType at all; and it only runs when someone opens this
+ * page, while the purge that destroys the cadet store lives on Settings. A unit
+ * could import, extract and purge without ever coming here, and the adults went
+ * with the cadets.
  *
- * It calls Storage.cadets.delete() — the only remaining cadet delete — and that
- * is why: the row is not gone, it is in `staff`.
+ * Storage now does this at init() and after importAll() — see
+ * _reclassifyStrandedStaff() in storage.js — covering both kinds and both
+ * routes. This is retained as a backstop for a database that somehow reaches
+ * this page with staff-typed rows still in `cadets`; in normal operation it
+ * finds nothing.
+ *
+ * Relocation, not disposal: it calls Storage.cadets.delete(), and that is why —
+ * the row is not gone, it is in `staff`.
  */
 async function _migrateStaffFromCadets() {
   let cadets;

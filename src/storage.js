@@ -36,6 +36,7 @@
 
 import * as PII from './pii.js';
 import { requireEdit } from './license.js';
+import { inferPersonType } from './ranks.js';
 
 // V2L sandbox: use a separate DB so learning data never touches production IDB.
 const DEFAULT_DB_NAME = (typeof __V2L_DB_NAME__ !== 'undefined') ? __V2L_DB_NAME__ : 'qstore';
@@ -237,6 +238,98 @@ async function _loadOrGenPiiKey() {
   await _migratePlainTextCadets();
   // One-time migration: strip email/notes from existing cadet records.
   await _stripCadetContactFields();
+  // One-time migration: move adults an older build left in the cadet store.
+  await _reclassifyStrandedStaff();
+}
+
+/**
+ * Move adults out of the `cadets` store and into `staff`.
+ *
+ * An older build stored everyone in `cadets` and distinguished them by rank
+ * alone — `personType` came later, and rows written before it are simply
+ * missing the field. The Staff page has a migration for this, but it only
+ * matches `personType === 'staff'` exactly, and it only runs when someone opens
+ * the Staff page. So it misses on both counts: a CAPT-AAC with no personType
+ * matches nothing, and a correctly-typed adult still sits in the cadet store
+ * until somebody happens to navigate there.
+ *
+ * That is not cosmetic. `legacy.purge()` clears the whole cadets store and it
+ * lives on the Settings page — a unit can import a dataset, extract, and purge
+ * without ever opening Staff. A stranded adult is then destroyed as though they
+ * were cadet PII: irreversibly, by the feature built to make disposal safe, and
+ * counted in the audit entry as a "cadet record". The unit loses a staff record
+ * and is told it complied.
+ *
+ * Hence this runs in the storage layer at init() and again after importAll(),
+ * where it cannot be skipped by a route the operator didn't take, and it covers
+ * both kinds: explicitly-typed adults and rank-only ones.
+ *
+ * Rank decides only when nothing else has. An explicit personType is always
+ * believed over the rank — if a build recorded a decision, that decision stands.
+ * inferPersonType() returns 'cadet' for empty, unknown, and every cadet rank
+ * including OFFCDT, so an ambiguous row stays where it is and keeps the
+ * protections that apply to a cadet record. Only an unmistakable adult rank
+ * moves. Relocation, not disposal: the row lands in `staff` intact.
+ */
+async function _reclassifyStrandedStaff() {
+  try {
+    const cadetRows = await _all(STORES.CADETS);
+    const stranded  = cadetRows.filter((r) =>
+      r.personType === 'staff' || (!r.personType && inferPersonType(r.rank) === 'staff'));
+    if (stranded.length === 0) return 0;
+
+    const existingStaff = new Set((await _all(STORES.STAFF)).map((s) => s.svcNo));
+    const moved = [];
+    for (const row of stranded) {
+      // A row already in `staff` is a duplicate of a record that has since been
+      // edited there. The staff copy is the live one; drop the cadet-store
+      // shadow rather than overwrite it with older values.
+      if (!existingStaff.has(row.svcNo)) {
+        const plain = await PII.decryptRecord(row, PII.PII_FIELDS_CADETS);
+        moved.push(await PII.encryptRecord({
+          svcNo:      plain.svcNo,
+          surname:    plain.surname || '',
+          given:      plain.given   || '',
+          rank:       plain.rank    || '',
+          position:   plain.position || '',
+          company:    plain.company  || plain.plt || '',
+          personType: 'staff',
+          active:     plain.active !== false,
+          createdAt:  plain.createdAt || new Date().toISOString(),
+          migratedAt: new Date().toISOString(),
+        }, PII.PII_FIELDS_STAFF));
+      }
+    }
+
+    const tx = _db.transaction([STORES.CADETS, STORES.STAFF], 'readwrite');
+    const staffOs = tx.objectStore(STORES.STAFF);
+    for (const m of moved) staffOs.put(m);
+    const cadetOs = tx.objectStore(STORES.CADETS);
+    for (const row of stranded) cadetOs.delete(row.svcNo);
+    await _txDone(tx);
+
+    // Worth a trace: this moves adult records between stores, and a later
+    // reader comparing a purge count against an old backup needs to know why
+    // the cadet count dropped without a disposal. No names — the audit log is
+    // the one place already carrying too many, and a count answers the question.
+    await audit.append({
+      action: 'staff_reclassified',
+      user:   'system',
+      desc:   `${stranded.length} adult record(s) moved from the cadet list to the staff `
+            + `establishment (${moved.length} new, ${stranded.length - moved.length} already `
+            + 'present in staff). Identified by rank where an older build recorded no person '
+            + 'type. Relocation only — no record was destroyed, and these are not cadet data '
+            + 'for extraction or disposal.',
+    }).catch(() => {});
+
+    console.info(`[storage] Reclassified ${stranded.length} adult record(s) `
+      + `from the cadet store to staff (${moved.length} new, `
+      + `${stranded.length - moved.length} already present).`);
+    return stranded.length;
+  } catch (err) {
+    console.warn('[storage] Staff reclassification error:', err);
+    return 0;   // Non-fatal — retried on next init.
+  }
 }
 
 /**
@@ -1343,6 +1436,18 @@ export async function rotateKeys({ reason } = {}) {
  * Dump the entire database to a plain JS object suitable for JSON
  * serialisation. Photos are encoded as base64 so the result round-trips
  * through JSON. Use for backups, handover, and the Settings → Export flow.
+ *
+ * EVERY store must be listed here. The `staff` store was added in schema v4 and
+ * was not — so for the whole life of v4 the export silently omitted the unit's
+ * entire staff establishment, importAll() had nothing to restore, and a unit
+ * that restored a backup found the Staff page empty with no error anywhere. The
+ * docstring above said "the entire database" throughout.
+ *
+ * A missing store here is invisible: the export succeeds, the file looks right,
+ * and the loss only appears on the restore, on someone else's machine, possibly
+ * months later. When adding a store to _runSchemaMigrations, add it here, in
+ * importAll(), and in wipe() in the same commit. test-export-import.mjs now
+ * asserts this list covers STORES so the next one fails a test instead.
  */
 export async function exportAll() {
   const out = {
@@ -1353,6 +1458,7 @@ export async function exportAll() {
     counters:        await _all(STORES.COUNTERS),
     items:           await _all(STORES.ITEMS),
     cadets:          await _all(STORES.CADETS),
+    staff:           await _all(STORES.STAFF),
     loans:           await _all(STORES.LOANS),
     audit:           await _all(STORES.AUDIT),
     users:           await _all(STORES.USERS),
@@ -1440,7 +1546,7 @@ export async function importAll(snapshot) {
 
   const stores = [
     STORES.META, STORES.SETTINGS, STORES.COUNTERS, STORES.ITEMS, STORES.CADETS,
-    STORES.LOANS, STORES.AUDIT, STORES.USERS, STORES.REQUESTS,
+    STORES.STAFF, STORES.LOANS, STORES.AUDIT, STORES.USERS, STORES.REQUESTS,
     STORES.STOCKTAKE, STORES.PHOTOS, STORES.KITS, STORES.SUPPLY_ORDERS,
   ];
   const tx = _db.transaction(stores, 'readwrite');
@@ -1458,6 +1564,12 @@ export async function importAll(snapshot) {
   put(STORES.COUNTERS,  snapshot.counters);
   put(STORES.ITEMS,     snapshot.items);
   put(STORES.CADETS,    snapshot.cadets);
+  // Absent from every backup written before this fix — `snapshot.staff` will be
+  // undefined for those, which put() treats as an empty list. Such a backup
+  // carries no staff to restore and none can be recovered from it; the adults it
+  // does still carry are the ones an older build left in `cadets`, and
+  // _reclassifyStrandedStaff() below is what rescues those.
+  put(STORES.STAFF,     snapshot.staff);
   put(STORES.LOANS,     snapshot.loans);
   put(STORES.AUDIT,     snapshot.audit);
   put(STORES.USERS,     snapshot.users);
@@ -1487,13 +1599,24 @@ export async function importAll(snapshot) {
   // correct (imported) key.
   _auditKey = await _loadAuditKey();
 
+  // An old backup stores adults in `cadets` and marks them by rank alone. Move
+  // them before anything counts, displays, or purges them as cadet records.
+  const reclassified = await _reclassifyStrandedStaff();
+
   // Count what arrived carrying a person, so the caller can say so. A loan is
   // "legacy" if it names a borrower; a modern loan carries location/issueNo and
   // nobody's name.
+  //
+  // Counted from the CADETS store, not from snapshot.cadets — after
+  // reclassification those differ, and the number the operator is shown must be
+  // the number of records actually facing extraction and disposal. Counting the
+  // snapshot would name adults as cadets in the audit entry and overstate the
+  // extraction backlog by exactly the records that no longer need it.
   const legacyPersonData = {
-    cadets:   (snapshot.cadets || []).length,
+    cadets:   (await _all(STORES.CADETS)).length,
     loans:    (snapshot.loans || []).filter((l) => l && (l.borrowerName || l.borrowerSvc)).length,
     requests: (snapshot.pendingRequests || []).length,
+    staffReclassified: reclassified,
   };
   legacyPersonData.total = legacyPersonData.cadets + legacyPersonData.loans + legacyPersonData.requests;
 
@@ -1525,7 +1648,7 @@ export async function importAll(snapshot) {
 export async function wipe({ keepMeta = true, keepUsers = true } = {}) {
   const targets = [
     STORES.SETTINGS, STORES.COUNTERS, STORES.ITEMS, STORES.PHOTOS,
-    STORES.CADETS, STORES.LOANS, STORES.AUDIT, STORES.REQUESTS,
+    STORES.CADETS, STORES.STAFF, STORES.LOANS, STORES.AUDIT, STORES.REQUESTS,
     STORES.STOCKTAKE, STORES.KITS, STORES.SUPPLY_ORDERS,
   ];
   if (!keepUsers) targets.push(STORES.USERS);

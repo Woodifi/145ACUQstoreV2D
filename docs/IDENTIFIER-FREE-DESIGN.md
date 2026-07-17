@@ -286,6 +286,55 @@ which step 3 removes. No action needed beyond doing step 3.
 loans.js: `pdf.js` (17), `requests.js` (20), `ims-reports.js` (8),
 `dashboard.js` (1), `inventory.js` (1).
 
+## Findings from the walkthrough — staff missing after import
+
+Reported as *"when the dataset is loaded the staff do not populate the staff
+list"*. One root cause, two defects, and the second is worse than the symptom.
+
+**The `staff` store was in no backup at all.** It was added in schema v4;
+`exportAll()`, `importAll()` and `wipe()` were never told about it. So for the
+whole life of v4 every export silently omitted the unit's entire staff
+establishment, and a restore had nothing to put back. `exportAll()`'s docstring
+said *"Dump the entire database"* throughout.
+
+The consequence for existing data is not repairable in code: **a backup written
+before this fix contains no staff records, and none can be recovered from it.**
+A unit restoring an old backup onto the Defence build must re-enter its staff by
+hand. Worth knowing before anyone treats a backup as a complete record.
+
+**Adults were stranded in the cadet store, and the purge would have destroyed
+them.** An older build stored everyone in `cadets` and told them apart by rank;
+`personType` came later, and rows written before it simply lack the field. The
+Staff page's migration matched `personType === 'staff'` exactly, so it never saw
+them — a `CAPT-AAC` or a `DAH` with no personType sat in the cadet store
+indefinitely. `legacy.purge()` clears that store wholesale.
+
+So the feature built to make disposal *safe* would have irreversibly destroyed
+adult staff records, counted them in its audit entry as *"cadet record(s)"*, and
+told the unit it had complied. Confirmed against the real code before fixing:
+seeded three adults and four cadets, and purge destroyed six of seven.
+
+Fixed in the storage layer (`_reclassifyStrandedStaff`) rather than the Staff
+page, because the page-mount migration could be skipped simply by not visiting
+the page — and the purge lives on Settings. It runs at `init()` and again after
+`importAll()`, covers both typed and rank-only adults, and moves them before
+anything counts, displays or purges them. Rank decides only when nothing else
+has; an explicit `personType` is always believed, and `inferPersonType()`
+defaults to `'cadet'` for anything ambiguous, so an unclear row keeps the
+protections that apply to a cadet record.
+
+**The lesson is the same one as `piiKey`, and it is now three for three:** the
+export path is written by hand, nothing checks it against the schema, and what it
+omits fails silently on someone else's machine at restore time. So
+`test-staff-roundtrip.mjs` asserts the store lists are *complete* against
+`STORES`, rather than asserting `staff` is present — testing for the bug just
+fixed would catch nothing. The next store added to `_runSchemaMigrations` fails a
+test instead of quietly going missing from backups for a release.
+
+The section below already predicted this in the abstract — *"unknown stores are
+dropped silently on import"* — and it was filed as a V3 hypothetical. It had
+already happened, to a store this build ships.
+
 ## Known and deliberately not fixed
 
 ### Cadet names in the audit chain — surfaced, not fixable here
