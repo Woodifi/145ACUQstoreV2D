@@ -1738,7 +1738,13 @@ function _unitSlug(unit) {
 
 export async function generateLegacyQRecord(opts = {}) {
   const { member, loans = [], unit = {}, issueNo } = opts;
-  if (!member?.svcNo) throw new Error('generateLegacyQRecord requires a member with a svcNo.');
+  // A phantom borrower — present on loans, absent from every person store — may
+  // have no service number. They still held equipment and their record still has
+  // to reach CEA, so a name is enough. Refusing here would strand them, and
+  // stranded records are what deadlocked the purge.
+  if (!member || (!member.svcNo && !member.surname)) {
+    throw new Error('generateLegacyQRecord requires a member with a svcNo or a name.');
+  }
   if (!issueNo)       throw new Error('generateLegacyQRecord requires an issueNo.');
 
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
@@ -1755,7 +1761,7 @@ export async function generateLegacyQRecord(opts = {}) {
   y = _drawSectionBand(doc, y, 'Member');
   const name = [member.rank, member.surname, member.given].filter(Boolean).join(' ');
   y = _drawLabelValueRow(doc, y, 'Rank / Name',  name || '—');
-  y = _drawLabelValueRow(doc, y, 'Service No.',  member.svcNo);
+  y = _drawLabelValueRow(doc, y, 'Service No.',  member.svcNo || '(not recorded)');
   if (member.plt || member.platoon) {
     y = _drawLabelValueRow(doc, y, 'Platoon', member.platoon || member.plt);
   }
@@ -1804,7 +1810,7 @@ export async function generateLegacyQRecord(opts = {}) {
   _drawFooter(doc);
   const slug = _unitSlug(unit);
   return {
-    filename: `QRecord_${slug}_${String(member.svcNo).replace(/[^a-zA-Z0-9_-]/g, '_')}_${issueNo}.pdf`,
+    filename: `QRecord_${slug}_${String(member.svcNo || member.surname || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_')}_${issueNo}.pdf`,
     blob:     doc.output('blob'),
     bytes:    doc.output('arraybuffer').byteLength,
   };
