@@ -11,11 +11,16 @@
 
 import { jsPDF }    from 'jspdf';
 
-// True when built with `node build.js --defence`, which resolves cloud.js and
-// sync.js to stubs so no cloud code is bundled. The manual must not document a
-// feature the artefact does not contain.
-const IS_DEFENCE_BUILD =
-  (typeof __QSTORE_DEFENCE__ !== 'undefined') && __QSTORE_DEFENCE__;
+// NOTE: deliberately NOT a shared `const IS_DEFENCE_BUILD`.
+//
+// esbuild only reliably inlines a const used ONCE. This module referenced such a
+// const six times, so it was never folded and BOTH branches of every ternary
+// survived into the artefact — the Defence build shipped "Cloud Sync (OneDrive)"
+// and the Azure setup strings it is supposed to prove it does not contain.
+//
+// That went unnoticed because this module was never bundled at all (see help.js:
+// it had no importer until 2026-07-17). The gate had never once been exercised.
+// Referencing __QSTORE_DEFENCE__ directly at each site is what actually folds.
 import * as Storage from './storage.js';
 
 // ─── Page geometry (mm) ─────────────────────────────────────────────────────
@@ -352,7 +357,7 @@ function _cover(doc, unitName, dateStr) {
     '2. Getting Started           9.  AAC QStore Orders',
     '3. User Roles & Permissions  10. Audit Log',
     '4. Inventory                 11. Settings',
-    '5. Loans & Returning         12. ' + (IS_DEFENCE_BUILD ? 'Backups' : 'Cloud Sync (OneDrive)'),
+    '5. Loans & Returning         12. ' + ((typeof __QSTORE_DEFENCE__ !== 'undefined' && __QSTORE_DEFENCE__) ? 'Backups' : 'Cloud Sync (OneDrive)'),
     '6. Equipment Requests (Paper) 13. Backup & Restore',
     '7. Issue Destinations        14-15. PIN Security & Recovery',
     '                             16-19. Kits, QR Codes, Troubleshooting',
@@ -401,7 +406,7 @@ function _toc(doc, db) {
     [9,  'AAC QStore Orders'],
     [10, 'Audit Log'],
     [11, 'Settings'],
-    [12, IS_DEFENCE_BUILD ? 'Backups' : 'Cloud Sync (OneDrive)'],
+    [12, (typeof __QSTORE_DEFENCE__ !== 'undefined' && __QSTORE_DEFENCE__) ? 'Backups' : 'Cloud Sync (OneDrive)'],
     [13, 'Backup and Restore'],
     [14, 'PIN Security and Auto-Lock'],
     [15, 'OC PIN Recovery'],
@@ -450,7 +455,7 @@ function _s1(b) {
     'Run stocktakes with detailed condition recording for every item',
     'Import supply orders from the AAC QStore system and receive them into inventory',
     'Print loan vouchers, AB189 forms, stock reports, and QR code labels',
-    ...(IS_DEFENCE_BUILD ? [] : ['Optionally back up everything automatically to Microsoft OneDrive']),
+    ...((typeof __QSTORE_DEFENCE__ !== 'undefined' && __QSTORE_DEFENCE__) ? [] : ['Optionally back up everything automatically to Microsoft OneDrive']),
     'Keep a complete, tamper-evident record of every action in the system',
   ]);
   b.gap();
@@ -458,7 +463,7 @@ function _s1(b) {
   b.p('QStore IMS has four roles: Commanding Officer (OC), Quartermaster (QM), Staff, and Read-Only. Each role has a different level of access. Every user logs in with a 4-digit PIN. Only the OC can create user accounts and manage PINs. There is no cadet role — this build holds no cadet records and has nothing for a cadet account to see.');
   b.gap();
   b.h3('Where your data is kept');
-  b.p(IS_DEFENCE_BUILD
+  b.p((typeof __QSTORE_DEFENCE__ !== 'undefined' && __QSTORE_DEFENCE__)
     ? 'All data is stored inside your web browser on the device running the app. This build has no cloud sync — nothing is ever transmitted off this device. Always keep backup copies stored off the device so data is safe if the browser or device is lost.'
     : 'All data is stored inside your web browser on the device running the app. Nothing is sent anywhere unless you set up OneDrive cloud sync. Always keep backup copies stored off the device so data is safe if the browser or device is lost.');
   b.callout('QStore IMS is a single self-contained HTML file. Open it in Chrome, Edge, Firefox, or Safari. No installation is required.', 'tip');
@@ -923,7 +928,7 @@ function _s11(b) {
   b.h2('Data Backup and Restore');
   b.p('Export and import full data backups. See Section 13 for full instructions.');
 
-  if (!IS_DEFENCE_BUILD) {
+  if (!(typeof __QSTORE_DEFENCE__ !== 'undefined' && __QSTORE_DEFENCE__)) {
     b.h2('Cloud Sync');
     b.p('Configure automatic OneDrive backup. See Section 12 for setup instructions.');
   }
@@ -1192,13 +1197,15 @@ function _s18(b) {
     'Run a stocktake to reconcile the physical count with the system records.',
   ]);
 
-  b.h2('Cloud sync is not connecting');
-  b.bullets([
-    'Check that the app is being served over HTTPS (not opened as a file:// URL)',
-    'Confirm the Redirect URI in your Azure App Registration exactly matches what Settings shows — even one wrong character will cause it to fail',
-    'Try signing out of cloud sync and signing back in',
-    'Confirm the Azure App has the required permissions: Files.ReadWrite, offline_access, openid, profile',
-  ]);
+  if (!(typeof __QSTORE_DEFENCE__ !== 'undefined' && __QSTORE_DEFENCE__)) {
+    b.h2('Cloud sync is not connecting');
+    b.bullets([
+      'Check that the app is being served over HTTPS (not opened as a file:// URL)',
+      'Confirm the Redirect URI in your Azure App Registration exactly matches what Settings shows — even one wrong character will cause it to fail',
+      'Try signing out of cloud sync and signing back in',
+      'Confirm the Azure App has the required permissions: Files.ReadWrite, offline_access, openid, profile',
+    ]);
+  }
 
   b.h2('Order PDF import — items or quantities look wrong');
   b.bullets([
