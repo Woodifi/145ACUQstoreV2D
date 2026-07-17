@@ -1,4 +1,28 @@
 // =============================================================================
+// ⚠ WORK IN PROGRESS — THIS MODULE IS BROKEN AT RUNTIME. DO NOT SHIP.
+// =============================================================================
+// Mid-refactor for the identifier-free build (docs/IDENTIFIER-FREE-DESIGN.md,
+// step 2). The issue path has been converted from borrower → destination; the
+// render/wire functions, the return tab, and the all-loans tab have NOT.
+//
+// Known dangling references (each throws ReferenceError when reached):
+//   _borrowerPickerHtml   — deleted; still called from _renderIssueTab and
+//                           _renderReturnTab
+//   _issueState.svcNo     — replaced by .location / .issueNo
+//   _issueState.unitLoan  — removed; every issue is now what unitLoan was
+//   Storage.loans.listForCadet — removed; use listForIssue(issueNo)
+//
+// NOTE: `node build.js` SUCCEEDS on this file. esbuild resolves an unknown
+// local call to a global reference rather than an error, so a clean build is
+// not evidence that this module works. It does not. The failure only appears
+// when a user opens the Loans page.
+//
+// Remaining: ~127 borrower references across _renderIssueTab, _wireIssueTab,
+// _renderReturnTab, _wireReturnTab, _renderAllTab, _allRowHtml, _wireAllTab,
+// _quickReturnLoan, _bulkReturnLoans, and the voucher/AB189 helpers.
+// =============================================================================
+
+// =============================================================================
 // QStore IMS v2 — Loans page (Issue / Return / All loans)
 // =============================================================================
 // Single page with three internal tabs. The data model is one loan = one
@@ -47,7 +71,7 @@
 import * as Storage from '../storage.js';
 import * as AUTH    from '../auth.js';
 import * as Sync    from '../sync.js';
-import { compareRanks } from '../ranks.js';
+import * as Locations from '../locations.js';
 import { generateIssueVoucher, generateAB189, generateOutstandingLoansReport, downloadPdf } from '../pdf.js';
 import { openModal }                       from './modal.js';
 import { showToast }                       from './toast.js';
@@ -140,8 +164,15 @@ export async function mount(rootEl) {
   return function unmount() { _root = null; };
 }
 
+// No borrower. An issue records WHERE the item went, not WHO has it:
+//   location — a curated destination (see locations.js). May be INDIVIDUAL.
+//   issueNo  — allocated when location is INDIVIDUAL. The only link between the
+//              item and the person holding it, and it lives on the printed
+//              document, which goes to that member's CEA documents.
+// `unitLoan` and `activityName` are gone: every issue is now what unitLoan used
+// to be. That distinction only existed because the default was a person.
 function _freshIssueState()  {
-  return { svcNo: '', lines: [_freshLine()], longTermLoan: false, unitLoan: false, activityName: '', purpose: '' };
+  return { location: '', issueNo: '', lines: [_freshLine()], longTermLoan: false, purpose: '' };
 }
 function _freshReturnState() { return { svcNo: '', refsChecked: new Set() }; }
 function _freshLine()        {
@@ -680,21 +711,15 @@ async function _submitIssue(body) {
 
   const purpose      = $('select[data-issue-field="purpose"]', body)?.value || '';
   const remarks      = $('textarea[data-issue-field="remarks"]', body)?.value || '';
-  const unitLoan     = _issueState.unitLoan;
+  const location     = _issueState.location;
   // Initial Issue is always a long-term loan with a 6-year engagement date.
   const longTermLoan = (purpose === INITIAL_ISSUE) ? true : _issueState.longTermLoan;
   const dueDate      = (purpose === INITIAL_ISSUE)
     ? _sixYearsFromToday()
     : ($('input[data-issue-field="dueDate"]', body)?.value || '');
-  const activityName = ($('input[data-issue-field="activityName"]', body)?.value || _issueState.activityName).trim();
 
   if (!purpose) { errEl.textContent = 'Purpose is required.'; return; }
-
-  if (unitLoan) {
-    if (!activityName) { errEl.textContent = 'Enter an activity / description for the unit loan.'; return; }
-  } else {
-    if (!_issueState.svcNo) { errEl.textContent = 'Select a borrower first.'; return; }
-  }
+  if (!location) { errEl.textContent = 'Select a destination first.'; return; }
 
   if (!longTermLoan) {
     if (!dueDate)  { errEl.textContent = 'Due date is required (or tick Long-term loan).'; return; }
@@ -704,20 +729,15 @@ async function _submitIssue(body) {
     }
   }
 
-  // Resolve borrower — cadet or unit/activity.
-  let cadet = null;
-  let borrowerName, borrowerSvc;
-  if (unitLoan) {
-    borrowerName = activityName;
-    borrowerSvc  = 'UNIT-LOAN';
-  } else {
-    cadet = await Storage.cadets.get(_issueState.svcNo)
-         || await Storage.staff.get(_issueState.svcNo);
-    if (!cadet) { errEl.textContent = 'Selected borrower no longer exists.'; return; }
-    // Format: "Rank Surname F." — first initial appended if available.
-    const _initial = cadet.given ? ` ${cadet.given.charAt(0).toUpperCase()}.` : '';
-    borrowerName = `${cadet.rank} ${cadet.surname}${_initial}`.trim();
-    borrowerSvc  = cadet.svcNo;
+  // No borrower to resolve — there are no person records to resolve against.
+  // An issue to a person allocates a document reference and stops there; who
+  // received the items is written on the document and filed in CEA.
+  const issueNo = Locations.isIndividual(location)
+    ? (_issueState.issueNo || await Locations.nextIssueNo(Storage))
+    : '';
+  if (Locations.isIndividual(location) && !issueNo) {
+    errEl.textContent = 'Could not allocate an issue document number.';
+    return;
   }
 
   // Validate and resolve every line.
@@ -784,13 +804,13 @@ async function _submitIssue(body) {
           itemName:     r.desc,
           nsn:          r.nsn || '',
           qty:          r.qty,
-          borrowerSvc,
-          borrowerName,
+          location,
+          issueNo,
           purpose,
           issueDate,
           dueDate:      longTermLoan ? '' : dueDate,
           longTermLoan: longTermLoan || false,
-          unitLoan:     unitLoan     || false,
+
           nonStock:     true,
           existingLoan: false,
           condition:    'serviceable',
@@ -817,13 +837,13 @@ async function _submitIssue(body) {
           itemName:     item.name,
           nsn:          item.nsn || '',
           qty,
-          borrowerSvc,
-          borrowerName,
+          location,
+          issueNo,
           purpose,
           issueDate,
           dueDate:      longTermLoan ? '' : dueDate,
           longTermLoan: longTermLoan || false,
-          unitLoan:     unitLoan     || false,
+
           nonStock:     false,
           existingLoan: true,
           condition:    item.condition || 'serviceable',
@@ -852,13 +872,13 @@ async function _submitIssue(body) {
           itemName:     item.name,
           nsn:          item.nsn || '',
           qty,
-          borrowerSvc,
-          borrowerName,
+          location,
+          issueNo,
           purpose,
           issueDate,
           dueDate:      longTermLoan ? '' : dueDate,
           longTermLoan: longTermLoan || false,
-          unitLoan:     unitLoan     || false,
+
           nonStock:     false,
           existingLoan: false,
           condition:    item.condition || 'serviceable',
@@ -2430,49 +2450,48 @@ async function _quickReturnLoan(ref, body) {
  * `context` distinguishes Issue from Return so two pickers can coexist on
  * one page render without clashing data attributes.
  */
-function _borrowerPickerHtml(context, currentSvcNo, cadets, currentCadet) {
-  const value = currentCadet
-    ? `${currentCadet.rank} ${currentCadet.surname} (${currentCadet.svcNo})`
-    : '';
-  const listId = `loan-borrower-list-${context}`;
+/**
+ * Destination picker. Replaces the borrower search.
+ *
+ * A <select> over a curated list, deliberately NOT a free-text search box. The
+ * old control was a text input over a datalist of cadets — the natural
+ * replacement would be a text input over a datalist of locations, and it would
+ * be wrong: a text input accepts anything typed into it, and what gets typed
+ * into a box next to the word "issue" is a name. A select cannot carry a person
+ * that is not already in a list the OC curated. See docs/IDENTIFIER-FREE-DESIGN.md.
+ *
+ * When INDIVIDUAL is chosen, the caller allocates an issue number and shows it
+ * for writing onto the printed document.
+ */
+function _destinationPickerHtml(context, currentLocation, locations, issueNo) {
+  const opts = locations.map((loc) =>
+    `<option value="${esc(loc)}"${loc === currentLocation ? ' selected' : ''}>`
+    + `${esc(Locations.label(loc))}</option>`).join('');
 
-  // Build option label: rank + surname + svcNo + company/platoon/section suffix.
-  // The svcNo must be present so the input handler can resolve the match.
-  // Adding company/plt/section means users can search by unit sub-structure.
-  const _groupSuffix = (c) => {
-    const parts = [];
-    if (c.company)  parts.push(c.company);
-    if (c.platoon || c.plt) parts.push(c.platoon || c.plt);
-    if (c.section)  parts.push(c.section);
-    return parts.length ? ` · ${parts.join(' / ')}` : '';
-  };
-
-  const sortedCadets = cadets.slice().sort((a, b) => {
-    const typeA = a.personType === 'staff' ? 0 : 1;
-    const typeB = b.personType === 'staff' ? 0 : 1;
-    return (typeA - typeB) || compareRanks(a.rank, b.rank) ||
-      (a.surname || '').localeCompare(b.surname || '');
-  });
+  const issueBlock = Locations.isIndividual(currentLocation) ? `
+    <div class="loan__issue-no" data-issue-no-block>
+      <span class="form__label">Issue document number</span>
+      <output class="loan__issue-no-value" data-issue-no-value>${esc(issueNo || '—')}</output>
+      <p class="form__hint">
+        Write this number on the printed issue document. The document records who
+        received the items and is uploaded to that member's CEA documents.
+        <strong>This tool does not record who has the item.</strong>
+      </p>
+    </div>` : '';
 
   return `
     <label class="form__field">
-      <span class="form__label">Search by name, service number, or sub-unit</span>
-      <input type="text" class="loan__borrower-search"
-             data-borrower-search="${esc(context)}"
-             value="${esc(value)}"
-             list="${listId}"
-             placeholder="Start typing name, svc no, or company…"
-             autocomplete="off">
-      <datalist id="${listId}">
-        ${sortedCadets
-          .map((c) =>
-            `<option value="${esc(c.rank)} ${esc(c.surname)} (${esc(c.svcNo)})">` +
-            `${esc(c.rank)} ${esc(c.surname)} (${esc(c.svcNo)})${esc(_groupSuffix(c))}</option>`)
-          .join('')}
-      </datalist>
-      <input type="hidden" data-borrower-id="${esc(context)}"
-             value="${esc(currentSvcNo)}">
+      <span class="form__label">Issue to</span>
+      <select data-destination="${esc(context)}" required>
+        <option value="">Select a destination…</option>
+        ${opts}
+      </select>
+      <span class="form__hint">
+        Destinations are managed in Settings. Choose "${esc(Locations.INDIVIDUAL_LABEL)}"
+        when items go to a person.
+      </span>
     </label>
+    ${issueBlock}
   `;
 }
 
