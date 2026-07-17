@@ -1415,9 +1415,16 @@ function _dataSectionHtml(settings) {
 
       <div class="modal__warn" style="margin-bottom:12px">
         <strong>The export contains sensitive data.</strong>
-        Cadet personal details, audit log, and (hashed) user PINs are all
-        included. Treat the file as PROTECTED — store it on encrypted media
-        or a secure unit drive, not on personal cloud storage.
+        Staff details, the audit log, and (hashed) user PINs are all included.
+        The export is always encrypted. Store it on encrypted media or the
+        unit's approved CadetNet M365 location &mdash; never on a personal
+        Microsoft account or personal OneDrive.
+        ${_legacySummary?.total > 0 ? `
+          <br><br><strong>This database still holds legacy cadet personal
+          information</strong> (see &ldquo;Legacy cadet data&rdquo; above), so an
+          export taken now will contain it too. Extract and remove it first if
+          you can.
+        ` : ''}
       </div>
 
       <div class="form__row">
@@ -2382,47 +2389,6 @@ async function _performImport(file, btn) {
       else localStorage.removeItem('qstore2_logo');
     } catch (_) {}
 
-    // Log AFTER importAll because importAll wipes the audit store and
-    // replaces it with the snapshot's chain. Logging before the import
-    // would put the entry into a chain that's about to be discarded.
-    // The post-import audit append uses the freshly-loaded auditKey from
-    // the snapshot's meta, so it extends the imported chain correctly.
-    // A backup written by an older build carries cadet records, loans naming a
-    // borrower, and requests with plaintext requestor details. They restore into
-    // the legacy stores on purpose — that is the only way a unit can extract them
-    // to CEA before disposal — but the operator MUST be told, or they will sit
-    // there indefinitely, invisible (the Cadets and Requests pages are gone) and
-    // forgotten. Silence is how the original defect survived for months.
-    if (legacyPersonData?.total > 0) {
-      const bits = [];
-      if (legacyPersonData.cadets)   bits.push(`${legacyPersonData.cadets} cadet record(s)`);
-      if (legacyPersonData.loans)    bits.push(`${legacyPersonData.loans} loan(s) naming a borrower`);
-      if (legacyPersonData.requests) bits.push(`${legacyPersonData.requests} equipment request(s)`);
-      openModal({
-        titleHtml: 'This backup contains personal information',
-        size: 'sm',
-        bodyHtml: `
-          <div class="modal__warn">
-            <strong>Restored, but not usable by this build.</strong>
-            The backup contained ${esc(bits.join(', '))}.
-          </div>
-          <p class="modal__body">
-            This build does not collect or display personal information. These
-            records have been restored into legacy storage so they can be
-            <strong>extracted to the members' CEA documents</strong> — they are
-            not shown anywhere in the app and cannot be edited here.
-          </p>
-          <p class="modal__body">
-            Once extracted, dispose of them on HQ direction. Do not leave them
-            here indefinitely. This has been recorded in the audit log.
-          </p>
-          <div class="form__actions">
-            <button type="button" class="btn btn--primary" data-action="modal-close">Understood</button>
-          </div>
-        `,
-      });
-    }
-
     await Storage.audit.append({
       action: 'data_imported',
       user:   AUTH.getSession()?.name || 'unknown',
@@ -2433,8 +2399,54 @@ async function _performImport(file, btn) {
     // Force a reload — the current page state is now stale, and the
     // session may also be invalid (the imported users table might not
     // contain the currently-logged-in user).
-    showToast('Backup restored. The page will now reload.', 'success', 2000);
-    location.reload();
+    //
+    // BUT NOT UNTIL THE OPERATOR HAS SEEN THE LEGACY-PII WARNING. The modal
+    // below was previously opened moments before this reload fired, which
+    // destroyed it — the alert existed and was unreachable. Reported from a
+    // walkthrough as "nothing alerts the user". Correct report: the code ran,
+    // the reload ate it.
+    const reloadNow = () => {
+      showToast('Backup restored. The page will now reload.', 'success', 2000);
+      location.reload();
+    };
+    if (legacyPersonData?.total > 0) {
+      const bits = [];
+      if (legacyPersonData.cadets)   bits.push(`${legacyPersonData.cadets} cadet record(s)`);
+      if (legacyPersonData.loans)    bits.push(`${legacyPersonData.loans} loan(s) naming a borrower`);
+      if (legacyPersonData.requests) bits.push(`${legacyPersonData.requests} equipment request(s)`);
+      openModal({
+        titleHtml: 'This backup contains personal information',
+        size: 'sm',
+        persistent: true,
+        bodyHtml: `
+          <div class="modal__warn">
+            <strong>Action required.</strong> The backup contained
+            ${esc(bits.join(', '))}.
+          </div>
+          <p class="modal__body">
+            This build does not collect or display personal information. These
+            records are restored so they can be <strong>exported to the members'
+            CEA documents</strong> and then removed — see
+            <strong>Settings &rarr; Legacy cadet data</strong> after the reload.
+          </p>
+          <p class="modal__body">
+            These are Commonwealth records. Do not leave them here, and do not
+            delete them before they are in CEA.
+          </p>
+          <div class="form__actions">
+            <button type="button" class="btn btn--primary" data-action="ack-legacy-import">
+              Understood — reload
+            </button>
+          </div>
+        `,
+        onMount(panel, close) {
+          panel.querySelector('[data-action="ack-legacy-import"]')
+            ?.addEventListener('click', () => { close(); reloadNow(); });
+        },
+      });
+      return;   // reload happens on acknowledgement, not before it
+    }
+    reloadNow();
   } catch (err) {
     console.error('Import failed:', err);
     showToast('Restore failed: ' + (err.message || err), 'error');
@@ -2673,13 +2685,39 @@ async function _doLegacyExport() {
     return;
   }
 
-  const ok = confirm(
-    `Generate ${pending.length} Q record PDF(s) — one per member?\n\n`
-    + 'Each PDF must then be uploaded to that member\'s CEA documents in the '
-    + 'unit\'s approved CadetNet M365 location.\n\n'
-    + 'NOT a personal Microsoft account or personal OneDrive.\n\n'
-    + 'Your browser will download them one at a time.'
-  );
+  // In-app modal, not confirm(). A native dialog can be suppressed by the
+  // browser — the same failure that made the Remove button look dead — and this
+  // flow must never silently not-happen.
+  const ok = await new Promise((resolve) => {
+    let settled = false;
+    openModal({
+      titleHtml: `Export ${pending.length} Q record${pending.length === 1 ? '' : 's'}?`,
+      size: 'sm',
+      bodyHtml: `
+        <p class="modal__body">
+          One PDF per member. Each must then be uploaded to that member's
+          <strong>CEA documents</strong>, in the unit's approved CadetNet M365
+          location.
+        </p>
+        <div class="modal__warn">
+          <strong>Not a personal Microsoft account. Not a personal OneDrive.</strong>
+          Storing cadet information outside approved systems is what caused this
+          data to require removal.
+        </div>
+        <p class="modal__body">Your browser will download them one at a time.</p>
+        <div class="form__actions">
+          <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
+          <button type="button" class="btn btn--primary" data-action="go-export">Export</button>
+        </div>
+      `,
+      onMount(panel, close) {
+        panel.querySelector('[data-action="go-export"]')?.addEventListener('click', () => {
+          settled = true; close(); resolve(true);
+        });
+      },
+      onClose() { if (!settled) resolve(false); },
+    });
+  });
   if (!ok) return;
 
   const unit = await Storage.settings.getAll();
@@ -2735,29 +2773,131 @@ async function _doLegacyExport() {
 }
 
 /** Step 2 — remove what is left. Irreversible, and gated on the data itself. */
+/**
+ * Step 2 — remove what is left. Irreversible.
+ *
+ * Reported from a walkthrough as "the Remove legacy data button appears to do
+ * nothing". It was not dead: it used showToast() for the refusal and prompt()
+ * for the confirmation. A toast is missable, and prompt() is a native dialog a
+ * browser can suppress outright — including via "prevent this page from creating
+ * additional dialogs", which the export flow's own confirm() can trigger. Either
+ * way the button looks broken.
+ *
+ * For the most consequential, least reversible action in the app that is not
+ * good enough. It now uses the same in-app typed-confirmation modal that
+ * _doImportData already used for OVERWRITE — which I should have matched from
+ * the start. A modal always renders, and it can say WHY it is refusing instead
+ * of flashing it for three seconds.
+ */
 async function _doLegacyPurge() {
-  const sum = await Storage.legacy.summary();
-  if (sum.total === 0) { showToast('No legacy data to remove.', 'info'); return; }
-  if (sum.loans > 0) {
-    showToast(`${sum.loans} loan(s) still name a borrower — export those members first.`, 'warn');
+  let sum;
+  try {
+    sum = await Storage.legacy.summary();
+  } catch (err) {
+    // Never fail silently. A dead-looking button is what got this reported.
+    openModal({
+      titleHtml: 'Could not read legacy data',
+      size: 'sm',
+      bodyHtml: `<p class="modal__body">${esc(err.message || String(err))}</p>
+        <div class="form__actions">
+          <button type="button" class="btn btn--primary" data-action="modal-close">Close</button>
+        </div>`,
+    });
     return;
   }
-  const typed = prompt(
-    'This permanently removes the remaining legacy cadet records and equipment '
-    + 'requests. It cannot be undone.\n\n'
-    + 'Only proceed if EVERY Q record has been uploaded to the members\' CEA '
-    + 'documents in the approved CadetNet M365 location.\n\n'
-    + 'Type REMOVE to confirm:'
-  );
-  if (typed !== 'REMOVE') { showToast('Cancelled — nothing was removed.', 'info'); return; }
-  try {
-    const res = await Storage.legacy.purge({ confirmedUploadedToCEA: true });
-    await _render();
-    showToast(`Removed ${res.cadets} cadet record(s) and ${res.requests} request(s). `
-      + 'Equipment records retained and linked to their issue documents.', 'success');
-  } catch (err) {
-    showToast('Removal refused: ' + (err.message || err), 'error');
+
+  if (sum.total === 0) {
+    openModal({
+      titleHtml: 'Nothing to remove',
+      size: 'sm',
+      bodyHtml: `<p class="modal__body">There is no legacy cadet data in this database.</p>
+        <div class="form__actions">
+          <button type="button" class="btn btn--primary" data-action="modal-close">Close</button>
+        </div>`,
+    });
+    return;
   }
+
+  // Refusal gets a modal, not a toast — and it says which members are missing
+  // rather than just a count, so the operator can act on it.
+  if (sum.loans > 0) {
+    openModal({
+      titleHtml: 'Export the remaining members first',
+      size: 'sm',
+      bodyHtml: `
+        <div class="modal__warn">
+          <strong>Refused.</strong> ${sum.loans} loan(s) still name a borrower,
+          which means those members have not had a Q record exported.
+        </div>
+        <p class="modal__body">
+          Removing their records now would destroy a Commonwealth record before it
+          reaches CEA. Run <strong>1. Export Q records</strong> first — it will
+          skip anyone already done.
+        </p>
+        <div class="form__actions">
+          <button type="button" class="btn btn--primary" data-action="modal-close">Close</button>
+        </div>
+      `,
+    });
+    return;
+  }
+
+  openModal({
+    titleHtml: 'Remove legacy cadet data — confirm',
+    size: 'sm',
+    persistent: true,
+    bodyHtml: `
+      <div class="modal__warn">
+        <strong>This permanently removes ${sum.cadets} cadet record(s) and
+        ${sum.requests} equipment request(s). It cannot be undone.</strong>
+      </div>
+      <p class="modal__body">
+        Only proceed if <strong>every Q record has been uploaded</strong> to the
+        members' CEA documents, in the unit's approved CadetNet M365 location —
+        not a personal Microsoft account or personal OneDrive.
+      </p>
+      <p class="modal__body">
+        These are Commonwealth records. Removing them before they are in CEA may
+        expose you to criminal penalties under the <em>Archives Act 1983</em>
+        (Defence Youth Manual, Section 1, Chapter 2, para 67).
+      </p>
+      <p class="modal__body">Equipment records are kept, linked to their issue documents.</p>
+      <p>Type <strong>REMOVE</strong> to confirm.</p>
+      <form class="form" data-form="confirm-purge">
+        <label class="form__field">
+          <input type="text" name="confirm" autocomplete="off" placeholder="REMOVE">
+        </label>
+        <div class="form__error" role="alert"></div>
+        <div class="form__actions">
+          <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
+          <button type="submit" class="btn btn--danger">Remove legacy data</button>
+        </div>
+      </form>
+    `,
+    onMount(panel, close) {
+      const form  = $('form[data-form="confirm-purge"]', panel);
+      const errEl = $('.form__error', panel);
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        errEl.textContent = '';
+        if (String(new FormData(form).get('confirm') || '').trim() !== 'REMOVE') {
+          errEl.textContent = 'Type REMOVE in capitals to confirm.';
+          return;
+        }
+        try {
+          const res = await Storage.legacy.purge({ confirmedUploadedToCEA: true });
+          close();
+          await _render();
+          showToast(`Removed ${res.cadets} cadet record(s) and ${res.requests} request(s). `
+            + 'Equipment records retained and linked to their issue documents.', 'success', 6000);
+        } catch (err) {
+          // The storage layer refuses on the data, not on this dialog. Surface
+          // that refusal here rather than letting it vanish.
+          errEl.textContent = err.message || String(err);
+        }
+      });
+    },
+  });
 }
 
 async function _doResetSyncEncryption() {

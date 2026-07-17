@@ -518,7 +518,9 @@ function _s2(b) {
   b.callout('Click the ? button in the top-right corner of the header to open the help panel at any time.', 'tip');
 
   b.h2('Adding user accounts (OC only)');
+  b.callout('STAFF ONLY. Never create an account for a cadet. A user account stores the person\'s name and service number — this build holds no cadet personal information, and a cadet account would put it back by a different door. There is no cadet role, and cadet accounts from earlier versions cannot sign in.', 'warn');
   b.steps([
+    'Confirm the person is staff, not a cadet.',
     'Go to the Users page (top navigation bar).',
     'Click + Add User.',
     'Enter the full name, a short unique username, the role, service number, and a 4-digit PIN.',
@@ -566,8 +568,10 @@ function _s3(b) {
   b.gap();
 
   b.h2('Managing User Accounts (OC only)');
+  b.callout('STAFF ONLY. Cadets do not get user accounts. A user account stores a name and service number; this build stores no cadet personal information and an account would reintroduce it. There is no cadet role to assign.', 'warn');
   b.h3('Adding a user');
   b.steps([
+    'Confirm the person is staff, not a cadet.',
     'Go to the Users page.',
     'Click + Add User.',
     'Enter the full name (as it will appear on the login screen and in the audit log), a short unique username, the role, service number, and a 4-digit initial PIN.',

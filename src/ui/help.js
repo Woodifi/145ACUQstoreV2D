@@ -66,8 +66,10 @@ const SECTIONS = [
       </ol>
 
       <h4>Adding users</h4>
+      <p class="help__note"><strong>Staff only. Never create an account for a cadet.</strong> A user account stores the person's name and service number. This build holds no cadet personal information, and a cadet account would put it back — by a different door. There is no cadet role, and cadet accounts from earlier versions cannot sign in.</p>
       <ol>
         <li>Go to the <strong>Users</strong> page (OC only, visible in the navigation bar)</li>
+        <li><strong>Confirm the person is staff, not a cadet</strong></li>
         <li>Click <strong>+ Add User</strong> and fill in name, username, role, service number, and initial PIN</li>
         <li>After saving, the PIN is displayed <strong>once</strong> — note it down immediately and give it to the user verbally</li>
         <li>Only the OC can manage PINs. Users cannot change their own PIN — if a user forgets their PIN they must ask the OC to reset it via the <strong>Reset PIN</strong> button on the Users page</li>
@@ -117,10 +119,13 @@ const SECTIONS = [
     title: 'User accounts',
     icon: '👥',
     body: `
-      <p>The <strong>Users</strong> page (OC only) is where you create and manage login accounts for everyone who uses the app.</p>
+      <p>The <strong>Users</strong> page (OC only) is where you create and manage login accounts for the <strong>staff</strong> who use the app.</p>
+
+      <p class="help__note"><strong>Staff only. Never create an account for a cadet.</strong> A user account stores the person's name and service number. This build holds no cadet personal information, and a cadet account would put it back — by a different door. There is no cadet role, and cadet accounts from earlier versions cannot sign in.</p>
 
       <h4>Adding a user <span class="help__role">OC only</span></h4>
       <ol>
+        <li><strong>Confirm the person is staff.</strong> Cadets do not get accounts</li>
         <li>Click <strong>+ Add User</strong></li>
         <li>Enter full name, username, role, and service number (optional)</li>
         <li>Enter an initial PIN (4 digits, entered twice — PIN is visible while typing)</li>

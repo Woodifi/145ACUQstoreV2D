@@ -29,7 +29,12 @@ import { showToast } from './toast.js';
 import { openModal } from './modal.js';
 
 // Role order for display — matches login.js convention.
-const ROLE_ORDER = ['co', 'qm', 'staff', 'cadet', 'ro'];
+// No 'cadet'. The role is gone (auth.js ROLES) and login() refuses it. The role
+// dropdown filters this list against AUTH.ROLES, so leaving 'cadet' here would
+// not render an option today — but it would the moment anyone put the role back,
+// silently. Legacy cadet accounts sort last (indexOf -1 → 99 below), which is
+// where an account that cannot sign in belongs.
+const ROLE_ORDER = ['co', 'qm', 'staff', 'ro'];
 
 // -----------------------------------------------------------------------------
 // Module state
@@ -202,6 +207,14 @@ async function _openUserForm(userId) {
     persistent: true,
     bodyHtml:  `
       <form class="form" data-form="user-form" autocomplete="off">
+        ${isNew ? `
+          <div class="modal__warn">
+            <strong>Staff only — never create an account for a cadet.</strong>
+            A user account stores a name and service number. This build holds no
+            cadet personal information, and a cadet account would reintroduce it
+            by a different door. There is no cadet role to assign.
+          </div>
+        ` : ''}
         <label class="form__field">
           <span class="form__label">Full name <span class="form__required">*</span></span>
           <input type="text" name="name" required maxlength="80"
