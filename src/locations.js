@@ -103,3 +103,50 @@ export async function nextIssueNo(Storage) {
   const n = await Storage.counters.next('issue', 1000);
   return `ISS-${n}`;
 }
+
+// ---------------------------------------------------------------------------
+// Loan remarks — curated vocabulary
+// ---------------------------------------------------------------------------
+// `remarks` was a free-text box on both the issue and return forms. It is the
+// single most likely field in the app to acquire a name: it sits next to the
+// word "issue", it invites a sentence, and a sentence about a loan tends to
+// name the person who has it. "Returned by Smith, bent." carries PII in an
+// unencrypted field, and nothing would detect it.
+//
+// The observation itself is operationally real — "returned unserviceable, bent"
+// is worth recording — so the field is constrained rather than deleted. A select
+// over a curated list cannot hold a sentence, and therefore cannot hold a name.
+//
+// Equipment observations that don't fit the list belong in the item's
+// maintenance log (inventory.js), which is retained: it is about the item, not
+// about a person, and it is the right home for "bent on exercise, straightened".
+
+const REMARKS_KEY = 'loans.remarks';
+
+export const DEFAULT_REMARKS = Object.freeze([
+  'Issued serviceable',
+  'Returned serviceable',
+  'Returned unserviceable — damaged',
+  'Returned unserviceable — worn',
+  'Returned incomplete',
+  'Returned late',
+  'Not returned — written off',
+  'Exchanged for correct size',
+  'Replacement issue',
+]);
+
+/** Curated remark list. Empty string is always available, meaning "no remark". */
+export async function remarks(Storage) {
+  let saved = null;
+  try { saved = await Storage.settings.get(REMARKS_KEY); } catch { /* defaults */ }
+  const custom = Array.isArray(saved) && saved.length
+    ? saved.filter((v) => typeof v === 'string' && v.trim())
+    : DEFAULT_REMARKS.slice();
+  return custom;
+}
+
+export async function saveRemarks(Storage, list) {
+  const clean = (list || []).map((v) => String(v || '').trim()).filter(Boolean);
+  await Storage.settings.set(REMARKS_KEY, clean);
+  return clean;
+}

@@ -224,8 +224,9 @@ async function _renderIssueTab(body) {
     ? parseInt(dueDaysSetting, 10)
     : 7;
 
-  const items     = await Storage.items.list();
-  const locations = await Locations.list(Storage);
+  const items         = await Storage.items.list();
+  const locations     = await Locations.list(Storage);
+  const remarkOptions = await Locations.remarks(Storage);
 
   // No personnel are loaded, because none are stored. The old form showed the
   // selected borrower's existing active loans alongside the picker; there is no
@@ -297,10 +298,16 @@ async function _renderIssueTab(body) {
           </label>`;
         })()}
         <label class="form__field">
-          <span class="form__label">Notes</span>
-          <textarea name="remarks" rows="2" maxlength="400"
-                    data-issue-field="remarks"
-                    placeholder="optional — e.g. Annual camp kit, size details"></textarea>
+          <span class="form__label">Remark</span>
+          <select data-issue-field="remarks">
+            <option value="">(none)</option>
+            ${remarkOptions.map((r) => `<option value="${esc(r)}">${esc(r)}</option>`).join('')}
+          </select>
+          <span class="form__hint">
+            A fixed list, not free text — a free box next to "issue" collects
+            names. Equipment observations belong in the item's maintenance log.
+            Edit the list in Settings.
+          </span>
         </label>
 
         <div class="form__error" data-issue-error role="alert"></div>
@@ -688,7 +695,7 @@ async function _submitIssue(body) {
   errEl.textContent = '';
 
   const purpose      = $('select[data-issue-field="purpose"]', body)?.value || '';
-  const remarks      = $('textarea[data-issue-field="remarks"]', body)?.value || '';
+  const remarks      = $('select[data-issue-field="remarks"]', body)?.value || '';
   const location     = _issueState.location;
   // Initial Issue is always a long-term loan with a 6-year engagement date.
   const longTermLoan = (purpose === INITIAL_ISSUE) ? true : _issueState.longTermLoan;
@@ -991,7 +998,8 @@ async function _renderReturnTab(body) {
     ? activeLoans.filter((l) => destOf(l) === _returnState.dest)
     : [];
 
-  const destOptions = [...destsWithLoans].sort();
+  const destOptions   = [...destsWithLoans].sort();
+  const remarkOptions = await Locations.remarks(Storage);
 
   body.innerHTML = `
     <div class="loan__return">
@@ -1039,10 +1047,11 @@ async function _renderReturnTab(body) {
               </label>
             </div>
             <label class="form__field">
-              <span class="form__label">Return remarks</span>
-              <textarea name="returnRemarks" rows="2" maxlength="300"
-                        data-return-field="remarks"
-                        placeholder="optional — e.g. damage notes"></textarea>
+              <span class="form__label">Return remark</span>
+              <select data-return-field="remarks">
+                <option value="">(none)</option>
+                ${remarkOptions.map((r) => `<option value="${esc(r)}">${esc(r)}</option>`).join('')}
+              </select>
             </label>
 
             <div class="form__error" data-return-error role="alert"></div>
@@ -1133,7 +1142,7 @@ async function _submitReturn(body) {
     return;
   }
   const condition = $('select[data-return-field="condition"]', body)?.value || 'serviceable';
-  const remarks   = $('textarea[data-return-field="remarks"]', body)?.value || '';
+  const remarks   = $('select[data-return-field="remarks"]', body)?.value || '';
 
   const sessionUser = AUTH.getSession()?.name || 'unknown';
   const returnDate  = _todayLocalIsoDate();
@@ -1948,6 +1957,7 @@ function _updateBulkBar(body) {
 async function _bulkReturnLoans(refs, body) {
   AUTH.requirePermission('return');
   if (refs.length === 0) return;
+  const bulkRemarkOptions = await Locations.remarks(Storage);
 
   openModal({
     titleHtml: `Bulk Return — ${refs.length} loan${refs.length === 1 ? '' : 's'}`,
@@ -1965,8 +1975,11 @@ async function _bulkReturnLoans(refs, body) {
         </select>
       </label>
       <label class="form__field" style="margin-top:10px">
-        <span class="form__label">Remarks (optional)</span>
-        <textarea class="form__input" rows="2" data-bulk-remarks placeholder="e.g. End of annual camp"></textarea>
+        <span class="form__label">Remark (optional)</span>
+        <select class="form__input" data-bulk-remarks>
+          <option value="">(none)</option>
+          ${bulkRemarkOptions.map((r) => `<option value="${esc(r)}">${esc(r)}</option>`).join('')}
+        </select>
       </label>
       <div class="form__error" data-bulk-error role="alert" style="margin-top:8px"></div>
       <div class="form__actions" style="margin-top:16px">
@@ -2167,6 +2180,7 @@ async function _quickReturnLoan(ref, body) {
   const loan = await Storage.loans.get(ref);
   if (!loan) { showToast('Loan not found.', 'error'); return; }
   if (!loan.active) { showToast('This loan has already been returned.', 'error'); return; }
+  const qrRemarkOptions = await Locations.remarks(Storage);
 
   openModal({
     titleHtml: `Quick Return — ${esc(loan.ref)}`,
@@ -2187,8 +2201,11 @@ async function _quickReturnLoan(ref, body) {
         </select>
       </label>
       <label class="form__field" style="margin-top:10px">
-        <span class="form__label">Remarks</span>
-        <textarea class="form__input" rows="2" data-qr-remarks placeholder="Optional notes…"></textarea>
+        <span class="form__label">Remark</span>
+        <select class="form__input" data-qr-remarks>
+          <option value="">(none)</option>
+          ${qrRemarkOptions.map((r) => `<option value="${esc(r)}">${esc(r)}</option>`).join('')}
+        </select>
       </label>
       <div class="form__error" data-qr-error role="alert" style="margin-top:8px"></div>
       <div class="form__actions" style="margin-top:16px">

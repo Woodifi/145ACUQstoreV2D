@@ -83,11 +83,11 @@ So person-adjacent free text is **removed**, not discouraged:
 
 | Field | Disposition |
 |---|---|
-| loan `remarks` | Constrained vocabulary or removed |
-| loan `lineNotes` | Constrained vocabulary or removed |
-| activity / location name | Managed list, not free text |
-| stocktake `countedBy` | Removed (or operator handle if adults are permitted) |
-| request `notes` | Removed |
+| loan `remarks` | ~~DONE~~ — curated vocabulary (4 surfaces) |
+| loan `lineNotes` | Per-line, still free text — see findings, step 8 |
+| activity / location name | ~~DONE~~ — managed list (step 2) |
+| stocktake `countedBy` | PENDING — operator's name, an adult |
+| request `notes` | ~~DONE~~ — module removed (step 5) |
 | item `notes` / maintenance log | **Retained** — about equipment, not people |
 
 A user determined to write a name somewhere will always find a way. The goal is
@@ -141,6 +141,30 @@ cycle silently destroyed the very records we are required to extract first.
 This is precisely why the direction at §13.1 is being sought, and why the
 controls statement must not claim an upgraded unit carries no PII until its
 legacy rows are gone.
+
+## Findings from step 8
+
+**Four remark surfaces, not one.** The issue form, the return form, the
+bulk-return modal and the quick-return modal each had their own free-text box.
+Converting the two obvious forms and stopping would have left two modals — the
+ones a QM actually uses on a busy night — still collecting sentences. Grep for
+the *field*, not the form.
+
+**Constrained, not deleted.** "Returned unserviceable — damaged" is worth
+recording; the sentence around it is the problem. A `<select>` over a curated
+list cannot hold a sentence and therefore cannot hold a name. Observations that
+don't fit the list belong in the item's maintenance log, which is retained
+because it is about the item.
+
+**`countedBy` is NOT free text a cadet lands in** — `stocktake.js` sets it from
+`AUTH.getSession()?.name`, i.e. the operator. An adult. Same unanswered question
+as staff, users and the orders requestor. Left alone deliberately.
+
+**`lineNotes` remains free text.** Per-line notes on an issue ("size 10", "spare
+set") are genuinely per-line and a fixed vocabulary fits them badly. It is a
+smaller surface than `remarks` — it sits against an item line, not against the
+issue — but it is a surface. **Flagged, not fixed.** It needs a decision:
+constrain it, delete it, or accept it.
 
 ## Findings from step 7
 
@@ -280,7 +304,10 @@ loans.js: `pdf.js` (17), `requests.js` (20), `ims-reports.js` (8),
 7. ~~**Login**~~ — DONE. `cadet` removed from ROLES/PERMS; login() refuses
    role 'cadet' before verifying the PIN; the cadet picker and its cadet-register
    read are gone. Legacy cadet accounts are hidden AND refused, not deleted.
-8. **Free text** — per the table above.
+8. ~~**Free text**~~ — DONE for loans. All four remark surfaces (issue form,
+   return form, bulk-return modal, quick-return modal) are now selects over a
+   curated vocabulary in `locations.js`. `stocktakeCounts.countedBy` is NOT
+   done — it holds an operator's name, i.e. an adult, pending HQ's answer.
 9. **Migration** — gated on §13.1.
 
 Each step is a separate commit. Nothing merges to `main` until the whole is
