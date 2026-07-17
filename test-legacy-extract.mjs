@@ -153,5 +153,45 @@ const purged = await Storage.legacy.purge({ confirmedUploadedToCEA: true });
 ok('purge now SUCCEEDS — the deadlock is gone', purged.cadets === 1);
 ok('all four equipment records survive', (await Storage.loans.list()).length === 4);
 
+// --- cadet LOGIN accounts ----------------------------------------------------
+// A cadet account is cadet PII by a different door: PII_FIELDS_USERS is
+// ['name','svcNo','totpSecret'], so it holds a cadet's name and service number
+// in the USERS store, independently of the cadets store. Step 7 removed the
+// ROLE and refused these accounts at login — but refused-and-hidden is not
+// absent, and the build's claim is absence.
+console.log('\n--- cadet login accounts ---');
+await Storage.importAll({
+  schemaVersion: 4, meta: [], settings: [], counters: [], items: [], audit: [],
+  cadets: [], loans: [], pendingRequests: [], stocktakeCounts: [], kits: [],
+  supplyOrders: [], photos: [],
+  users: [
+    { id: 'u1', username: 'oc',    name: 'CAPT Laidlaw',   svcNo: '9000001', role: 'co' },
+    { id: 'u2', username: 'wodeh', name: 'CDT Wodehouse A.', svcNo: '8012345', role: 'cadet' },
+    { id: 'u3', username: 'bront', name: 'LCPL Bronte E.',   svcNo: '8012346', role: 'cadet' },
+  ],
+});
+
+const s1 = await Storage.legacy.summary();
+ok('summary counts cadet login accounts', s1.cadetUsers === 2);
+ok('cadet accounts count toward the total', s1.total === 2);
+
+// Accounts alone must NOT be gated behind export — they are credentials, not
+// Q records. Gating them would deadlock a database that has nothing else left.
+const p1 = await Storage.legacy.purge({ confirmedUploadedToCEA: true });
+ok('accounts-only purge is not blocked by the loans gate', p1.cadetUsers === 2);
+
+const left = await Storage.users.list();
+ok('cadet accounts are gone', !left.some((u) => u.role === 'cadet'));
+ok('the OC account survives', left.some((u) => u.id === 'u1' && u.role === 'co'));
+ok('no cadet name remains in the users store',
+  !JSON.stringify(left).includes('Wodehouse'));
+ok('summary is clean afterwards', (await Storage.legacy.summary()).total === 0);
+
+const arows = await Storage.audit.list();
+const pnote = arows.find((r) => r.action === 'legacy_pii_purged');
+ok('the purge entry names the accounts removed', /login account/i.test(pnote?.desc || ''));
+ok('the purge entry states the audit log is unchanged',
+  /audit log is unchanged/i.test(pnote?.desc || ''));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

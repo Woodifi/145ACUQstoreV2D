@@ -892,6 +892,7 @@ function _legacySectionHtml(sum) {
   if (sum.cadets)   bits.push(`${sum.cadets} cadet record${sum.cadets === 1 ? '' : 's'}`);
   if (sum.loans)    bits.push(`${sum.loans} loan${sum.loans === 1 ? '' : 's'} naming a borrower`);
   if (sum.requests) bits.push(`${sum.requests} equipment request${sum.requests === 1 ? '' : 's'}`);
+  if (sum.cadetUsers) bits.push(`${sum.cadetUsers} cadet login account${sum.cadetUsers === 1 ? '' : 's'}`);
 
   return `
     <section class="settings__section" data-section="legacy">
@@ -2837,6 +2838,9 @@ async function _doLegacyPurge() {
 
   // Refusal gets a modal, not a toast — and it says which members are missing
   // rather than just a count, so the operator can act on it.
+  // Only the LOANS gate blocks a purge — an un-exported member is a record that
+  // has not reached CEA. Cadet login accounts do not gate anything: they are
+  // credentials, not Q records, and CEA has no use for them.
   if (sum.loans > 0) {
     openModal({
       titleHtml: 'Export the remaining members first',
@@ -2865,8 +2869,9 @@ async function _doLegacyPurge() {
     persistent: true,
     bodyHtml: `
       <div class="modal__warn">
-        <strong>This permanently removes ${sum.cadets} cadet record(s) and
-        ${sum.requests} equipment request(s). It cannot be undone.</strong>
+        <strong>This permanently removes ${sum.cadets} cadet record(s),
+        ${sum.requests} equipment request(s) and ${sum.cadetUsers} cadet login
+        account(s). It cannot be undone.</strong>
       </div>
       <p class="modal__body">
         Only proceed if <strong>every Q record has been uploaded</strong> to the
@@ -2905,8 +2910,9 @@ async function _doLegacyPurge() {
           const res = await Storage.legacy.purge({ confirmedUploadedToCEA: true });
           close();
           await _render();
-          showToast(`Removed ${res.cadets} cadet record(s) and ${res.requests} request(s). `
-            + 'Equipment records retained and linked to their issue documents.', 'success', 6000);
+          showToast(`Removed ${res.cadets} cadet record(s), ${res.requests} request(s) `
+            + `and ${res.cadetUsers} cadet login account(s). Equipment records retained `
+            + 'and linked to their issue documents.', 'success', 6000);
         } catch (err) {
           // The storage layer refuses on the data, not on this dialog. Surface
           // that refusal here rather than letting it vanish.

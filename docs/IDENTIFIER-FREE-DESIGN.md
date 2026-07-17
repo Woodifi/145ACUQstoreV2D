@@ -288,6 +288,34 @@ loans.js: `pdf.js` (17), `requests.js` (20), `ims-reports.js` (8),
 
 ## Known and deliberately not fixed
 
+### Cadet names in the audit chain — surfaced, not fixable here
+
+Every audit entry records `user: <name>`. So **any cadet who ever signed in to an
+earlier build has their name in the audit log**, and removing their cadet record,
+their loans' borrower fields, and their login account does not touch it.
+
+It cannot be scrubbed from here, and it should not be:
+
+- The chain is `HMAC(auditKey, [prevHash, ts, action, user, desc])`. Altering any
+  entry breaks verification for that entry and every one after it. A scrubbed
+  chain is indistinguishable from a forged one — the same reason re-signing after
+  key rotation restores nothing (see the controls statement §9).
+- The audit log **is** the Commonwealth record of what happened. Editing it to
+  look compliant is the offence the Archives Act describes, not a remedy for it.
+
+So the position is: the identifier-free build collects no new names into the
+audit log — there is no cadet role, no cadet can sign in, and no cadet action can
+be recorded. Historic entries from an earlier build retain the names of cadets
+who used it, permanently, by design.
+
+**This needs to be told to HQ rather than solved in code.** It belongs in the
+controls statement §4 and in the disposal question at §13.1: after extraction and
+purge, an upgraded database carries no cadet PII *except* the names in its own
+audit history. That is a smaller and more defensible surface than the one we
+started with, but it is not zero, and claiming zero would be false.
+
+
+
 Recorded here rather than left to be rediscovered. None of these block the two
 units; all of them would bite somebody eventually.
 
