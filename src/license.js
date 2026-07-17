@@ -49,6 +49,26 @@ const PRODUCTION_PUBLIC_KEY_HEX =
 // In dev builds, skip all validation and report ACTIVE.
 const IS_DEV = (typeof __QSTORE_BUILD_ID__ !== 'undefined' && __QSTORE_BUILD_ID__ === 'dev');
 
+// The Defence build carries a perpetual, no-charge licence by construction.
+//
+// This is not a bypass of someone else's licensing — it is the author's own
+// product, and the author has told HQ AAC ICT in writing that no payment is
+// sought for this build (controls statement §9). A free build that demands a
+// subscription would contradict that submission.
+//
+// It also fixes a live defect. Without this, a unit issued the free Defence
+// build gets TRIAL for 30 days and then RESTRICTED — their Q-Store silently
+// becomes read-only a month after they start using it, for a product they were
+// told costs nothing. Nobody would have noticed until it happened.
+//
+// Compiled in rather than key-activated: there is no cloud check-in in this
+// build (it has no network path at all), so a key-based licence could never
+// renew or be revoked here anyway. Build-time is the honest mechanism.
+//
+// The UI reports this state plainly rather than posing as a paid subscription —
+// see _subscriptionSectionHtml in settings.js.
+const IS_DEFENCE = (typeof __QSTORE_DEFENCE__ !== 'undefined' && __QSTORE_DEFENCE__);
+
 // -----------------------------------------------------------------------------
 // Error classes
 // -----------------------------------------------------------------------------
@@ -128,6 +148,14 @@ export function getLicenseState() {
   if (typeof __V2L_SANDBOX__ !== 'undefined' && __V2L_SANDBOX__) {
     return { state: 'ACTIVE', payload: { unit: 'Learning Edition', tier: 'v2l' }, daysRemaining: 9999, trialDaysLeft: null, expiresAt: null };
   }
+  // Defence build — perpetual, no charge. Never expires, never restricts.
+  if (IS_DEFENCE) {
+    return {
+      state: 'ACTIVE',
+      payload: { unit: 'ADF Cadets', tier: 'defence', licence: 'Provided free of charge — no subscription required' },
+      daysRemaining: null, trialDaysLeft: null, expiresAt: null,
+    };
+  }
   if (IS_DEV) {
     return { state: 'ACTIVE', payload: { unit: 'Development', tier: 'v2' }, daysRemaining: 365, trialDaysLeft: null, expiresAt: null };
   }
@@ -195,6 +223,7 @@ export function clearKey() {
 export function requireEdit() {
   if (typeof __V2L_SANDBOX__ !== 'undefined' && __V2L_SANDBOX__) return;
   if (IS_DEV) return;
+  if (IS_DEFENCE) return;
   const { state } = getLicenseState();
   if (state === 'RESTRICTED') throw new LicenseRestrictedError();
   if (state === 'INVALID')    throw new LicenseInvalidError();

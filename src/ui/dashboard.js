@@ -240,9 +240,6 @@ async function _render() {
           <button type="button" class="dash__action-btn" data-nav="loans">
             📋 Loans
           </button>
-          <button type="button" class="dash__action-btn" data-nav="cadets">
-            👥 Cadets
-          </button>
           ${canEdit ? `
             <button type="button" class="dash__action-btn" data-nav="stocktake">
               📊 Stocktake
