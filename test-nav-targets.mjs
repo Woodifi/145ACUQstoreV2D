@@ -55,5 +55,22 @@ for (const file of walk(SRC)) {
 if (dangling.length) dangling.forEach((d) => console.error(`       ${d}`));
 ok('every nav target resolves to a real page', dangling.length === 0);
 
+// --- empty action containers ------------------------------------------------
+// The fingerprint of a button deleted from its container. The cadet CSV
+// importer shipped like this: the <button> was removed but the surrounding
+// <details><summary>Import cadets from CSV</summary> block survived, with an
+// empty form__actions where the button had been. A user opened it, read
+// instructions for bulk-importing cadets, and found nothing.
+//
+// Found by the operator clicking Settings. No grep of mine looked for the
+// ABSENCE of something inside a container that still existed.
+const emptyActions = [];
+for (const file of walk(SRC)) {
+  const src = readFileSync(file, 'utf8');
+  if (/<div class="form__actions">\s*<\/div>/.test(src)) emptyActions.push(file.split('/').pop());
+}
+if (emptyActions.length) emptyActions.forEach((f) => console.error(`       ${f}`));
+ok('no empty action containers (button removed, wrapper left)', emptyActions.length === 0);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

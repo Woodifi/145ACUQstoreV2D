@@ -1405,23 +1405,6 @@ function _dataSectionHtml(settings) {
         </div>
       </details>
 
-      <details class="settings__details">
-        <summary>Import cadets from CSV</summary>
-        <div class="settings__details-body">
-          <p>
-            Bulk-import cadets and staff from a spreadsheet. Existing records
-            match by <code>svcNo</code> and are updated in place.
-          </p>
-          <p>
-            Rank values are normalised — <code>Cdt</code>/<code>cdt</code>/<code>CDT</code>
-            all become <code>CDT</code>. The <code>active</code> flag accepts
-            true/false/yes/no/1/0 as values.
-          </p>
-          <div class="form__actions">
-          </div>
-        </div>
-      </details>
-
       <input type="file" data-target="import-file"
              accept="application/json,.json,.qstore" hidden>
       <input type="file" data-target="import-v1-file"
