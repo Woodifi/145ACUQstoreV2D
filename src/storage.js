@@ -526,6 +526,30 @@ export const photos = {
 // Cadets / Personnel  (PII-encrypted: surname, given, email, notes)
 // -----------------------------------------------------------------------------
 
+/**
+ * Cadets — LEGACY READ-ONLY.
+ *
+ * This build does not collect cadet records. The Cadets page is gone and put()
+ * refuses new writes: HQ's position (17 July 2026) is conditional on the tool
+ * not carrying PII, and a build that can still create a cadet record is a build
+ * that carries PII the moment someone uses it.
+ *
+ * The store and its existing rows REMAIN, deliberately. A unit upgrading from an
+ * earlier build has cadet records here, and they are not ours to destroy:
+ * extraction to CEA documents comes first, and disposal needs HQ's direction
+ * (controls statement §13.1). Issue history may be a Commonwealth record — see
+ * DYM S1 Ch2 para 67 and the Archives Act 1983.
+ *
+ * list()/get() therefore stay, so the data is reachable for that extraction.
+ * exportAll() still includes the store for the same reason: dropping it would
+ * mean a backup-and-restore cycle silently destroyed the very records we are
+ * required to extract before disposing of. Destruction by omission is still
+ * destruction.
+ *
+ * A fresh install has no rows here and carries no PII. An upgraded one carries
+ * legacy data pending disposal, and that is exactly why the direction at §13.1
+ * is being sought.
+ */
 export const cadets = {
   async list() {
     const rows = await _all(STORES.CADETS);
@@ -538,7 +562,23 @@ export const cadets = {
     return row ? PII.decryptRecord(row, PII.PII_FIELDS_CADETS) : null;
   },
 
-  async put(cadet) {
+  /**
+   * REFUSES ALL WRITES. This build does not collect cadet records.
+   *
+   * Fails closed rather than being deleted outright so that any caller still
+   * trying to create one is found by a test, loudly, instead of silently
+   * repopulating an identifier-free database. That is not hypothetical: the v1
+   * import did exactly this to the loans store, and only the equivalent guard
+   * on loans.put() caught it.
+   */
+  async put(_cadet) {
+    throw new Error(
+      'This build does not store cadet records. Items are issued to a location '
+      + 'or an issue-document number — see docs/IDENTIFIER-FREE-DESIGN.md.'
+    );
+  },
+
+  async _legacyPutDisabled(cadet) {
     requireEdit();
     if (!cadet?.svcNo) throw new Error('Cadet.svcNo required');
     const enc = await PII.encryptRecord(cadet, PII.PII_FIELDS_CADETS);

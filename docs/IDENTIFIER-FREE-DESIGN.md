@@ -123,6 +123,42 @@ prerequisite to deleting it, and issue/loan history may be a record. Destroying 
 Commonwealth record on our own initiative is not a decision this codebase gets to
 make — see DYM S1 Ch2 para 67 and the *Archives Act 1983*.
 
+## Removal is not disposal
+
+Step 3 removed the cadets *module*. It did not delete anyone's data, and the
+distinction is deliberate.
+
+- A **fresh install** has no cadet rows. It carries no PII. Condition met.
+- An **upgraded install** still has its cadet rows. They are not ours to destroy:
+  extraction to CEA comes first, and disposal needs HQ's direction (§13.1).
+
+So `Storage.cadets.list()/get()` remain — the data must stay reachable for that
+extraction — while `put()` refuses, so nothing new is collected. `exportAll()`
+still includes the store, on purpose: dropping it would mean a backup-and-restore
+cycle silently destroyed the very records we are required to extract first.
+**Destruction by omission is still destruction.**
+
+This is precisely why the direction at §13.1 is being sought, and why the
+controls statement must not claim an upgraded unit carries no PII until its
+legacy rows are gone.
+
+## Findings from step 3
+
+**Tests that seeded cadets now fail correctly, and were re-pointed rather than
+deleted.** `test-key-rotation` seeded cadets to have PII to rotate; it now seeds
+**staff**. That is a better test than it was: staff and users are adults, they
+survive this rebuild, and rotation matters exactly as much for their data.
+
+**`test-cadets.mjs` is a latent trap.** It tests cadet CRUD that no longer
+exists, and is currently *masked* by the pre-existing `localStorage`
+ReferenceError — so whoever fixes that failure will hit a confusing "does not
+store cadet records" error instead. It should be deleted or rewritten to assert
+the refusal. **Not done — flagged rather than silently left.**
+
+**My dangling-call checker gives false positives** on object methods and named
+function expressions (`_legacyPutDisabled`, `_cloudSectionHtmlImpl`). It caught
+the real loans.js breakage, but do not trust its clean runs as proof.
+
 ## Findings from step 2
 
 **The v1 import reintroduces PII, and the fail-closed guard caught it.**
@@ -153,7 +189,9 @@ loans.js: `pdf.js` (17), `requests.js` (20), `ims-reports.js` (8),
    returns and the all-loans view group by issue/destination; AB189 and voucher
    print with recipient fields blank; the discharged flag and phantom-borrower
    cleanup are gone (both required a person record to compare against).
-3. **Cadets module** — removed.
+3. ~~**Cadets module**~~ — DONE. Page and `ui/cadets.js` deleted; demo seed no
+   longer creates cadets; `Storage.cadets.put()` refuses all writes. The STORE
+   and its rows remain — see "Removal is not disposal" below.
 4. **PDFs** — nominal roll removed; AB189 / voucher / checklist print with blank
    identifier fields and the issue number.
 5. **Requests** — requestor fields removed.
