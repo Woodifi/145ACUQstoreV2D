@@ -87,10 +87,13 @@ async function _render() {
       hint: 'Inventory → + Add item',
     },
     {
-      done: (await Storage.cadets.list()).length > 0,
-      label: 'Add cadets / nominal roll',
-      nav: 'cadets',
-      hint: 'Cadets → + Add cadet',
+      // Was "Add cadets / nominal roll", navigating to a page that no longer
+      // exists. This build stores no cadet records; setting up destinations is
+      // the equivalent step — it is what an issue is recorded against now.
+      done: !!(await Storage.settings.get('loans.locations')),
+      label: 'Set up issue destinations',
+      nav: 'settings',
+      hint: 'Settings → Cloud sync encryption → destinations',
     },
   ] : [];
   const setupComplete   = setupSteps.every(s => s.done);
@@ -171,7 +174,7 @@ async function _render() {
             <thead>
               <tr>
                 <th>Ref</th>
-                <th>Borrower</th>
+                <th>Issued to</th>
                 <th>Item</th>
                 <th>Qty</th>
                 <th>Due</th>
@@ -188,7 +191,7 @@ async function _render() {
                   return `
                     <tr class="dash__overdue-row">
                       <td class="dash__overdue-ref">${esc(l.ref)}</td>
-                      <td>${esc(l.borrowerName || '—')}</td>
+                      <td>${esc(l.issueNo || l.location || '—')}</td>
                       <td>${esc(l.itemName || '—')}</td>
                       <td class="dash__overdue-qty">${l.qty}</td>
                       <td class="dash__overdue-date">${esc(l.dueDate)}</td>

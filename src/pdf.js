@@ -334,7 +334,7 @@ function _drawSignatureBlocks(doc, y, unit, issuedByName) {
     || (unit.qmRank && unit.qmName ? `${unit.qmRank} ${unit.qmName}` : (unit.qmName || ''));
 
   _sigBox(doc, col1, y + 4, sigW, 'ISSUED BY (Q-Store staff)', issuedPrefill);
-  _sigBox(doc, col2, y + 4, sigW, 'RECEIVED BY (Borrower)',    '');
+  _sigBox(doc, col2, y + 4, sigW, 'RECEIVED BY (print name, sign)', '');
 }
 
 function _sigBox(doc, x, y, w, label, prefill) {

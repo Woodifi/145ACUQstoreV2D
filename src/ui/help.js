@@ -213,7 +213,7 @@ const SECTIONS = [
       <p>Initial Issue · Annual Camp · Training Activity · Parade Night · Field Exercise · Ceremonial · Course Attendance · Other</p>
 
       <h4>All Loans tab</h4>
-      <p>Filter by Active, Returned, Overdue, or All. Search by borrower name or loan reference. Use the <strong>Borrower</strong> picker to show only loans for a specific person — pill counts update to reflect that borrower's loans.</p>
+      <p>Filter by Active, Returned, Overdue, or All. Search by loan reference, item, issue number or destination. Use the <strong>Issue / destination</strong> filter to show only loans against one issue document or location — pill counts update to match. This build does not record who holds an item: that is on the issue document, filed in the member's CEA documents.</p>
       <p>Loans belonging to a discharged cadet are flagged with a red <strong>Discharged</strong> badge. These are automatically recalled (due date set to discharge date) when a cadet is deactivated.</p>
     `,
   },

@@ -62,10 +62,12 @@ function _renderOutstandingLoans(loans, groupBy) {
 
   let html = `<p class="ims-report__meta">${active.length} active loan${active.length === 1 ? '' : 's'}, ${overdue.length} overdue</p>`;
 
-  if (groupBy === 'borrower') {
+  if (groupBy === 'destination') {
     const groups = {};
     for (const l of active) {
-      const key = l.borrowerName || l.borrowerSvcNo || 'Unknown';
+      // Grouped by issue document, or by destination where no document was
+      // raised. Never by person — the loan does not know who has it.
+      const key = l.issueNo || l.location || 'Unknown';
       if (!groups[key]) groups[key] = [];
       groups[key].push(l);
     }
@@ -101,7 +103,7 @@ function _loanTableHtml(loans, today) {
     <table class="ims-report__table">
       <thead>
         <tr>
-          <th>Ref</th><th>Borrower</th><th>Item</th><th>Qty</th>
+          <th>Ref</th><th>Issued to</th><th>Item</th><th>Qty</th>
           <th>Issued</th><th>Due</th><th>Status</th>
         </tr>
       </thead>
@@ -111,7 +113,7 @@ function _loanTableHtml(loans, today) {
           return `
             <tr class="${overdue ? 'ims-report__row--overdue' : ''}">
               <td class="ims-report__mono">${esc(l.ref)}</td>
-              <td>${esc(l.borrowerName || l.borrowerSvcNo || '—')}</td>
+              <td>${esc(l.issueNo || l.location || '—')}</td>
               <td>${esc(l.itemName || '—')}${l.nsn ? `<div class="ims-report__sub">${esc(l.nsn)}</div>` : ''}</td>
               <td>${l.qty}</td>
               <td>${esc(_fmtDate(l.issueDate))}</td>
@@ -132,11 +134,11 @@ function _loanTableHtml(loans, today) {
 function _exportOutstandingCsv(loans) {
   const today  = _today();
   const active = loans.filter((l) => l.active !== false);
-  const header = ['Ref', 'Borrower', 'Svc No', 'Item', 'NSN', 'Qty', 'Issue date', 'Due date', 'Status'];
+  const header = ['Ref', 'Issue no', 'Destination', 'Item', 'NSN', 'Qty', 'Issue date', 'Due date', 'Status'];
   const rows   = active.map((l) => {
     const overdue = !l.longTermLoan && l.dueDate && l.dueDate < today;
     return [
-      l.ref, l.borrowerName || '', l.borrowerSvcNo || '',
+      l.ref, l.issueNo || '', l.location || '',
       l.itemName || '', l.nsn || '', l.qty || '',
       l.issueDate || '', l.dueDate || '',
       l.longTermLoan ? 'Long-term' : overdue ? 'Overdue' : 'Active',
@@ -219,7 +221,7 @@ function _renderIssueHistory(loans, fromDate, toDate) {
     <table class="ims-report__table">
       <thead>
         <tr>
-          <th>Ref</th><th>Issued</th><th>Borrower</th><th>Item</th><th>Qty</th>
+          <th>Ref</th><th>Issued</th><th>Issued to</th><th>Item</th><th>Qty</th>
           <th>Purpose</th><th>Returned</th><th>Condition</th>
         </tr>
       </thead>
@@ -228,7 +230,7 @@ function _renderIssueHistory(loans, fromDate, toDate) {
           <tr>
             <td class="ims-report__mono">${esc(l.ref)}</td>
             <td>${esc(_fmtDate(l.issueDate))}</td>
-            <td>${esc(l.borrowerName || l.borrowerSvcNo || '—')}</td>
+            <td>${esc(l.issueNo || l.location || '—')}</td>
             <td>${esc(l.itemName || '—')}</td>
             <td>${l.qty}</td>
             <td>${esc(l.purpose || '—')}</td>
@@ -247,10 +249,10 @@ function _exportIssueHistoryCsv(loans, fromDate, toDate) {
     return (!fromDate || date >= fromDate) && (!toDate || date <= toDate);
   });
   filtered.sort((a, b) => (b.issueDate || '').localeCompare(a.issueDate || ''));
-  const header = ['Ref', 'Issue date', 'Borrower', 'Svc No', 'Item', 'NSN', 'Qty',
+  const header = ['Ref', 'Issue date', 'Issue no', 'Destination', 'Item', 'NSN', 'Qty',
                   'Purpose', 'Due date', 'Active', 'Return date', 'Return condition'];
   const rows = filtered.map((l) => [
-    l.ref, l.issueDate || '', l.borrowerName || '', l.borrowerSvcNo || '',
+    l.ref, l.issueDate || '', l.issueNo || '', l.location || '',
     l.itemName || '', l.nsn || '', l.qty || '',
     l.purpose || '', l.dueDate || '', l.active !== false ? 'Yes' : 'No',
     l.returnDate || '', l.returnCondition || '',
@@ -262,8 +264,12 @@ function _exportIssueHistoryCsv(loans, fromDate, toDate) {
 // Report 4: Kit allocation (Initial Issue)
 // ---------------------------------------------------------------------------
 
-function _renderKitAllocation(loans, cadets) {
-  // Only Initial Issue loans (purpose === 'Initial Issue') grouped by borrower
+function _renderKitAllocation(loans) {
+  // Initial Issue loans grouped by ISSUE DOCUMENT, not by cadet. The report
+  // used to answer "who holds a kit"; it now answers "which issues are kit
+  // issues". Who holds them is on the documents in CEA — this tool cannot say,
+  // and pretending otherwise by grouping on an absent field would have produced
+  // a page of 'Unknown' rather than an error.
   const kitLoans = loans.filter((l) =>
     l.active !== false &&
     (l.purpose === 'Initial Issue' || l.purpose === 'initial_issue')
@@ -275,13 +281,13 @@ function _renderKitAllocation(loans, cadets) {
 
   const byBorrower = {};
   for (const l of kitLoans) {
-    const key = l.borrowerSvcNo || l.borrowerName || 'Unknown';
-    if (!byBorrower[key]) byBorrower[key] = { name: l.borrowerName || '', svcNo: l.borrowerSvcNo || '', items: [] };
+    const key = l.issueNo || l.location || 'Unknown';
+    if (!byBorrower[key]) byBorrower[key] = { name: key, svcNo: '', items: [] };
     byBorrower[key].items.push(l);
   }
 
   return `
-    <p class="ims-report__meta">${Object.keys(byBorrower).length} cadet${Object.keys(byBorrower).length === 1 ? '' : 's'} with Initial Issue kit</p>
+    <p class="ims-report__meta">${Object.keys(byBorrower).length} issue${Object.keys(byBorrower).length === 1 ? '' : 's'} with Initial Issue kit</p>
     <table class="ims-report__table">
       <thead>
         <tr>
@@ -312,9 +318,9 @@ function _exportKitAllocationCsv(loans) {
     l.active !== false &&
     (l.purpose === 'Initial Issue' || l.purpose === 'initial_issue')
   );
-  const header = ['Svc No', 'Borrower name', 'Item', 'NSN', 'Qty', 'Issue date', 'Loan ref'];
+  const header = ['Issue no', 'Destination', 'Item', 'NSN', 'Qty', 'Issue date', 'Loan ref'];
   const rows   = kitLoans.map((l) => [
-    l.borrowerSvcNo || '', l.borrowerName || '',
+    l.issueNo || '', l.location || '',
     l.itemName || '', l.nsn || '', l.qty || '',
     l.issueDate || '', l.ref,
   ].map(_csvCell).join(','));
@@ -328,21 +334,21 @@ function _exportKitAllocationCsv(loans) {
 export function mount(root) {
   let _destroyed    = false;
   let _activeReport = 'outstanding';
-  let _groupBy      = 'borrower';
+  let _groupBy      = 'destination';
   let _fromDate     = '';
   let _toDate       = _today();
   let _loans        = [];
   let _items        = [];
-  let _cadets       = [];
 
   AUTH.requirePermission('view');
 
   async function _load() {
     if (_destroyed) return;
-    [_loans, _items, _cadets] = await Promise.all([
+    // No cadet load. Every report is keyed on the issue document or the
+    // destination now; nothing here consumes a person record.
+    [_loans, _items] = await Promise.all([
       Storage.loans.list(),
       Storage.items.list(),
-      Storage.cadets.list(),
     ]);
     _render();
   }
@@ -376,7 +382,7 @@ export function mount(root) {
             <div class="ims-report__controls">
               <span class="ims-report__ctrl-label">Group by:</span>
               <select class="ims-report__groupby" id="ims-report-groupby">
-                <option value="borrower" ${_groupBy === 'borrower' ? 'selected' : ''}>Borrower</option>
+                <option value="destination" ${_groupBy === 'destination' ? 'selected' : ''}>Issue / destination</option>
                 <option value="item"     ${_groupBy === 'item'     ? 'selected' : ''}>Item</option>
                 <option value="none"     ${_groupBy === 'none'     ? 'selected' : ''}>None (flat)</option>
               </select>
@@ -421,7 +427,7 @@ export function mount(root) {
               </button>
               <button type="button" class="btn btn--ghost btn--sm" data-action="print">⎙ Print</button>
             </div>
-            ${_renderKitAllocation(_loans, _cadets)}
+            ${_renderKitAllocation(_loans)}
           ` : ''}
         </div>
       </div>
