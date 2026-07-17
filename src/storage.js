@@ -1405,6 +1405,29 @@ function _b64ToBlob(b64, contentType) {
  *   Cloud sync depends on this behaviour to keep the audit chain verifiable
  *   across devices. If you change it, the audit chain will break.
  */
+/**
+ * Restore from a snapshot.
+ *
+ * ⚠ THIS PATH BYPASSES THE PERSON GUARDS, AND THAT IS DELIBERATE.
+ *
+ * It writes rows straight to the object stores rather than through
+ * cadets.put()/loans.put(), so the fail-closed guards never fire here. A legacy
+ * backup therefore restores its cadet records, its loans carrying
+ * borrowerName/borrowerSvc, and its requests with plaintext requestor details.
+ *
+ * The alternative — silently dropping them — is worse. The legacy stores exist
+ * precisely so legacy data can be EXTRACTED to CEA before disposal (§13.1). A
+ * restore that discarded them would leave a unit unable to extract the very
+ * records they are required to extract, readable only by the old build, which is
+ * the build with the key-exposure defect.
+ *
+ * So the data comes in, lands in the legacy stores, is invisible to the UI (the
+ * Cadets and Requests pages are gone), and is disposed of on HQ's direction.
+ * What must NOT happen is it arriving silently — hence the returned report and
+ * the audit entry. The caller is responsible for telling the operator.
+ *
+ * @returns {Promise<{legacyPersonData: {cadets:number, loans:number, requests:number, total:number}}>}
+ */
 export async function importAll(snapshot) {
   if (!snapshot || !snapshot.schemaVersion) {
     throw new Error('Not a valid QStore backup (missing schemaVersion).');
@@ -1463,6 +1486,34 @@ export async function importAll(snapshot) {
   // local meta. Reload it now so subsequent audit.append() calls use the
   // correct (imported) key.
   _auditKey = await _loadAuditKey();
+
+  // Count what arrived carrying a person, so the caller can say so. A loan is
+  // "legacy" if it names a borrower; a modern loan carries location/issueNo and
+  // nobody's name.
+  const legacyPersonData = {
+    cadets:   (snapshot.cadets || []).length,
+    loans:    (snapshot.loans || []).filter((l) => l && (l.borrowerName || l.borrowerSvc)).length,
+    requests: (snapshot.pendingRequests || []).length,
+  };
+  legacyPersonData.total = legacyPersonData.cadets + legacyPersonData.loans + legacyPersonData.requests;
+
+  if (legacyPersonData.total > 0) {
+    const parts = [];
+    if (legacyPersonData.cadets)   parts.push(`${legacyPersonData.cadets} cadet record(s)`);
+    if (legacyPersonData.loans)    parts.push(`${legacyPersonData.loans} loan(s) naming a borrower`);
+    if (legacyPersonData.requests) parts.push(`${legacyPersonData.requests} equipment request(s)`);
+    try {
+      await audit.append({
+        action: 'legacy_pii_imported',
+        user:   'system',
+        desc:   `Restored backup contained personal information: ${parts.join(', ')}. `
+              + 'This build does not display or collect it. Extract these records to the '
+              + "members' CEA documents and dispose of them on HQ direction — do not leave "
+              + 'them here.',
+      });
+    } catch (_) { /* never block a restore on the audit write */ }
+  }
+  return { legacyPersonData };
 }
 
 /**

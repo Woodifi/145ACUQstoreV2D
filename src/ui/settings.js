@@ -2294,7 +2294,7 @@ async function _performImport(file, btn) {
       return;
     }
     // Storage.importAll throws on schema mismatch; we surface that cleanly.
-    await Storage.importAll(snapshot);
+    const { legacyPersonData } = await Storage.importAll(snapshot);
 
     // Mirror logo to localStorage so splash shows it on the forced reload below.
     try {
@@ -2308,6 +2308,42 @@ async function _performImport(file, btn) {
     // would put the entry into a chain that's about to be discarded.
     // The post-import audit append uses the freshly-loaded auditKey from
     // the snapshot's meta, so it extends the imported chain correctly.
+    // A backup written by an older build carries cadet records, loans naming a
+    // borrower, and requests with plaintext requestor details. They restore into
+    // the legacy stores on purpose — that is the only way a unit can extract them
+    // to CEA before disposal — but the operator MUST be told, or they will sit
+    // there indefinitely, invisible (the Cadets and Requests pages are gone) and
+    // forgotten. Silence is how the original defect survived for months.
+    if (legacyPersonData?.total > 0) {
+      const bits = [];
+      if (legacyPersonData.cadets)   bits.push(`${legacyPersonData.cadets} cadet record(s)`);
+      if (legacyPersonData.loans)    bits.push(`${legacyPersonData.loans} loan(s) naming a borrower`);
+      if (legacyPersonData.requests) bits.push(`${legacyPersonData.requests} equipment request(s)`);
+      openModal({
+        titleHtml: 'This backup contains personal information',
+        size: 'sm',
+        bodyHtml: `
+          <div class="modal__warn">
+            <strong>Restored, but not usable by this build.</strong>
+            The backup contained ${esc(bits.join(', '))}.
+          </div>
+          <p class="modal__body">
+            This build does not collect or display personal information. These
+            records have been restored into legacy storage so they can be
+            <strong>extracted to the members' CEA documents</strong> — they are
+            not shown anywhere in the app and cannot be edited here.
+          </p>
+          <p class="modal__body">
+            Once extracted, dispose of them on HQ direction. Do not leave them
+            here indefinitely. This has been recorded in the audit log.
+          </p>
+          <div class="form__actions">
+            <button type="button" class="btn btn--primary" data-action="modal-close">Understood</button>
+          </div>
+        `,
+      });
+    }
+
     await Storage.audit.append({
       action: 'data_imported',
       user:   AUTH.getSession()?.name || 'unknown',

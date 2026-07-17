@@ -158,7 +158,7 @@ function _renderKitForm(panel, close, { isEdit, initial, lines, items, onSaved }
           <span class="form__label">Kit name <abbr title="Required">*</abbr></span>
           <input type="text" name="kitName" maxlength="80" required
                  value="${esc(initial.name || '')}"
-                 placeholder="e.g. Initial Issue — Male Cadet">
+                 placeholder="e.g. Initial Issue — standard kit">
         </label>
       </div>
       <label class="form__field">
