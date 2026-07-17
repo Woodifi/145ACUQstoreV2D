@@ -48,7 +48,7 @@ import * as Storage from '../storage.js';
 import * as AUTH    from '../auth.js';
 import * as Sync    from '../sync.js';
 import * as Locations from '../locations.js';
-import { generateIssueVoucher, generateAB189, generateOutstandingLoansReport, downloadPdf } from '../pdf.js';
+import { generateIssueVoucher, generateAB189, generateBlankAB189, generateOutstandingLoansReport, downloadPdf } from '../pdf.js';
 import { openModal }                       from './modal.js';
 import { showToast }                       from './toast.js';
 import { openKitPicker }                   from './kits.js';
@@ -253,6 +253,9 @@ async function _renderIssueTab(body) {
         <h3 class="loan__heading">2. Items
           <button type="button" class="btn btn--ghost btn--sm loan__load-kit"
                   data-action="load-kit" title="Pre-fill with a saved kit">⊞ Load kit</button>
+          <button type="button" class="btn btn--ghost btn--sm"
+                  data-action="print-blank-ab189"
+                  title="Print a blank AB189 for a member to complete by hand">⎙ Blank AB189</button>
         </h3>
         ${_issueLinesHtml(_issueState.lines, allItemsWithAvail)}
 
@@ -506,6 +509,24 @@ function _wireIssueTab(body, locations, allItems) {
   // form is abandoned — that is deliberate: a gap in the sequence is harmless,
   // whereas an issue handed over without its number on it is a broken link to
   // CEA, and the number is the ONLY link.
+  // Blank AB189. This replaces the digital request workflow: the member fills
+  // the form in by hand and it is filed to their CEA documents. The print path
+  // had to move here — it lived on the Requests page, and deleting that module
+  // would have taken the replacement workflow with it.
+  $('[data-action="print-blank-ab189"]', body)?.addEventListener('click', async () => {
+    try {
+      const unit = await Storage.settings.getAll();
+      downloadPdf(await generateBlankAB189({ unit }));
+      await Storage.audit.append({
+        action: 'pdf_ab189_blank',
+        user:   AUTH.getSession()?.name || 'unknown',
+        desc:   'Blank AB189 printed for hand completion.',
+      });
+    } catch (err) {
+      showToast('Could not print blank AB189: ' + (err.message || err), 'error');
+    }
+  });
+
   const destSelect = $('select[data-destination="issue"]', body);
   destSelect?.addEventListener('change', async () => {
     const next = destSelect.value;

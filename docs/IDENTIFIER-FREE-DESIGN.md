@@ -142,6 +142,28 @@ This is precisely why the direction at §13.1 is being sought, and why the
 controls statement must not claim an upgraded unit carries no PII until its
 legacy rows are gone.
 
+## Findings from step 5
+
+**Two stores declare PII encryption they never apply.** `pii.js` defines
+`PII_FIELDS_REQUESTS` and `PII_FIELDS_ORDERS`, but `storage.js` applies neither —
+so `requestorName`, `requestorRank`, `requestorSvc`/`requestorSvcNo` and
+`countedBy` are held in **plain text**. A declared field list that nothing reads
+is worse than none: it reads, to anyone auditing pii.js, as though those stores
+are protected. This is the defect disclosed at controls statement §8.3, and it is
+the `PromptBuilder()`/`repair_rules` shape again — a declaration with no caller.
+
+Removing the requests module removes half of it. The other half is orders.
+
+**`supplyOrders` still carries a plaintext requestor** (`ui/orders.js`,
+`order-parser.js` — 25 references). Deliberately NOT actioned: a supply-order
+requestor is a QM raising an order to higher, i.e. an adult, which puts it in the
+same unanswered question as staff and users (see "Open question" above). Guessing
+it either way in code is exactly what this note exists to prevent.
+
+**If HQ reads "no PII" strictly**, this is the work: orders' requestor fields,
+`stocktakeCounts.countedBy`, the `staff` store, and user account names. None of it
+is cadet data; all of it is PII.
+
 ## Findings from step 3
 
 **Tests that seeded cadets now fail correctly, and were re-pointed rather than
@@ -199,7 +221,10 @@ loans.js: `pdf.js` (17), `requests.js` (20), `ims-reports.js` (8),
    issue reference — a service number no longer appears in a filename, which
    matters: filenames leak into file managers, mail attachments and screen
    shares long before anyone opens the document.
-5. **Requests** — requestor fields removed.
+5. ~~**Requests**~~ — DONE. `ui/requests.js` (1936 lines) and
+   `generateRequestAB189` deleted; `Storage.requests.put()` refuses; the blank
+   AB189 print moved to the Loans page, since deleting the module would
+   otherwise have taken the replacement workflow with it.
 6. **CSV import** — cadet import removed.
 6a. **v1 import** — removed or rewritten. It currently writes person-carrying
     loans and is rejected by `loans.put()`. See findings above.

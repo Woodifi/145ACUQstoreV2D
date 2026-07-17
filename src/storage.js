@@ -752,6 +752,24 @@ export const staff = {
 // Pending requests (AB189 etc.)
 // -----------------------------------------------------------------------------
 
+/**
+ * Equipment requests — LEGACY READ-ONLY. Same treatment as `cadets`.
+ *
+ * The Requests page is gone: a request is inherently "this person wants this
+ * item", and the records carried requestorName/requestorRank/requestorSvc. Worse
+ * than the cadet store did — pii.js declares PII_FIELDS_REQUESTS but the storage
+ * layer never applied it, so those fields were held in PLAIN TEXT. That is the
+ * defect disclosed at §8.3 of the controls statement; removing the module
+ * removes it.
+ *
+ * Requests are now paper: print a blank AB189 from the Loans page, the member
+ * completes it by hand, and the form is filed to their CEA documents.
+ *
+ * put() refuses. The store, its rows, list()/listByStatus() and its place in
+ * exportAll() all REMAIN — those legacy rows contain plaintext PII that must be
+ * extracted to CEA and disposed of per HQ direction (§13.1), and they cannot be
+ * extracted if we have already dropped them.
+ */
 export const requests = {
   list: () => _all(STORES.REQUESTS),
 
@@ -766,12 +784,19 @@ export const requests = {
     return (await _reqDone(tx.objectStore(STORES.REQUESTS).get(id))) || null;
   },
 
-  async put(req) {
-    if (!req?.id) throw new Error('Request.id required');
-    if (!Array.isArray(req.lines)) throw new Error('Request.lines must be an array');
-    const tx = _db.transaction(STORES.REQUESTS, 'readwrite');
-    tx.objectStore(STORES.REQUESTS).put(req);
-    await _txDone(tx);
+  /**
+   * REFUSES ALL WRITES. This build does not store equipment requests — they are
+   * paper (blank AB189 from the Loans page, completed by hand, filed to CEA).
+   *
+   * Fails closed rather than being deleted so a caller still trying is found by
+   * a test, not by silently writing plaintext requestor details into a build
+   * whose authority rests on carrying no PII.
+   */
+  async put(_req) {
+    throw new Error(
+      'This build does not store equipment requests. Print a blank AB189 from '
+      + 'the Loans page — see docs/IDENTIFIER-FREE-DESIGN.md.'
+    );
   },
 
   async delete(id) {
