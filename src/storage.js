@@ -143,7 +143,11 @@ function _runSchemaMigrations(db, oldVersion) {
     cadets.createIndex('personType', 'personType', { unique: false });
 
     const loans = db.createObjectStore(STORES.LOANS, { keyPath: 'ref' });
+    // borrowerSvc is retained ONLY so existing databases still open and their
+    // rows remain reachable for extraction to CEA before disposal. Nothing
+    // written by this build populates it — see docs/IDENTIFIER-FREE-DESIGN.md.
     loans.createIndex('borrowerSvc', 'borrowerSvc', { unique: false });
+    loans.createIndex('issueNo',     'issueNo',     { unique: false });
     loans.createIndex('itemId',      'itemId',      { unique: false });
     loans.createIndex('active',      'active',      { unique: false });
     loans.createIndex('dueDate',     'dueDate',     { unique: false });
@@ -552,8 +556,21 @@ export const cadets = {
 };
 
 // -----------------------------------------------------------------------------
-// Loans  (PII-encrypted: borrowerName, remarks)
+// Loans
 // -----------------------------------------------------------------------------
+// This build carries NO person identifiers. A loan records that an item is out
+// and, where it went to a person, only:
+//
+//   location: 'individual'   — that it is with a person, not which person
+//   issueNo:  'ISS-0042'     — a reference to the document that says which
+//
+// The document is printed with identifier fields blank, completed by hand, and
+// uploaded to the individual's CEA documents. CEA holds the person↔equipment
+// link; this tool never does. Authority: HQ AAC ICT, 17 July 2026 — "so long as
+// you're not carrying PII and it's purely for asset tracking, I'd see no issue".
+//
+// `remarks` is no longer PII-encrypted because it is no longer permitted to
+// contain a person. See PII_FIELDS_LOANS in pii.js.
 
 export const loans = {
   async list() {
@@ -566,10 +583,15 @@ export const loans = {
     return all.filter(l => l.active);
   },
 
-  async listForCadet(svcNo) {
+  /**
+   * Loans against an issue document reference. Replaces listForCadet(svcNo):
+   * this build has no cadet records to look up, and the issue number is the
+   * only handle onto "what went out on that document".
+   */
+  async listForIssue(issueNo) {
     const tx   = _db.transaction(STORES.LOANS, 'readonly');
-    const idx  = tx.objectStore(STORES.LOANS).index('borrowerSvc');
-    const rows = await _reqDone(idx.getAll(svcNo));
+    const idx  = tx.objectStore(STORES.LOANS).index('issueNo');
+    const rows = await _reqDone(idx.getAll(issueNo));
     return PII.decryptAll(rows, PII.PII_FIELDS_LOANS);
   },
 
@@ -582,6 +604,18 @@ export const loans = {
   async put(loan) {
     requireEdit();
     if (!loan?.ref) throw new Error('Loan.ref required');
+    // Fail closed. HQ's position is conditional on this build carrying no PII,
+    // so a loan reaching storage with a person on it is a compliance breach and
+    // not something to silently accept and encrypt. Throwing here means any
+    // caller still passing a borrower is found by a test rather than by an
+    // assessor. Legacy rows already in the database are stripped by migration,
+    // not by this path.
+    if (loan.borrowerName || loan.borrowerSvc) {
+      throw new Error(
+        'Loan carries a person identifier (borrowerName/borrowerSvc). This build '
+        + 'records location + issueNo only — see docs/IDENTIFIER-FREE-DESIGN.md.'
+      );
+    }
     const enc = await PII.encryptRecord(loan, PII.PII_FIELDS_LOANS);
     const tx  = _db.transaction(STORES.LOANS, 'readwrite');
     tx.objectStore(STORES.LOANS).put(enc);
