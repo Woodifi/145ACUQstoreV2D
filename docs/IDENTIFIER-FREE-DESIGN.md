@@ -286,6 +286,61 @@ which step 3 removes. No action needed beyond doing step 3.
 loans.js: `pdf.js` (17), `requests.js` (20), `ims-reports.js` (8),
 `dashboard.js` (1), `inventory.js` (1).
 
+## Known and deliberately not fixed
+
+Recorded here rather than left to be rediscovered. None of these block the two
+units; all of them would bite somebody eventually.
+
+### V3 backups are refused, with misleading advice
+
+V2's `DB_VERSION` is 4; V3's is 7. `importAll()` refuses any snapshot with a
+higher `schemaVersion` and says:
+
+> *"Backup is from a newer version of QStore (v7). Update the app before
+> restoring."*
+
+That advice made sense when V3 was the upgrade path. For a Defence build it is a
+dead end — the Defence build **is** the destination, there is nothing to update
+to, and an operator would go looking for one. The message should say what is
+true: this build cannot read a V3 backup, and V3 data has to come across by
+another route.
+
+**Not urgent:** no unit runs V3 (author's testing instance only, confirmed
+2026-07-17). If that ever changes it becomes a blocker, not a nit — a V3 unit
+could not move to the Defence build at all.
+
+### Unknown stores are dropped silently on import
+
+Generic, not V3-specific. `importAll()` writes only the 14 stores it knows.
+Anything else in a snapshot vanishes without a word.
+
+If a V3 backup ever *did* get through the version gate, the silent casualties
+would include **`expenseClaims`, which carry `claimantName`** — person data —
+plus `supplierBook`, `bankTx`, purchase orders, the chart of accounts and
+transactions. The unit would restore, see inventory and loans arrive, reasonably
+conclude it worked, and never learn their accounting records were gone.
+
+Same failure as the v1 import before it was fixed: **a restore that looks like it
+worked**. Import should report what it did not recognise.
+
+### `test-cadets.mjs` tests CRUD that no longer exists
+
+Masked by the pre-existing `localStorage` failure, so it looks like one of the
+six. Whoever fixes that failure will hit a confusing "does not store cadet
+records" error instead. Delete it or rewrite it to assert the refusal.
+
+### Adults: `staff`, users, orders requestor, `countedBy`
+
+The open question at the top of this note. All are PII; none are cadet data.
+HQ's objection was the cadet aggregate. Unanswered, so unguessed — see
+controls statement §13.3.
+
+### `orders.js` "QM Notes" is still free text
+
+Same reasoning: it collects an adult's words, and the adults question is open.
+
+---
+
 ## Build order
 
 1. ~~**Schema + storage**~~ — DONE. Loans lose `borrowerName`/`borrowerSvc`,
