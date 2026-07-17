@@ -2965,7 +2965,30 @@ async function _performV1Import(file, btn) {
 // Subscription section
 // -----------------------------------------------------------------------------
 
-function _subscriptionSectionHtml(ls) {
+// The Defence build is licensed by construction and free of charge. It says so,
+// rather than rendering a green "Active" chip that implies a paid subscription
+// somebody bought. A reviewer reading this screen should see what is actually
+// true: no licence key, no expiry, no charge, no activation flow.
+const _subscriptionSectionHtml = (typeof __QSTORE_DEFENCE__ !== 'undefined' && __QSTORE_DEFENCE__)
+  ? function _subscriptionSectionDefence() {
+      return `
+        <section class="settings__section" data-section="subscription">
+          <header class="settings__section-header">
+            <h2 class="settings__section-title">Licence</h2>
+          </header>
+          <div class="settings__status-block settings__status-block--ok">
+            <span class="badge badge--success">No charge</span>
+            This build is provided to the Australian Army Cadets free of charge.
+            There is no subscription, no licence key to enter, and no expiry.
+          </div>
+          <p class="settings__section-hint">
+            Provided for ADF Cadets use. It is not the commercial product and is
+            not licensed for resale or redistribution.
+          </p>
+        </section>
+      `;
+    }
+  : function _subscriptionSectionHtmlImpl(ls) {
   const STATE_LABELS = {
     TRIAL:      'Free Trial',
     ACTIVE:     'Active',
@@ -3060,7 +3083,7 @@ function _subscriptionSectionHtml(ls) {
       </form>
     </section>
   `;
-}
+};
 
 async function _onActivateKey(e) {
   e.preventDefault();
