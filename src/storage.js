@@ -1685,11 +1685,21 @@ export const legacy = {
     const cadets = await _all(STORES.CADETS);
     const loans  = await _all(STORES.LOANS);
     const reqs   = await _all(STORES.REQUESTS);
+    // Cadet LOGIN accounts. Counted here because they are cadet PII by a
+    // different door: PII_FIELDS_USERS is ['name','svcNo','totpSecret'], so an
+    // account with role 'cadet' holds a cadet's name and service number in the
+    // USERS store, entirely independently of the cadets store. Emptying one
+    // never emptied the other. They are refused at login and hidden from the
+    // picker — but hidden is not absent, and the build's claim is absence.
+    const users  = await _all(STORES.USERS);
+    const cadetUsers = users.filter((u) => u.role === 'cadet').length;
+    const borrowerLoans = loans.filter((l) => l.borrowerName || l.borrowerSvc).length;
     return {
-      cadets:   cadets.length,
-      loans:    loans.filter((l) => l.borrowerName || l.borrowerSvc).length,
-      requests: reqs.length,
-      total:    cadets.length + loans.filter((l) => l.borrowerName || l.borrowerSvc).length + reqs.length,
+      cadets:     cadets.length,
+      loans:      borrowerLoans,
+      requests:   reqs.length,
+      cadetUsers,
+      total:      cadets.length + borrowerLoans + reqs.length + cadetUsers,
     };
   },
 
@@ -1751,19 +1761,28 @@ export const legacy = {
     }
     const cadetCount = (await _all(STORES.CADETS)).length;
     const reqCount   = (await _all(STORES.REQUESTS)).length;
+    const cadetUsers = (await _all(STORES.USERS)).filter((u) => u.role === 'cadet');
 
-    const tx = _db.transaction([STORES.CADETS, STORES.REQUESTS], 'readwrite');
+    const tx = _db.transaction([STORES.CADETS, STORES.REQUESTS, STORES.USERS], 'readwrite');
     tx.objectStore(STORES.CADETS).clear();
     tx.objectStore(STORES.REQUESTS).clear();
+    // Cadet login accounts go too. A cadet account is not a Q record and CEA
+    // does not want it — it is a credential for a role that no longer exists,
+    // carrying a name and service number. Deleting it destroys no record of any
+    // transaction: the audit log is that record, and it is untouched.
+    const uStore = tx.objectStore(STORES.USERS);
+    for (const u of cadetUsers) uStore.delete(u.id);
     await _txDone(tx);
 
     await audit.append({
       action: 'legacy_pii_purged',
       user:   'system',
       desc:   `Legacy person data removed after extraction to CEA: ${cadetCount} cadet `
-            + `record(s), ${reqCount} equipment request(s). Loans retained as equipment `
-            + 'records, linked to their issue documents. This action is irreversible.',
+            + `record(s), ${reqCount} equipment request(s), ${cadetUsers.length} cadet login `
+            + 'account(s). Loans retained as equipment records, linked to their issue '
+            + 'documents. The audit log is unchanged — it is the record of what happened '
+            + 'and remains verifiable. This action is irreversible.',
     });
-    return { cadets: cadetCount, requests: reqCount };
+    return { cadets: cadetCount, requests: reqCount, cadetUsers: cadetUsers.length };
   },
 };
