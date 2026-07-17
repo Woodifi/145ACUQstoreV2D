@@ -142,6 +142,29 @@ This is precisely why the direction at §13.1 is being sought, and why the
 controls statement must not claim an upgraded unit carries no PII until its
 legacy rows are gone.
 
+## Findings from step 7
+
+**The login screen was reading the cadet register before anyone authenticated.**
+The cadet picker called `Storage.cadets.list()` to render "SURNAME F." on the
+sign-in card — cadet PII displayed pre-auth, to whoever had the file open. Gone
+with the picker.
+
+**A cadet user account is cadet PII by another route.** `PII_FIELDS_USERS` is
+`['name','svcNo','totpSecret']`, so an account with role 'cadet' carries a
+cadet's name and service number in the users store — independently of the cadets
+store we emptied. Removing the role does not remove those rows.
+
+They are **hidden and refused, not deleted**: `login()` rejects role 'cadet'
+before verifying the PIN (no point spending an argon2id verification on an
+account that cannot proceed, and no reason to tell it whether its PIN was
+right), and the picker no longer lists them. Deleting them is disposal, which is
+gated on §13.1 like every other legacy record.
+
+`isCadet()` is retained deliberately though the role is gone — an upgraded
+database still holds these accounts, and the existing guards in staff.js,
+shell.js and loans.js should keep locking them out rather than silently
+evaluating false and granting access. Belt to login()'s brace.
+
 ## Findings from step 6
 
 **v1 loans cannot be converted, only skipped.** Every v1 loan carries
@@ -254,7 +277,9 @@ loans.js: `pdf.js` (17), `requests.js` (20), `ims-reports.js` (8),
 6a. ~~**v1 import**~~ — DONE. Imports equipment; cadets, loans and requests are
     NOT imported and the skip is written to the audit log with a direction to
     extract them to CEA.
-7. **Login** — cadet role removed.
+7. ~~**Login**~~ — DONE. `cadet` removed from ROLES/PERMS; login() refuses
+   role 'cadet' before verifying the PIN; the cadet picker and its cadet-register
+   read are gone. Legacy cadet accounts are hidden AND refused, not deleted.
 8. **Free text** — per the table above.
 9. **Migration** — gated on §13.1.
 

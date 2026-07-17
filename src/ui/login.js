@@ -31,7 +31,7 @@ import * as TOTP    from '../totp.js';
 import { openModal } from './modal.js';
 import { esc, $, $$, render, fmtDateOnly, sleep } from './util.js';
 
-const ROLE_ORDER = ['co', 'qm', 'staff', 'cadet', 'ro'];
+const ROLE_ORDER = ['co', 'qm', 'staff', 'ro'];
 
 const _ICON_EYE     = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
 const _ICON_EYE_OFF = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
@@ -43,7 +43,6 @@ let _pinBuffer      = '';
 let _pinRevealed    = false;
 let _busy           = false;
 let _lockoutTimer   = null;
-let _cadetPickerMode = false; // true when showing cadet sub-list
 
 /**
  * Mount the login screen into a DOM container. Calls onLoggedIn(session)
@@ -57,7 +56,6 @@ export async function mount(rootEl, { onLoggedIn } = {}) {
   _pinRevealed = false;
   _busy = false;
 
-  _cadetPickerMode = false;
   await _renderUserPicker();
 
   return function unmount() {
@@ -76,13 +74,9 @@ async function _renderUserPicker() {
   const unitName = settings.unitName || 'QStore IMS';
   const unitCode = settings.unitCode || '';
 
-  // In cadet picker mode, load cadet records to build a svcNo → cadet map
-  // so we can display "SURNAME F." instead of the stored user.name.
-  let cadetRecordMap = new Map();
-  if (_cadetPickerMode) {
-    const cadetRecords = await Storage.cadets.list();
-    cadetRecordMap = new Map(cadetRecords.map(c => [c.svcNo, c]));
-  }
+  // The cadet picker used to read the cadet register here to render
+  // "SURNAME F." on the sign-in screen — a cadet PII read before anyone had
+  // authenticated. Both the picker and the read are gone.
 
   users.sort((a, b) => {
     const ra = ROLE_ORDER.indexOf(a.role);
@@ -91,42 +85,18 @@ async function _renderUserPicker() {
     return (a.name || '').localeCompare(b.name || '');
   });
 
-  // In cadet picker mode show only cadets; otherwise show non-cadets + the
-  // Cadet Login button.
-  const visibleUsers = _cadetPickerMode
-    ? users.filter(u => u.role === 'cadet')
-    : users.filter(u => u.role !== 'cadet');
+  // Legacy cadet accounts are not listed. They cannot sign in either — auth.js
+  // login() refuses role 'cadet' before verifying the PIN. Hidden AND refused:
+  // hiding alone would leave the account reachable by anyone who knew its id.
+  const visibleUsers = users.filter(u => u.role !== 'cadet');
 
-  let userButtonsHtml;
-  if (_cadetPickerMode) {
-    // Sort by surname from cadet records (privacy: no given name shown in list)
-    visibleUsers.sort((a, b) => {
-      const ca = cadetRecordMap.get(a.svcNo);
-      const cb = cadetRecordMap.get(b.svcNo);
-      const sa = (ca?.surname || a.name || '').toUpperCase();
-      const sb = (cb?.surname || b.name || '').toUpperCase();
-      return sa.localeCompare(sb);
-    });
-    userButtonsHtml = visibleUsers.length === 0
-      ? `<div class="login__empty">No cadet accounts registered.</div>`
-      : visibleUsers.map(u => _cadetButtonHtml(u, cadetRecordMap.get(u.svcNo))).join('');
-  } else {
-    userButtonsHtml = visibleUsers.length === 0
-      ? `<div class="login__empty">No staff accounts yet. The system needs to be initialised by an administrator.</div>`
-      : visibleUsers.map(_userButtonHtml).join('');
-  }
+  const userButtonsHtml = visibleUsers.length === 0
+    ? `<div class="login__empty">No staff accounts yet. The system needs to be initialised by an administrator.</div>`
+    : visibleUsers.map(_userButtonHtml).join('');
 
-  const headerHtml = _cadetPickerMode
-    ? `<button type="button" class="login__back" data-action="back-to-staff" aria-label="Back to sign in">‹ Back</button>
-       <div class="login__user-summary"><div class="login__user-name">Cadet Login</div></div>`
-    : `<h1 class="login__title">${esc(unitName)}</h1>
+  const headerHtml = `<h1 class="login__title">${esc(unitName)}</h1>
        ${unitCode ? `<div class="login__subtitle">${esc(unitCode)} — Q-Store IMS</div>` : ''}`;
 
-  const cadetBtnHtml = !_cadetPickerMode
-    ? `<button type="button" class="btn btn--secondary login__cadet-login-btn" data-action="cadet-login">
-         Cadet Login
-       </button>`
-    : '';
 
   render(_root, `
     <div class="login">
@@ -135,12 +105,11 @@ async function _renderUserPicker() {
           ${headerHtml}
         </header>
         <div class="login__body">
-          <h2 class="login__heading">${_cadetPickerMode ? 'Select your name' : 'Sign in'}</h2>
+          <h2 class="login__heading">Sign in</h2>
           <p class="login__hint">Select your name to continue.</p>
           <div class="login__user-list" role="list">
             ${userButtonsHtml}
           </div>
-          ${cadetBtnHtml}
         </div>
         <footer class="login__privacy">
           This system stores personnel and equipment data.
@@ -158,16 +127,6 @@ async function _renderUserPicker() {
       const btn    = e.target.closest('[data-user-id]');
       const action = e.target.closest('[data-action]')?.dataset.action;
 
-      if (action === 'cadet-login') {
-        _cadetPickerMode = true;
-        _renderUserPicker();
-        return;
-      }
-      if (action === 'back-to-staff') {
-        _cadetPickerMode = false;
-        _renderUserPicker();
-        return;
-      }
       if (btn) {
         _selectedUserId = btn.dataset.userId;
         _pinBuffer = '';
@@ -196,35 +155,6 @@ function _userButtonHtml(user) {
   `;
 }
 
-/**
- * Button for the cadet picker — shows "SURNAME F." for privacy.
- * Full name is never shown in the list; only last name + first initial.
- * Falls back to the user.name if no matching cadet record exists.
- */
-function _cadetButtonHtml(user, cadetRecord) {
-  let displayName;
-  if (cadetRecord?.surname) {
-    const initial = cadetRecord.given ? ` ${cadetRecord.given.charAt(0).toUpperCase()}.` : '';
-    displayName = `${cadetRecord.surname.toUpperCase()}${initial}`;
-  } else {
-    // Fallback: use stored user name if no cadet record linked yet
-    displayName = user.name || user.username;
-  }
-  const lastSeen = user.lastLogin
-    ? `last seen ${fmtDateOnly(user.lastLogin)}`
-    : `never logged in`;
-  return `
-    <button type="button"
-            class="login__user-btn"
-            data-user-id="${esc(user.id)}"
-            role="listitem">
-      <span class="login__user-name">${esc(displayName)}</span>
-      <span class="login__user-meta">
-        <span class="login__user-last">${esc(lastSeen)}</span>
-      </span>
-    </button>
-  `;
-}
 
 // -----------------------------------------------------------------------------
 // PIN keypad
@@ -446,6 +376,7 @@ async function _submitPin() {
   switch (result.reason) {
     case 'invalid_pin':         msg = 'Incorrect PIN. Try again.';                          break;
     case 'user_not_found':      msg = 'This account no longer exists.';                     break;
+    case 'role_withdrawn':      msg = 'Cadet accounts cannot sign in to this build. See your QM.'; break;
     case 'invalid_user_record': msg = 'Account is missing a PIN. Contact your CO or QM.';   break;
     case 'unknown_algorithm':   msg = 'Account uses an unsupported hash. Reset required.';  break;
     case 'thrown':              msg = 'Sign-in error. The app still works offline — try again or reload the page.'; break;
