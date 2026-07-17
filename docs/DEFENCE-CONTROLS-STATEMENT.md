@@ -1,7 +1,7 @@
 # QStore IMS — Response to HQ AAC ICT, and Controls Statement
 
 **Status:** DRAFT for internal review — not yet sent
-**Responds to:** CPL James Jenkins, Acting Systems Administrator, HQ Australian Army Cadets — email *"Re: In unit Qstore software [SEC=OFFICIAL]"*, 16 July 2026
+**Responds to:** CPL James Jenkins, Acting Systems Administrator, HQ Australian Army Cadets — email thread *"Re: In unit Qstore software [SEC=OFFICIAL]"*, 16 and 17 July 2026
 **Applies to:** QStore IMS v2.3.0
 **Prepared by:** LT(AAC) Sean Scales, Officer Commanding, 145 ACU Moranbah — [CONFIRM]
 **Date:** [DATE]
@@ -11,9 +11,14 @@
 
 ## 1. Purpose
 
-This document responds to HQ AAC ICT advice of 16 July 2026, records the controls
-in the software, corrects two inaccuracies in my earlier description of it, and
-proposes a design that removes the objection rather than mitigating it.
+This document responds to HQ AAC ICT advice of 16 and 17 July 2026, records the
+controls in the software, corrects two inaccuracies in my earlier description of
+it, and sets out a design that removes the objection rather than mitigating it.
+
+HQ has advised (17 July) that it would see no issue with an asset tracking tool
+carrying no PII. This document records what that condition requires, states
+plainly that the software as it stands does not meet it (§4), and does not treat
+that advice as covering the current version.
 
 It is **not** a claim of compliance. Compliance is HQ's determination to make. The
 purpose here is to give that determination an accurate basis — including the
@@ -51,7 +56,31 @@ HQ's stated remedy for Q records is equally specific:
 > respective cadet Q records, and upload them to the individual members CEA
 > documents."*
 
-The design proposed at §5 implements that recommendation.
+The design at §5 implements that recommendation.
+
+**HQ's further advice of 17 July 2026**, in response to that design, states the
+condition and the records boundary:
+
+> *"Yes, I would take this to be a low risk activity occurring locally. **So long
+> as you're not carrying PII and it's purely for asset tracking, I'd see no
+> issue.**"*
+>
+> *"**The point at which it becomes a record is when it needs to end up in CEA or
+> CadetNet.** For example, you complete a stock take, that completed stock take
+> report must be stored in CadetNet as it's a record."*
+>
+> — CPL Jenkins, 17 July 2026
+
+Two things follow, and they govern the rest of this document:
+
+1. **The condition is that no personal information is carried.** HQ's position is
+   not that local storage is objectionable, nor that persistence is objectionable
+   in itself — it is that a persistent aggregate of PII is. An asset dataset
+   holding no personal information does not engage the objection.
+2. **The record is the output, not the working data.** A completed stock take
+   report, or a Q record, is the Commonwealth record, and it belongs in CEA or
+   CadetNet. The software is a working tool that produces those artefacts; it is
+   not the system of record and does not hold one.
 
 ---
 
@@ -89,14 +118,18 @@ objection.
 | Cadet email addresses and free-text notes removed from the schema, with a migration deleting them from existing records (§6.2) | Sensitive information no longer held | **No** — reduces the dataset, does not make it transitory |
 | Encryption, access control, audit (§6.3–§6.6) | Reduces harm from compromise | **No** — controls on a dataset that should not persist |
 
-These are worth having on their own merits. **None of them makes the current
-dataset transitory, and I do not present them as doing so.**
+These are worth having on their own merits. **None of them removes the personal
+information, and I do not present them as answering HQ's objection.** HQ's advice
+of 17 July, which sees no issue with a tool carrying no PII, is not treated as
+covering this version.
 
 ---
 
-## 5. Proposed design — no individual identifiers at all
+## 5. Design — no individual identifiers at all
 
-This implements HQ's recommendation rather than seeking an exemption from it.
+This implements HQ's recommendation rather than seeking an exemption from it, and
+HQ has advised (17 July 2026, §2) that it would see no issue with such a tool
+provided no PII is carried and it is purely for asset tracking.
 
 **The software would hold no cadet identifiers of any kind.** No service number,
 no name, no rank. It becomes an equipment accountability tool:
@@ -134,9 +167,19 @@ obtains it.
   name into an activity or location field. Person-adjacent free text must be
   designed out, not merely discouraged.
 
-**Status: proposed, not built.** It is a substantial change and is not presented
-as existing. It should not proceed without HQ's confirmation that the approach is
-acceptable — which is the question put in my email of 17 July 2026.
+**The condition is load-bearing.** HQ's advice is expressly conditional on the
+tool not carrying PII. That makes the elimination of person-adjacent free text a
+**condition of the advice**, not a design preference: the moment a user types a
+name into an activity, location, or remarks field, the tool is carrying PII and
+the basis of HQ's position no longer holds. Free-text fields capable of holding a
+person's details will therefore be removed rather than discouraged, and this is
+recorded here so that the constraint is understood as binding rather than
+aspirational.
+
+**Status: designed, not built.** It is a substantial change and is not presented
+as existing. HQ's advice of 17 July is understood as applying to a tool of this
+description — **not** to the version currently held at the trial units, which does
+carry cadet identifiers (§4) and which I do not treat as covered.
 
 ---
 
@@ -269,13 +312,25 @@ documentation and **information technology systems** where Defence collects
 information relating to youth. The software does not carry it. Straightforward
 non-compliance; being remediated.
 
-### 8.5 Records management
-Loan and issue history are Commonwealth records. DYM Section 1, Chapter 2 para 67
-records that ADF Cadets members must comply, with criminal penalties under the
-*Archives Act 1983* for unlawful destruction, and **NAA Records Authority
-2019/00457762** governs retention and disposal of cadet records. The software
-implements **no retention schedule and no controlled disposal**. Under §5 the
-Commonwealth record becomes the document in CEA, which resolves this.
+### 8.5 Records management — resolved by HQ's advice
+This was recorded as an unresolved gap in the previous version of this document,
+on the assumption that loan and issue history held in the software constituted
+Commonwealth records that it had no schedule to retain or dispose of. HQ's advice
+of 17 July 2026 resolves it:
+
+> *"The point at which it becomes a record is when it needs to end up in CEA or
+> CadetNet. For example, you complete a stock take, that completed stock take
+> report must be stored in CadetNet as it's a record."*
+
+The record is therefore the **output** — the completed stock take report, the Q
+record — and it belongs in CEA or CadetNet. The software's working data is not the
+record. Under the design at §5 that boundary is explicit: the software produces
+the artefact, the artefact goes to CEA, and CEA holds the record.
+
+DYM Section 1, Chapter 2 para 67 obligations under the *Archives Act 1983*, and
+**NAA Records Authority 2019/00457762**, attach to the records in CEA. **I do not
+propose to destroy any existing record on my own initiative** — direction on the
+disposal of the current dataset is sought at §13.
 
 ### 8.6 Device-level compromise is out of scope
 Encryption at rest protects data copied off the device. It does not protect
@@ -495,20 +550,25 @@ cited.
 
 ## 13. What is sought
 
-1. **Confirmation that the design at §5 is permissible** — a unit asset tracking
-   tool holding no individual identifiers, with the person↔equipment link existing
-   only as a document in CEA. This is the question in my email of 17 July 2026.
-2. **Direction on disposal of the current dataset.** On HQ's advice the existing
-   persistent cadet data is not permissible. I propose to extract what is required
-   to CEA documents and delete the local dataset. Confirmation of the correct
-   process is sought, noting the *Archives Act* obligations at §8.5 — I do not
-   intend to destroy a Commonwealth record on my own initiative.
-3. **Acceptance of the CadetNet M365 offer.** CPL Jenkins offered assistance with
+1. **Direction on disposal of the current dataset.** On HQ's advice the existing
+   persistent cadet data should not be retained. I propose to extract what is
+   required into CEA documents and then delete the local dataset. Confirmation of
+   the correct process is sought — **I do not intend to destroy a record on my own
+   initiative** (§8.5).
+2. **Acceptance of the CadetNet M365 offer.** CPL Jenkins offered assistance with
    a solution in CadetNet M365, and a secured staff-only library or list. I would
    like to take that up.
+3. **Confirmation once built.** HQ's advice of 17 July is understood as applying
+   in principle to a tool carrying no PII. Once the design at §5 exists, I would
+   welcome the opportunity to have it examined against that condition rather than
+   relying on my own assessment that it meets it.
 4. **Support for the CEA Q-record capability** referred to at §3. If the unit's
    experience or this software is useful evidence for that business case, it is
-   available for that purpose.
+   available for that purpose, at no cost and with no expectation.
+
+**Already addressed, and recorded here for completeness:** whether an asset
+tracking tool holding no individual identifiers is permissible (HQ advice, 17 July
+2026 — §2), and where the boundary of a Commonwealth record falls (same, §8.5).
 
 No payment is sought. No decision is sought on the basis of this document alone,
 and no assurance is offered beyond what is stated in it.
@@ -519,7 +579,7 @@ and no assurance is offered beyond what is stated in it.
 
 | | |
 |---|---|
-| Version | 0.2 DRAFT — reframed following HQ AAC ICT advice of 16 July 2026 |
+| Version | 0.3 DRAFT — updated following HQ AAC ICT advice of 16 and 17 July 2026 |
 | Author | [NAME] |
 | Software version | QStore IMS v2.3.0 |
 | Build ID | [STAMP THE DELIVERED BUILD ID] |
