@@ -88,15 +88,15 @@ export async function generateIssueVoucher(loans, opts = {}) {
   if (!Array.isArray(loans) || loans.length === 0) {
     throw new Error('generateIssueVoucher requires at least one loan record.');
   }
-  // Sanity: all loans must share borrower + issueDate. The loans page
+  // Sanity: all loans must share issue/destination + issueDate. The loans page
   // groups by these before calling us; we enforce it as a precondition
   // so misuse is loud rather than producing a confusing voucher.
   const first = loans[0];
   for (const l of loans) {
-    if (l.borrowerSvc !== first.borrowerSvc) {
+    if ((l.issueNo || l.location) !== (first.issueNo || first.location)) {
       throw new Error(
-        `All loans on a voucher must share the same borrower. ` +
-        `Got ${l.borrowerSvc} and ${first.borrowerSvc}.`);
+        `All loans on a voucher must share the same issue or destination. ` +
+        `Got ${l.issueNo || l.location} and ${first.issueNo || first.location}.`);
     }
     if (l.issueDate !== first.issueDate) {
       throw new Error(
@@ -111,16 +111,17 @@ export async function generateIssueVoucher(loans, opts = {}) {
   let y = PAGE.MARGIN;
   y = _drawHeader(doc, y, unit);
   y = _drawReferenceBlock(doc, y, first, unit);
-  y = _drawBorrowerSection(doc, y, first);
+  y = _drawRecipientSection(doc, y, first);
   y = _drawItemsSection(doc, y, loans);
   y = _drawDetailsSection(doc, y, first);
   y = _drawRemarksSection(doc, y, loans);
   _drawSignatureBlocks(doc, y, unit, opts.issuedByName);
   _drawFooter(doc);
 
-  // Build filename. Sanitise borrowerSvc just in case (shouldn't have
+  // Build filename from the issue reference. There is no person to name it
+  // after, which is the point — a voucher filename must never carry one.
   // spaces but defensive against future schema looseness).
-  const safeSvc = String(first.borrowerSvc || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const safeSvc = String(first.issueNo || first.location || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_');
   const filename = `IssueVoucher_${safeSvc}_${first.issueDate || 'undated'}.pdf`;
 
   // Get the bytes once; reuse the buffer for both the size report and
@@ -199,10 +200,28 @@ function _drawReferenceBlock(doc, y, loan, unit) {
   return y + 14;
 }
 
-function _drawBorrowerSection(doc, y, loan) {
-  y = _drawSectionBand(doc, y, 'Borrower');
-  y = _drawLabelValueRow(doc, y, 'Name / Rank',  loan.borrowerName || '—');
-  y = _drawLabelValueRow(doc, y, 'Service No.',  loan.borrowerSvc || '—');
+/**
+ * Recipient block — printed BLANK, by design.
+ *
+ * The tool holds no name to put here, and must not acquire one. Whoever
+ * receives the items writes their rank, name and service number on the paper;
+ * the completed voucher is then uploaded to that member's CEA documents, which
+ * is where the person↔equipment link lives.
+ *
+ * Blank ruled lines rather than '—': a dash reads as "no recipient", which is
+ * wrong and invites someone to leave it. A ruled line reads as "fill this in",
+ * which is the instruction.
+ */
+function _drawRecipientSection(doc, y, loan) {
+  y = _drawSectionBand(doc, y, 'Issued to — complete by hand');
+  if (loan.issueNo) {
+    y = _drawLabelValueRow(doc, y, 'Issue No.', loan.issueNo);
+  } else {
+    y = _drawLabelValueRow(doc, y, 'Destination', loan.location || '—');
+  }
+  y = _drawLabelValueRow(doc, y, 'Rank / Name',  '');
+  y = _drawLabelValueRow(doc, y, 'Service No.',  '');
+  y = _drawLabelValueRow(doc, y, 'Signature',    '');
   return y + 2;
 }
 
@@ -315,7 +334,7 @@ function _drawSignatureBlocks(doc, y, unit, issuedByName) {
     || (unit.qmRank && unit.qmName ? `${unit.qmRank} ${unit.qmName}` : (unit.qmName || ''));
 
   _sigBox(doc, col1, y + 4, sigW, 'ISSUED BY (Q-Store staff)', issuedPrefill);
-  _sigBox(doc, col2, y + 4, sigW, 'RECEIVED BY (Borrower)',    '');
+  _sigBox(doc, col2, y + 4, sigW, 'RECEIVED BY (print name, sign)', '');
 }
 
 function _sigBox(doc, x, y, w, label, prefill) {
@@ -474,136 +493,6 @@ function _nowFmt() {
 // =============================================================================
 
 const REPORT_FOOTER_RESERVE = 18;   // mm at bottom of every page
-
-/**
- * Generate a Nominal Roll PDF — list of cadets with rank, name, svcNo, plt.
- *
- * @param {Array} cadets — pre-filtered, pre-sorted list (caller controls).
- * @param {Object} opts
- * @param {Object} opts.unit          Unit branding from Storage.settings.
- * @param {string} [opts.subtitle]    Extra context line in the header
- *                                    (e.g. "Active only" / "Plt 1 only").
- * @returns {{filename, blob, bytes}}
- */
-export async function generateNominalRoll(cadets, opts = {}) {
-  const unit      = opts.unit      || {};
-  const subtitle  = opts.subtitle  || '';
-  const structure = opts.structure || [];   // unit sub-structure for grouped layout
-  const useStruct = structure.length > 0;
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-
-  // Column layout differs by mode:
-  //   Legacy (no structure): 5 wide columns
-  //   Structure mode: 7 narrower columns + group separator rows
-  const COLS = useStruct
-    ? [
-        { x: PAGE.MARGIN + 2,   w: 22, label: 'Rank',        get: (c) => c.rank || '' },
-        { x: PAGE.MARGIN + 25,  w: 38, label: 'Surname',     get: (c) => c.surname || '' },
-        { x: PAGE.MARGIN + 64,  w: 34, label: 'Given names', get: (c) => c.given || '' },
-        { x: PAGE.MARGIN + 99,  w: 22, label: 'Service No.', get: (c) => c.svcNo || '' },
-        { x: PAGE.MARGIN + 122, w: 18, label: 'Company',     get: (c) => c.company || '' },
-        { x: PAGE.MARGIN + 141, w: 16, label: 'Platoon',     get: (c) => c.platoon || c.plt || '' },
-        { x: PAGE.MARGIN + 158, w: 12, label: 'Section',     get: (c) => c.section || '' },
-      ]
-    : [
-        { x: PAGE.MARGIN + 2,   w: 28, label: 'Rank',        get: (c) => c.rank || '' },
-        { x: PAGE.MARGIN + 32,  w: 50, label: 'Surname',     get: (c) => c.surname || '' },
-        { x: PAGE.MARGIN + 84,  w: 50, label: 'Given names', get: (c) => c.given || '' },
-        { x: PAGE.MARGIN + 136, w: 24, label: 'Service No.', get: (c) => c.svcNo || '' },
-        { x: PAGE.MARGIN + 162, w: 12, label: 'Plt',         get: (c) => c.plt || '' },
-      ];
-
-  const meta = `${cadets.length} ${cadets.length === 1 ? 'person' : 'people'}` +
-               (subtitle ? ` · ${subtitle}` : '');
-  const title = 'NOMINAL ROLL';
-
-  if (!useStruct) {
-    // Flat render — reuse the shared tabular helper.
-    _renderTabularReport(doc, {
-      title, subtitle: meta, unit,
-      columns: COLS,
-      rows:    cadets,
-      rowDecorate(c) {
-        return c.active === false ? { textColor: COL.txtSub, fontStyle: 'italic' } : null;
-      },
-    });
-  } else {
-    // Grouped render — inject group-band rows between company/plt/sec groups.
-    const ROW_H    = 6;
-    const BAND_H   = 5;
-    const usableBottom = PAGE.H - PAGE.MARGIN - REPORT_FOOTER_RESERVE;
-
-    let y       = _drawReportHeader(doc, PAGE.MARGIN, title, meta, unit);
-    y           = _drawColumnHeader(doc, y, COLS);
-    let pageNum = 1;
-    let prevKey = null;
-
-    const ensureSpace = (needed) => {
-      if (y + needed > usableBottom) {
-        _drawReportFooter(doc, pageNum, null);
-        doc.addPage();
-        pageNum++;
-        y = _drawReportHeader(doc, PAGE.MARGIN, title, meta, unit);
-        y = _drawColumnHeader(doc, y, COLS);
-      }
-    };
-
-    for (let i = 0; i < cadets.length; i++) {
-      const c       = cadets[i];
-      const isStaff = c.personType === 'staff';
-      const company = c.company  || '';
-      const platoon = c.platoon  || c.plt || '';
-      const section = c.section  || '';
-      const key     = isStaff
-        ? '__staff__'
-        : `${company}\x00${platoon}\x00${section}`;
-
-      if (key !== prevKey) {
-        // Ensure room for band + at least one data row.
-        ensureSpace(BAND_H + ROW_H);
-        const label = isStaff
-          ? 'Staff'
-          : [company, platoon, section].filter(Boolean).join(' › ') || 'Unassigned';
-        // Draw group band.
-        doc.setFillColor(...COL.bandFill);
-        doc.rect(PAGE.MARGIN, y, PAGE.CW, BAND_H, 'F');
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(7.5);
-        doc.setTextColor(...COL.armyGreen);
-        doc.text(label.toUpperCase(), PAGE.MARGIN + 2, y + 3.5);
-        y += BAND_H;
-        prevKey = key;
-      }
-
-      ensureSpace(ROW_H);
-      const decoration = c.active === false
-        ? { textColor: COL.txtSub, fontStyle: 'italic' }
-        : null;
-      _drawRow(doc, y, COLS, c, i, decoration);
-      y += ROW_H;
-    }
-
-    _drawReportFooter(doc, pageNum, null);
-
-    // Second pass: fill in "Page N of M".
-    const totalPages = pageNum;
-    for (let p = 1; p <= totalPages; p++) {
-      doc.setPage(p);
-      doc.setFillColor(255, 255, 255);
-      doc.rect(PAGE.MARGIN, PAGE.H - REPORT_FOOTER_RESERVE,
-               PAGE.CW, REPORT_FOOTER_RESERVE - 2, 'F');
-      _drawReportFooter(doc, p, totalPages);
-    }
-  }
-
-  const filename = `NominalRoll_${_unitSlug(unit)}_${_todayIsoDate()}.pdf`;
-  return _packageResult(doc, filename);
-}
-
-/**
- * Generate a Stock-on-Hand PDF — inventory with onHand / onLoan / unsvc /
- * authQty per item. Useful for stocktake reconciliation.
- */
 export async function generateStockReport(items, opts = {}) {
   const unit = opts.unit || {};
   const subtitle = opts.subtitle || '';
@@ -693,7 +582,8 @@ export async function generateOutstandingLoansReport(loans, opts = {}) {
     { x: PAGE.MARGIN + 54,  w: 24, label: 'Due',        get: (l) => l.dueDate   || '' },
     { x: PAGE.MARGIN + 80,  w: 50, label: 'Item',       get: (l) => l.itemName  || '' },
     { x: PAGE.MARGIN + 132, w: 10, label: 'Qty',        get: (l) => String(l.qty || 0), align: 'right' },
-    { x: PAGE.MARGIN + 144, w: 26, label: 'Borrower',   get: (l) => l.borrowerName || '' },
+    { x: PAGE.MARGIN + 144, w: 26, label: 'Issued to',
+      get: (l) => l.issueNo || l.location || '' },
   ];
 
   const overdueCount = loans.filter((l) =>
@@ -1076,15 +966,19 @@ export async function generateAB189(loans, opts = {}) {
   }
   const first = loans[0];
   for (const l of loans) {
-    if (l.borrowerSvc !== first.borrowerSvc) {
+    if ((l.issueNo || l.location) !== (first.issueNo || first.location)) {
       throw new Error(
-        `All loans on an AB189 must share the same borrower. ` +
-        `Got ${l.borrowerSvc} and ${first.borrowerSvc}.`);
+        `All loans on an AB189 must share the same issue or destination. ` +
+        `Got ${l.issueNo || l.location} and ${first.issueNo || first.location}.`);
     }
   }
 
   const unit  = opts.unit  || {};
-  const cadet = opts.cadet || null;
+  // ALWAYS null. The recipient block prints blank and is completed by hand; the
+  // finished form is uploaded to that member's CEA documents. Callers no longer
+  // pass a person and there is none to pass — ignoring opts.cadet outright means
+  // a future caller cannot reintroduce one by accident.
+  const cadet = null;
   const doc   = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
   let y = PAGE.MARGIN;
@@ -1096,7 +990,7 @@ export async function generateAB189(loans, opts = {}) {
   _drawAB189ApprovalBlocks(doc, y, unit);
   _drawFooter(doc);
 
-  const safeSvc  = String(first.borrowerSvc || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const safeSvc  = String(first.issueNo || first.location || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_');
   const dateStr  = first.issueDate || _todayIsoDate();
   const filename = `AB189_${safeSvc}_${dateStr}.pdf`;
   return _packageResult(doc, filename);
@@ -1298,16 +1192,22 @@ function _drawAB189RequestBlock(doc, y, loan, unit) {
   return y + 14;
 }
 
-function _drawAB189RequestorSection(doc, y, loan, cadet) {
-  y = _drawSectionBand(doc, y, 'Requesting member');
-  y = _drawLabelValueRow(doc, y, 'Rank / Name',  loan.borrowerName || '—');
-  if (cadet?.given) {
-    y = _drawLabelValueRow(doc, y, 'Given names', cadet.given);
+/**
+ * AB189 requesting-member block — printed BLANK. See _drawRecipientSection.
+ *
+ * `cadet` is retained in the signature and deliberately ignored: generateAB189
+ * hard-codes it to null, and a caller that starts passing a person again should
+ * find that it has no effect rather than quietly printing them onto a form.
+ */
+function _drawAB189RequestorSection(doc, y, loan, _cadet) {
+  y = _drawSectionBand(doc, y, 'Requesting member — complete by hand');
+  if (loan.issueNo) {
+    y = _drawLabelValueRow(doc, y, 'Issue No.', loan.issueNo);
   }
-  y = _drawLabelValueRow(doc, y, 'Service No.',  loan.borrowerSvc || '—');
-  if (cadet?.plt) {
-    y = _drawLabelValueRow(doc, y, 'Platoon',     cadet.plt);
-  }
+  y = _drawLabelValueRow(doc, y, 'Rank / Name',   '');
+  y = _drawLabelValueRow(doc, y, 'Given names',   '');
+  y = _drawLabelValueRow(doc, y, 'Service No.',   '');
+  y = _drawLabelValueRow(doc, y, 'Platoon',       '');
   return y + 2;
 }
 
@@ -1412,128 +1312,6 @@ function _drawAB189ApprovalBlocks(doc, y, unit) {
   _sigBox(doc, col1, y + 4, sigW, 'QM APPROVAL',  qmPrefill);
   _sigBox(doc, col2, y + 4, sigW, 'OC AUTHORITY', unit.coName || '');
 }
-
-// =============================================================================
-// PENDING REQUEST AB189 (pre-filled from a submitted request record)
-// =============================================================================
-
-/**
- * Generate a pre-filled AB189 Equipment Request PDF from a pending request.
- *
- * The request record shape (from Storage.requests):
- *   { id, requestorName, requestorSvc, purpose, requiredBy, notes, lines[] }
- * where lines[] = [{ nsn, description, qty }]
- *
- * @param {Object} req   The request record.
- * @param {Object} opts
- * @param {Object} [opts.unit]   Unit settings (unitName, unitCode, qmName…).
- * @param {Object} [opts.cadet] Cadet record for the requestor (optional).
- */
-export async function generateRequestAB189(req, opts = {}) {
-  if (!req || !req.id) {
-    throw new Error('generateRequestAB189: a valid request record is required.');
-  }
-
-  const unit  = opts.unit  || {};
-  const cadet = opts.cadet || null;
-  const doc   = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-
-  let y = PAGE.MARGIN;
-  y = _drawAB189Header(doc, y, unit);
-
-  // --- Request meta block (adapted for request — no loan.ref yet) ---
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.setTextColor(...COL.txtMuted);
-  const submittedDate = req.submittedAt
-    ? _fmtDateAU(req.submittedAt.slice(0, 10))
-    : _fmtDateAU(_todayIsoDate());
-  doc.text(`Request date: ${submittedDate}`, PAGE.MARGIN, y);
-  if (unit.unitCode) doc.text(`Unit code: ${unit.unitCode}`, PAGE.MARGIN + 90, y);
-  doc.setFontSize(8);
-  doc.setTextColor(...COL.txtSub);
-  doc.text(`Request ref: ${req.id}`, PAGE.MARGIN, y + 5);
-  doc.text(`Generated: ${_nowFmt()}`, PAGE.MARGIN + 90, y + 5);
-  doc.setDrawColor(...COL.tan);
-  doc.setLineWidth(0.5);
-  doc.line(PAGE.MARGIN, y + 8, PAGE.MARGIN + PAGE.CW, y + 8);
-  y += 14;
-
-  // --- Requestor section — adapt req fields to the shape _drawAB189RequestorSection expects ---
-  const fakeLoan = {
-    borrowerName: req.requestorName || '—',
-    borrowerSvc:  req.requestorSvc  || '—',
-  };
-  // Cadet sub-unit (company/platoon/section) for the requestor section.
-  const cadetWithPlt = cadet
-    ? { ...cadet, plt: cadet.platoon || cadet.plt || cadet.section || '' }
-    : null;
-  y = _drawAB189RequestorSection(doc, y, fakeLoan, cadetWithPlt);
-
-  // --- Items section — map request lines to the shape _drawAB189ItemsSection expects ---
-  const fakeLoans = (req.lines || []).map((l) => ({
-    nsn:      l.nsn        || '',
-    itemName: l.description || '—',
-    qty:      l.qty         || 1,
-  }));
-  if (fakeLoans.length === 0) {
-    fakeLoans.push({ nsn: '', itemName: '(no items listed)', qty: 0 });
-  }
-  // showIssueNoCol: adds a blank write-in column so the QM can record
-  // the loan ref / serial number when issuing on paper without a device.
-  y = _drawAB189ItemsSection(doc, y, fakeLoans, { showIssueNoCol: true });
-
-  // --- Purpose section — adapt req fields ---
-  const fakePurposeLoan = {
-    purpose: req.purpose    || '—',
-    dueDate: req.requiredBy || '',
-    remarks: req.notes      || '',
-  };
-  y = _drawAB189PurposeSection(doc, y, fakePurposeLoan, [fakePurposeLoan]);
-
-  // --- QM / OC approval blocks ---
-  _drawAB189ApprovalBlocks(doc, y, unit);
-  _drawFooter(doc);
-
-  const safeId   = String(req.id).replace(/[^a-zA-Z0-9_-]/g, '_');
-  const today    = _todayIsoDate();
-  const filename = `AB189_Request_${safeId}_${today}.pdf`;
-  return _packageResult(doc, filename);
-}
-
-// =============================================================================
-// QR CODE SHEET
-// =============================================================================
-// Generates a printable A4 sheet of QR code labels — one per item — for
-// affixing to physical equipment in the Q-Store. Each label shows the QR
-// code, the item name (up to 2 lines), and the NSN.
-//
-// QR data: `QSTORE:<item.id>` — the prefix lets the scan feature identify
-// QStore-generated codes vs. unrelated barcodes. The item ID is always
-// unique; the NSN is shown as human-readable text below but not encoded
-// (NSNs are not unique-enforced in this system).
-//
-// RENDERING
-// The QR module grid is rendered as individual filled rectangles via jsPDF's
-// rect() API, producing vector output rather than a rasterised image. This
-// gives perfectly crisp modules at any print resolution.
-//
-// LAYOUT: 3 columns × 5 rows = 15 labels per A4 page.
-// =============================================================================
-
-const QR_COLS = 3;
-const QR_ROWS = 5;
-const QR_MARGIN = 15;
-
-/**
- * Generate a QR code label sheet PDF.
- *
- * @param {Array}  items   Items to print. Each must have { id, name, nsn }.
- *                         Caller controls order (filter + sort before calling).
- * @param {Object} opts
- * @param {Object} opts.unit  Unit branding from Storage.settings.
- * @returns {Promise<{filename, blob, bytes}>}
- */
 export async function generateQRSheet(items, opts = {}) {
   if (!Array.isArray(items) || items.length === 0) {
     throw new Error('generateQRSheet requires at least one item.');
@@ -1770,185 +1548,6 @@ function _drawReportFooter(doc, pageNum, totalPages) {
   doc.text('UNCLASSIFIED — FOR TRAINING USE ONLY',
     PAGE.MARGIN + PAGE.CW, footerY, { align: 'right' });
 }
-
-// -----------------------------------------------------------------------------
-// Result packaging — common to all generators.
-// -----------------------------------------------------------------------------
-
-/**
- * Generate a printable kit checklist for a single cadet.
- *
- * Lists all active loans for the given person — NSN, item name, qty, issue
- * date, due date — with a ✓ tick-box column for physical inspection.
- * Includes signature blocks for cadet and QM.
- *
- * @param {object[]} loans   Active loan records for this cadet (all should share borrowerSvc).
- * @param {object}   opts    { cadet, unit }
- */
-export async function generateCadetKitChecklist(loans, opts = {}) {
-  if (!Array.isArray(loans)) loans = [];
-  const unit   = opts.unit   || {};
-  const cadet  = opts.cadet  || {};
-  const name   = [cadet.rank || '', cadet.surname || '', cadet.given || ''].filter(Boolean).join(' ');
-  const svcNo  = cadet.svcNo || '—';
-  const today  = _todayIsoDate();
-
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-  let y = PAGE.MARGIN;
-
-  // ── Army-green header ──
-  y = _drawHeader(doc, y, unit);
-
-  // ── Title band ──
-  doc.setFillColor(...COL.bandFill);
-  doc.rect(PAGE.MARGIN, y, PAGE.CW, 8, 'F');
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.setTextColor(...COL.armyGreen);
-  doc.text('KIT INSPECTION CHECKLIST', PAGE.MARGIN + 2, y + 5.5);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(...COL.txtMuted);
-  doc.text(`Generated: ${today}`, PAGE.MARGIN + PAGE.CW, y + 5.5, { align: 'right' });
-  y += 11;
-
-  // ── Cadet info block ──
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.setTextColor(...COL.txtDark);
-  doc.text('Name:', PAGE.MARGIN, y);
-  doc.setFont('helvetica', 'normal');
-  doc.text(name, PAGE.MARGIN + 20, y);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Svc No:', PAGE.MARGIN + PAGE.CW / 2, y);
-  doc.setFont('helvetica', 'normal');
-  doc.text(svcNo, PAGE.MARGIN + PAGE.CW / 2 + 20, y);
-  y += 5;
-
-  doc.setDrawColor(...COL.tan);
-  doc.setLineWidth(0.4);
-  doc.line(PAGE.MARGIN, y, PAGE.MARGIN + PAGE.CW, y);
-  y += 5;
-
-  // ── Items table ──
-  const COL_CHK  = { x: PAGE.MARGIN,       w: 10 };
-  const COL_NSN  = { x: PAGE.MARGIN + 10,  w: 38 };
-  const COL_NAME = { x: PAGE.MARGIN + 48,  w: 75 };
-  const COL_QTY  = { x: PAGE.MARGIN + 123, w: 12 };
-  const COL_ISS  = { x: PAGE.MARGIN + 135, w: 22 };
-  const COL_DUE  = { x: PAGE.MARGIN + 157, w: 23 };
-
-  // Table header
-  doc.setFillColor(...COL.armyGreen);
-  doc.rect(PAGE.MARGIN, y, PAGE.CW, 6, 'F');
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.5);
-  doc.setTextColor(255, 255, 255);
-  doc.text('✓',         COL_CHK.x + 3,  y + 4);
-  doc.text('NSN',       COL_NSN.x + 1,  y + 4);
-  doc.text('Item',      COL_NAME.x + 1, y + 4);
-  doc.text('Qty',       COL_QTY.x + 1,  y + 4);
-  doc.text('Issued',    COL_ISS.x + 1,  y + 4);
-  doc.text('Due',       COL_DUE.x + 1,  y + 4);
-  y += 7;
-
-  if (loans.length === 0) {
-    doc.setFont('helvetica', 'italic');
-    doc.setFontSize(9);
-    doc.setTextColor(...COL.txtMuted);
-    doc.text('No active loans recorded for this person.', PAGE.MARGIN + 2, y + 5);
-    y += 12;
-  } else {
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    const ROW_H_MIN = 6.5;
-    const LINE_H_KIT = 3.6;
-    for (let i = 0; i < loans.length; i++) {
-      const l = loans[i];
-      const nameLines = doc.splitTextToSize(String(l.itemName || '—'), COL_NAME.w - 2);
-      const rowH = Math.max(ROW_H_MIN, nameLines.length * LINE_H_KIT + 2);
-
-      const fill = i % 2 === 0 ? [248, 246, 240] : [255, 255, 255];
-      doc.setFillColor(...fill);
-      doc.rect(PAGE.MARGIN, y, PAGE.CW, rowH, 'F');
-
-      doc.setTextColor(...COL.txtDark);
-      // Tick box — centred vertically in row
-      doc.setDrawColor(...COL.tan);
-      doc.setLineWidth(0.4);
-      doc.rect(COL_CHK.x + 2, y + (rowH - 4) / 2, 4, 4);
-      // Data
-      doc.text(_fitText(doc, String(l.nsn || '—'), COL_NSN.w - 2), COL_NSN.x + 1, y + 4.5);
-      doc.text(nameLines, COL_NAME.x + 1, y + 4.5);
-      doc.text(String(l.qty || 1),         COL_QTY.x + 1,  y + 4.5);
-      doc.text(String(l.issueDate || '—'), COL_ISS.x + 1,  y + 4.5);
-      const dueLabel = l.longTermLoan ? 'Long-term' : (l.dueDate || '—');
-      doc.text(dueLabel,                   COL_DUE.x + 1,  y + 4.5);
-
-      // Row bottom border
-      doc.setLineWidth(0.2);
-      doc.line(PAGE.MARGIN, y + rowH, PAGE.MARGIN + PAGE.CW, y + rowH);
-      y += rowH;
-    }
-    y += 3;
-  }
-
-  // ── Summary line ──
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
-  doc.setTextColor(...COL.txtDark);
-  doc.text(`Total items on loan: ${loans.length}`, PAGE.MARGIN, y);
-  y += 8;
-
-  // ── Signature blocks ──
-  const SIG_W = (PAGE.CW - 10) / 2;
-  const SIG_Y = y;
-  // Left block — cadet
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
-  doc.setTextColor(...COL.txtDark);
-  doc.text('CADET SIGNATURE', PAGE.MARGIN, SIG_Y);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setDrawColor(...COL.tan);
-  doc.setLineWidth(0.5);
-  doc.line(PAGE.MARGIN, SIG_Y + 15, PAGE.MARGIN + SIG_W, SIG_Y + 15);
-  doc.setFontSize(7);
-  doc.setTextColor(...COL.txtMuted);
-  doc.text('Signature / Date', PAGE.MARGIN, SIG_Y + 19);
-  // Right block — QM
-  const SIG_RX = PAGE.MARGIN + SIG_W + 10;
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
-  doc.setTextColor(...COL.txtDark);
-  doc.text('QM SIGNATURE', SIG_RX, SIG_Y);
-  doc.setFont('helvetica', 'normal');
-  doc.setLineWidth(0.5);
-  doc.line(SIG_RX, SIG_Y + 15, SIG_RX + SIG_W, SIG_Y + 15);
-  doc.setFontSize(7);
-  doc.setTextColor(...COL.txtMuted);
-  doc.text('Signature / Date', SIG_RX, SIG_Y + 19);
-
-  _drawFooter(doc);
-
-  const safeName = String(cadet.surname || 'cadet').replace(/[^a-zA-Z0-9_-]/g, '_');
-  const filename = `KitChecklist_${safeName}_${svcNo}_${today}.pdf`;
-  return _packageResult(doc, filename);
-}
-
-// -----------------------------------------------------------------------------
-
-/**
- * Generate an AB174 Board of Survey form for written-off items.
- *
- * Lists all inventory items with qtyWrittenOff > 0 (or writtenOff > 0 for
- * legacy records). Includes NSN, nomenclature, qty written off, condition
- * at write-off, and free remarks/reason field per item. Signature blocks
- * for Board members and CO authority.
- *
- * @param {object[]} items  Items with writtenOff or qtyWrittenOff > 0.
- * @param {object}   opts   { unit }
- */
 export async function generateBoardOfSurvey(items, opts = {}) {
   if (!Array.isArray(items) || items.length === 0) {
     throw new Error('generateBoardOfSurvey: no items provided.');

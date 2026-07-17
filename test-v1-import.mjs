@@ -116,27 +116,32 @@ eq(slouch?.name, 'Slouch Hat', 'item name preserved');
 eq(slouch?.onHand, 50, 'item onHand preserved');
 
 // -----------------------------------------------------------------------------
-console.log('\n[3] Cadets migrated, personType inferred from rank');
+console.log('\n[3] Cadets are NOT imported');
+// Inverted deliberately. This used to assert cadets came across with their rank
+// and inferred personType. This build stores no cadet records, so importing them
+// would repopulate an identifier-free database with the exact aggregate of cadet
+// PII HQ ruled impermissible on 16 July 2026.
 const cadets2 = await Storage.cadets.list();
-eq(cadets2.length, 4, '4 cadet/staff records');
-const smith = cadets2.find((c) => c.svcNo === '8512345');
-eq(smith?.rank, 'CDT', 'cadet rank preserved');
-eq(smith?.personType, 'cadet', 'CDT → personType:cadet');
-const brown = cadets2.find((c) => c.svcNo === '8512347');
-eq(brown?.rank, 'CAPT-AAC', 'CAPT canonicalised to CAPT-AAC by migration');
-eq(brown?.personType, 'staff', 'CAPT → personType:staff');
+eq(cadets2.length, 0, 'no cadet records imported from v1');
 
-// -----------------------------------------------------------------------------
-console.log('\n[4] Loans migrated, denormalised fields preserved');
+console.log('\n[4] Loans are NOT imported');
+// Every v1 loan carries borrowerName/borrowerSvc — it records WHO holds an item.
+// It cannot be converted either: the identifier-free model needs an issue
+// document number to stand in for the person, and a v1 loan has none to map
+// onto. Inventing one would invent a link to a document that does not exist.
 const loans2 = await Storage.loans.list();
-eq(loans2.length, 2, '2 loans imported');
-const ln1001 = await Storage.loans.get('LN-1001');
-eq(ln1001?.borrowerName, 'CDT SMITH', 'denormalised borrower name preserved');
-eq(ln1001?.itemName, 'Slouch Hat', 'denormalised item name preserved');
-eq(ln1001?.active, true, 'active loan preserved');
-const ln1002 = await Storage.loans.get('LN-1002');
-eq(ln1002?.active, false, 'returned loan marked inactive');
-eq(ln1002?.returnDate, '2026-05-14', 'returnDate preserved');
+eq(loans2.length, 0, 'no loan records imported from v1');
+
+console.log('\n[4a] The skip is REPORTED, not silent');
+// The load-bearing assertion. A migration that silently drops a unit's entire
+// loan history and reports success is worse than one that fails: the operator
+// assumes the import was complete and never extracts the data to CEA.
+const auditRows = await Storage.audit.list();
+const skipNote  = auditRows.find((a) => /NOT imported/i.test(a.desc || ''));
+expect(!!skipNote, 'an audit entry records what was skipped');
+expect(/cadet record/i.test(skipNote?.desc || ''), 'skip note names the cadet records');
+expect(/loan record/i.test(skipNote?.desc || ''), 'skip note names the loan records');
+expect(/CEA/i.test(skipNote?.desc || ''), 'skip note directs the operator to CEA');
 
 // -----------------------------------------------------------------------------
 console.log('\n[5] Users migrated, legacy PIN hashes flagged');

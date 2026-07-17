@@ -234,6 +234,18 @@ function _staffRowHtml(s, canManage) {
 // Staff migration — move cadets with personType='staff' into the staff store
 // -----------------------------------------------------------------------------
 
+/**
+ * Moves staff-typed rows OUT of the legacy cadets store into `staff`.
+ *
+ * Retained deliberately even though the cadets module is gone. This is
+ * relocation, not disposal: these rows are adults miscategorised as cadets by an
+ * older build, and moving them to the store they belong in is the opposite of
+ * destroying them. It also shrinks the legacy cadet data that still has to be
+ * extracted to CEA before disposal (§13.1).
+ *
+ * It calls Storage.cadets.delete() — the only remaining cadet delete — and that
+ * is why: the row is not gone, it is in `staff`.
+ */
 async function _migrateStaffFromCadets() {
   let cadets;
   try { cadets = await Storage.cadets.list(); } catch { return 0; }

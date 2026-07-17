@@ -174,7 +174,11 @@ export async function decryptAll(records, fields) {
 // Staff (adults) retain both.
 export const PII_FIELDS_CADETS        = ['surname', 'given'];
 export const PII_FIELDS_STAFF         = ['surname', 'given', 'email', 'notes'];
-export const PII_FIELDS_LOANS         = ['borrowerName', 'remarks'];
+// Loans carry no person in this build: borrowerName is gone, and `remarks` is
+// not permitted to contain one (it becomes a constrained field — see the design
+// note). An empty list means encryptRecord/decryptRecord are no-ops for loans,
+// which is correct: there is nothing personal left to protect.
+export const PII_FIELDS_LOANS         = [];
 export const PII_FIELDS_EXPENSE_CLAIMS = ['claimantName', 'description', 'receiptRef', 'reviewNotes'];
 
 // Users: name (display name) and svcNo are PII. username is the login credential

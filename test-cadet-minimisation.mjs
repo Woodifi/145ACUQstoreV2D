@@ -122,11 +122,18 @@ const third = (await rawRead('cadets')).find((r) => r.svcNo === '8012345');
 ok('migration is idempotent', !('email' in third) && !('notes' in third)
   && third.svcNo === '8012345');
 
-// --- new records cannot reintroduce the fields -----------------------------
-await Storage3.cadets.put({ svcNo: '8012999', rank: 'LCPL', surname: 'Brontë', given: 'Emily', active: true });
-const fresh = (await rawRead('cadets')).find((r) => r.svcNo === '8012999');
-ok('a newly written cadet has no email field', !('email' in fresh));
-ok('a newly written cadet has no notes field', !('notes' in fresh));
+// --- no new cadet record can be created at all ------------------------------
+// Superseded by the identifier-free build: this used to assert a NEW cadet
+// carried no email/notes. There are no new cadets — put() refuses outright.
+// The migration above still matters, because a unit upgrading from an older
+// build has legacy rows that must be stripped and then extracted to CEA.
+let refused = false;
+try {
+  await Storage3.cadets.put({ svcNo: '8012999', rank: 'LCPL', surname: 'Brontë', given: 'Emily' });
+} catch (e) { refused = /does not store cadet records/i.test(e.message); }
+ok('creating a cadet record is refused outright', refused);
+ok('the refused record was not written',
+  !(await rawRead('cadets')).some((r) => r.svcNo === '8012999'));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

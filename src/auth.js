@@ -36,7 +36,7 @@
 //
 // ROLES & PERMISSIONS
 //   Verbatim copy of v1's ROLES and PERMS tables. Five roles: co, qm,
-//   staff, cadet, ro. The 'co' role has the implicit 'all' permission.
+//   staff, ro. The 'co' role has the implicit 'all' permission.
 //
 // DEPENDENCIES
 //   hash-wasm 4.11+ for argon2id.
@@ -61,7 +61,12 @@ export const ROLES = Object.freeze({
   co:    { label: 'OC',         short: 'OC'  },
   qm:    { label: 'QM Staff',   short: 'QM'  },
   staff: { label: 'Staff',      short: 'STF' },
-  cadet: { label: 'Cadet',      short: 'CDT' },
+  // No `cadet` role. This build has nothing for a cadet to see: loans no longer
+  // record who holds them, so "my loans" cannot be computed, and the login
+  // picker used to read the cadet register to render "SURNAME F." — a cadet PII
+  // read on the login screen. A cadet account also carries name + svcNo in the
+  // users store, which is cadet PII by another route. See
+  // docs/IDENTIFIER-FREE-DESIGN.md.
   ro:    { label: 'Read-Only',  short: 'R/O' },
 });
 
@@ -69,9 +74,8 @@ export const PERMS = Object.freeze({
   co:    ['all'],
   qm:    ['view', 'issue', 'return', 'addItem', 'editItem', 'manageCadets',
           'reports', 'audit', 'qr', 'import', 'requestIssue'],
-  staff: ['view', 'viewOwnLoans', 'requestIssue', 'reports'],
-  cadet: ['view', 'viewOwnLoans', 'requestIssue', 'reports'],
-  ro:    ['view', 'requestIssue', 'reports'],
+  staff: ['view', 'reports'],
+  ro:    ['view', 'reports'],
 });
 
 // V2L sandbox: separate session key prevents login state bleed.
@@ -246,6 +250,20 @@ export async function login(userId, pin) {
   }
   const user = await Storage.users.get(userId);
   if (!user) return { ok: false, reason: 'user_not_found' };
+
+  // Legacy cadet accounts cannot sign in. The role is gone (see ROLES) and a
+  // database upgraded from an earlier build still contains these accounts.
+  //
+  // Refused BEFORE the PIN is verified, deliberately: there is no point telling
+  // a locked-out role whether its PIN was right, and no reason to spend an
+  // argon2id verification on an account that cannot proceed either way.
+  //
+  // The account is refused, NOT deleted — disposal of cadet data is gated on HQ
+  // direction (controls statement §13.1), and a user account carrying name and
+  // svcNo is cadet PII like any other record.
+  if (user.role === 'cadet') {
+    return { ok: false, reason: 'role_withdrawn' };
+  }
 
   // Check lockout before expensive argon2id verification.
   const lockout = _readLockout(userId);
@@ -459,6 +477,11 @@ export function isCO() {
 }
 
 export function isCadet() {
+  // Retained deliberately though the role is gone. A database upgraded from an
+  // earlier build still holds user accounts with role 'cadet'; this keeps every
+  // existing guard locking them out rather than having them silently evaluate
+  // false and grant access. login() refuses them outright — this is the belt to
+  // that brace.
   return _session !== null && _session.role === 'cadet';
 }
 

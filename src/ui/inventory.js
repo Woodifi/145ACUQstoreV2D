@@ -590,7 +590,7 @@ async function _openHistoryModal(itemId) {
         return `
           <tr class="inv__hist-row ${rowClass}">
             <td class="inv__hist-ref">${esc(l.ref || '—')}</td>
-            <td>${esc(l.borrowerName || l.borrowerSvc || '—')}</td>
+            <td>${esc(l.issueNo || l.location || '—')}</td>
             <td class="inv__hist-qty">${esc(String(l.qty || 1))}</td>
             <td>${esc(_fmtDateAU(l.issueDate))}</td>
             <td>${esc(l.dueDate ? _fmtDateAU(l.dueDate) : '—')}</td>
@@ -616,7 +616,7 @@ async function _openHistoryModal(itemId) {
           <thead>
             <tr>
               <th>Ref</th>
-              <th>Borrower</th>
+              <th>Issued to</th>
               <th>Qty</th>
               <th>Issued</th>
               <th>Due</th>

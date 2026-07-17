@@ -143,7 +143,11 @@ function _runSchemaMigrations(db, oldVersion) {
     cadets.createIndex('personType', 'personType', { unique: false });
 
     const loans = db.createObjectStore(STORES.LOANS, { keyPath: 'ref' });
+    // borrowerSvc is retained ONLY so existing databases still open and their
+    // rows remain reachable for extraction to CEA before disposal. Nothing
+    // written by this build populates it — see docs/IDENTIFIER-FREE-DESIGN.md.
     loans.createIndex('borrowerSvc', 'borrowerSvc', { unique: false });
+    loans.createIndex('issueNo',     'issueNo',     { unique: false });
     loans.createIndex('itemId',      'itemId',      { unique: false });
     loans.createIndex('active',      'active',      { unique: false });
     loans.createIndex('dueDate',     'dueDate',     { unique: false });
@@ -522,6 +526,30 @@ export const photos = {
 // Cadets / Personnel  (PII-encrypted: surname, given, email, notes)
 // -----------------------------------------------------------------------------
 
+/**
+ * Cadets — LEGACY READ-ONLY.
+ *
+ * This build does not collect cadet records. The Cadets page is gone and put()
+ * refuses new writes: HQ's position (17 July 2026) is conditional on the tool
+ * not carrying PII, and a build that can still create a cadet record is a build
+ * that carries PII the moment someone uses it.
+ *
+ * The store and its existing rows REMAIN, deliberately. A unit upgrading from an
+ * earlier build has cadet records here, and they are not ours to destroy:
+ * extraction to CEA documents comes first, and disposal needs HQ's direction
+ * (controls statement §13.1). Issue history may be a Commonwealth record — see
+ * DYM S1 Ch2 para 67 and the Archives Act 1983.
+ *
+ * list()/get() therefore stay, so the data is reachable for that extraction.
+ * exportAll() still includes the store for the same reason: dropping it would
+ * mean a backup-and-restore cycle silently destroyed the very records we are
+ * required to extract before disposing of. Destruction by omission is still
+ * destruction.
+ *
+ * A fresh install has no rows here and carries no PII. An upgraded one carries
+ * legacy data pending disposal, and that is exactly why the direction at §13.1
+ * is being sought.
+ */
 export const cadets = {
   async list() {
     const rows = await _all(STORES.CADETS);
@@ -534,7 +562,23 @@ export const cadets = {
     return row ? PII.decryptRecord(row, PII.PII_FIELDS_CADETS) : null;
   },
 
-  async put(cadet) {
+  /**
+   * REFUSES ALL WRITES. This build does not collect cadet records.
+   *
+   * Fails closed rather than being deleted outright so that any caller still
+   * trying to create one is found by a test, loudly, instead of silently
+   * repopulating an identifier-free database. That is not hypothetical: the v1
+   * import did exactly this to the loans store, and only the equivalent guard
+   * on loans.put() caught it.
+   */
+  async put(_cadet) {
+    throw new Error(
+      'This build does not store cadet records. Items are issued to a location '
+      + 'or an issue-document number — see docs/IDENTIFIER-FREE-DESIGN.md.'
+    );
+  },
+
+  async _legacyPutDisabled(cadet) {
     requireEdit();
     if (!cadet?.svcNo) throw new Error('Cadet.svcNo required');
     const enc = await PII.encryptRecord(cadet, PII.PII_FIELDS_CADETS);
@@ -552,8 +596,21 @@ export const cadets = {
 };
 
 // -----------------------------------------------------------------------------
-// Loans  (PII-encrypted: borrowerName, remarks)
+// Loans
 // -----------------------------------------------------------------------------
+// This build carries NO person identifiers. A loan records that an item is out
+// and, where it went to a person, only:
+//
+//   location: 'individual'   — that it is with a person, not which person
+//   issueNo:  'ISS-0042'     — a reference to the document that says which
+//
+// The document is printed with identifier fields blank, completed by hand, and
+// uploaded to the individual's CEA documents. CEA holds the person↔equipment
+// link; this tool never does. Authority: HQ AAC ICT, 17 July 2026 — "so long as
+// you're not carrying PII and it's purely for asset tracking, I'd see no issue".
+//
+// `remarks` is no longer PII-encrypted because it is no longer permitted to
+// contain a person. See PII_FIELDS_LOANS in pii.js.
 
 export const loans = {
   async list() {
@@ -566,10 +623,15 @@ export const loans = {
     return all.filter(l => l.active);
   },
 
-  async listForCadet(svcNo) {
+  /**
+   * Loans against an issue document reference. Replaces listForCadet(svcNo):
+   * this build has no cadet records to look up, and the issue number is the
+   * only handle onto "what went out on that document".
+   */
+  async listForIssue(issueNo) {
     const tx   = _db.transaction(STORES.LOANS, 'readonly');
-    const idx  = tx.objectStore(STORES.LOANS).index('borrowerSvc');
-    const rows = await _reqDone(idx.getAll(svcNo));
+    const idx  = tx.objectStore(STORES.LOANS).index('issueNo');
+    const rows = await _reqDone(idx.getAll(issueNo));
     return PII.decryptAll(rows, PII.PII_FIELDS_LOANS);
   },
 
@@ -582,6 +644,18 @@ export const loans = {
   async put(loan) {
     requireEdit();
     if (!loan?.ref) throw new Error('Loan.ref required');
+    // Fail closed. HQ's position is conditional on this build carrying no PII,
+    // so a loan reaching storage with a person on it is a compliance breach and
+    // not something to silently accept and encrypt. Throwing here means any
+    // caller still passing a borrower is found by a test rather than by an
+    // assessor. Legacy rows already in the database are stripped by migration,
+    // not by this path.
+    if (loan.borrowerName || loan.borrowerSvc) {
+      throw new Error(
+        'Loan carries a person identifier (borrowerName/borrowerSvc). This build '
+        + 'records location + issueNo only — see docs/IDENTIFIER-FREE-DESIGN.md.'
+      );
+    }
     const enc = await PII.encryptRecord(loan, PII.PII_FIELDS_LOANS);
     const tx  = _db.transaction(STORES.LOANS, 'readwrite');
     tx.objectStore(STORES.LOANS).put(enc);
@@ -678,6 +752,24 @@ export const staff = {
 // Pending requests (AB189 etc.)
 // -----------------------------------------------------------------------------
 
+/**
+ * Equipment requests — LEGACY READ-ONLY. Same treatment as `cadets`.
+ *
+ * The Requests page is gone: a request is inherently "this person wants this
+ * item", and the records carried requestorName/requestorRank/requestorSvc. Worse
+ * than the cadet store did — pii.js declares PII_FIELDS_REQUESTS but the storage
+ * layer never applied it, so those fields were held in PLAIN TEXT. That is the
+ * defect disclosed at §8.3 of the controls statement; removing the module
+ * removes it.
+ *
+ * Requests are now paper: print a blank AB189 from the Loans page, the member
+ * completes it by hand, and the form is filed to their CEA documents.
+ *
+ * put() refuses. The store, its rows, list()/listByStatus() and its place in
+ * exportAll() all REMAIN — those legacy rows contain plaintext PII that must be
+ * extracted to CEA and disposed of per HQ direction (§13.1), and they cannot be
+ * extracted if we have already dropped them.
+ */
 export const requests = {
   list: () => _all(STORES.REQUESTS),
 
@@ -692,12 +784,19 @@ export const requests = {
     return (await _reqDone(tx.objectStore(STORES.REQUESTS).get(id))) || null;
   },
 
-  async put(req) {
-    if (!req?.id) throw new Error('Request.id required');
-    if (!Array.isArray(req.lines)) throw new Error('Request.lines must be an array');
-    const tx = _db.transaction(STORES.REQUESTS, 'readwrite');
-    tx.objectStore(STORES.REQUESTS).put(req);
-    await _txDone(tx);
+  /**
+   * REFUSES ALL WRITES. This build does not store equipment requests — they are
+   * paper (blank AB189 from the Loans page, completed by hand, filed to CEA).
+   *
+   * Fails closed rather than being deleted so a caller still trying is found by
+   * a test, not by silently writing plaintext requestor details into a build
+   * whose authority rests on carrying no PII.
+   */
+  async put(_req) {
+    throw new Error(
+      'This build does not store equipment requests. Print a blank AB189 from '
+      + 'the Loans page — see docs/IDENTIFIER-FREE-DESIGN.md.'
+    );
   },
 
   async delete(id) {

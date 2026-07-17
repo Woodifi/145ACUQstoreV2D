@@ -159,17 +159,17 @@ export async function run({ onProgress = () => {} } = {}) {
   onProgress('Importing inventory items and photos…', 25);
   await _migrateItemsAndPhotos(v1);
 
-  onProgress('Importing personnel register…', 40);
+  onProgress('Skipping personnel (not imported)…', 40);
   const cadetStats = await _migrateCadets(v1);
 
-  onProgress('Importing loans…', 55);
-  await _migrateLoans(v1);
+  onProgress('Skipping loans (not imported)…', 55);
+  const loanStats = await _migrateLoans(v1);
 
   onProgress('Importing users…', 65);
   await _migrateUsers(v1);
 
-  onProgress('Importing pending requests…', 75);
-  await _migrateRequests(v1);
+  onProgress('Skipping requests (not imported)…', 75);
+  const requestStats = await _migrateRequests(v1);
 
   onProgress('Importing stocktake counts…', 80);
   await _migrateStocktake(v1);
@@ -178,7 +178,7 @@ export async function run({ onProgress = () => {} } = {}) {
   await Storage.counters.set('loanCounter', v1.loanCounter || 1000);
 
   onProgress('Re-chaining audit log…', 90);
-  await _migrateAuditLog(v1, { cadetStats });
+  await _migrateAuditLog(v1, { cadetStats, loanStats, requestStats });
 
   onProgress('Finalising migration…', 98);
   await Storage.meta.set(MIGRATION_FLAG, {
@@ -266,17 +266,17 @@ export async function runFromObject(v1, { wipeFirst = true, onProgress = () => {
   onProgress('Importing inventory items and photos…', 25);
   await _migrateItemsAndPhotos(v1);
 
-  onProgress('Importing personnel register…', 45);
+  onProgress('Skipping personnel (not imported)…', 45);
   const cadetStats = await _migrateCadets(v1);
 
-  onProgress('Importing loans…', 60);
-  await _migrateLoans(v1);
+  onProgress('Skipping loans (not imported)…', 60);
+  const loanStats = await _migrateLoans(v1);
 
   onProgress('Importing users…', 70);
   await _migrateUsers(v1);
 
-  onProgress('Importing pending requests…', 78);
-  await _migrateRequests(v1);
+  onProgress('Skipping requests (not imported)…', 78);
+  const requestStats = await _migrateRequests(v1);
 
   onProgress('Importing stocktake counts…', 84);
   await _migrateStocktake(v1);
@@ -286,7 +286,7 @@ export async function runFromObject(v1, { wipeFirst = true, onProgress = () => {
   await Storage.counters.set('loanCounter', v1.loanCounter || 1000);
 
   onProgress('Re-chaining audit log…', 92);
-  await _migrateAuditLog(v1, { cadetStats });
+  await _migrateAuditLog(v1, { cadetStats, loanStats, requestStats });
 
   onProgress('Finalising migration…', 98);
   await Storage.meta.set(MIGRATION_FLAG, {
@@ -416,33 +416,41 @@ async function _migrateItemsAndPhotos(v1) {
 // the v1-page refactor need it for form dropdowns and validation.
 // =============================================================================
 
+/**
+ * v1 cadets are NOT imported.
+ *
+ * This build stores no cadet records, so there is nowhere to put them, and
+ * Storage.cadets.put() refuses regardless. Importing them would repopulate an
+ * identifier-free database with exactly the aggregate of cadet PII that HQ ruled
+ * impermissible on 16 July 2026.
+ *
+ * The v1 data is not destroyed — it stays in the v1 file. Person data belongs in
+ * CEA: extract it there. See docs/IDENTIFIER-FREE-DESIGN.md.
+ *
+ * Returns a count so the import report can tell the operator what was skipped
+ * and why. Skipping silently would be its own defect: the operator would assume
+ * the import was complete.
+ */
 async function _migrateCadets(v1) {
-  const stats = {
-    inferredStaff:  0,
-    inferredCadet:  0,
-    explicit:       0,
-    rankNormalised: 0,
-  };
-  for (const c of v1.cadets || []) {
-    let personType;
-    if (c.personType) {
-      personType = c.personType;
-      stats.explicit++;
-    } else {
-      personType = inferPersonType(c.rank);
-      if (personType === 'staff') stats.inferredStaff++; else stats.inferredCadet++;
-    }
-    const newRank = normalizeRank(c.rank);
-    if (newRank !== c.rank) stats.rankNormalised++;
-    await Storage.cadets.put({ ...c, rank: newRank, personType });
-  }
-  return stats;
+  const skipped = (v1.cadets || []).length;
+  return { skipped, imported: 0 };
 }
 
+/**
+ * v1 loans are NOT imported.
+ *
+ * Every v1 loan carries borrowerName/borrowerSvc — it records WHO holds an item,
+ * which is the one thing this build must not know. It cannot be converted
+ * either: the identifier-free model needs an issue-document number to stand in
+ * for the person, and a v1 loan has none to map onto. Inventing one would be
+ * inventing a link to a document that does not exist.
+ *
+ * That history is real and must not be lost — but it belongs in CEA as documents
+ * against each member, not here. Reported, not silently dropped.
+ */
 async function _migrateLoans(v1) {
-  for (const l of v1.loans || []) {
-    await Storage.loans.put(l);  // shape compatible
-  }
+  const skipped = (v1.loans || []).length;
+  return { skipped, imported: 0 };
 }
 
 async function _migrateUsers(v1) {
@@ -460,25 +468,14 @@ async function _migrateUsers(v1) {
   }
 }
 
+/**
+ * v1 equipment requests are NOT imported. Same reasoning as cadets: a request
+ * records who wants what, and this build has no requests store to write to.
+ * Requests are paper now — blank AB189 from the Loans page.
+ */
 async function _migrateRequests(v1) {
-  for (const r of v1.pendingRequests || []) {
-    // Normalise to v2.3 schema. Earlier drafts stored items:[{itemId,qty}]
-    // instead of lines:[{description,nsn,qty}]. Both must produce a valid
-    // lines array so the card renderer never hits req.lines.map on undefined.
-    let lines;
-    if (Array.isArray(r.lines)) {
-      lines = r.lines;
-    } else if (Array.isArray(r.items)) {
-      lines = r.items.map(i => ({
-        description: i.itemId || '',
-        nsn:         '',
-        qty:         Number(i.qty) || 1,
-      }));
-    } else {
-      lines = [];
-    }
-    await Storage.requests.put({ ...r, lines });
-  }
+  const skipped = (v1.requests || v1.pendingRequests || []).length;
+  return { skipped, imported: 0 };
 }
 
 async function _migrateStocktake(v1) {
@@ -501,18 +498,21 @@ async function _migrateAuditLog(v1, notes = {}) {
   // wasn't a verbatim copy. These are NOT marked imported — they are real
   // v2-era audit entries describing what the migration tool did.
   const cs = notes.cadetStats;
-  if (cs && (cs.inferredStaff || cs.inferredCadet || cs.rankNormalised)) {
+  const ls = notes.loanStats;
+  const rs = notes.requestStats;
+  const skipped = (cs?.skipped || 0) + (ls?.skipped || 0) + (rs?.skipped || 0);
+  if (skipped > 0) {
     const parts = [];
-    if (cs.inferredStaff || cs.inferredCadet) {
-      parts.push(`Inferred personType for ${cs.inferredStaff + cs.inferredCadet} `
-        + `personnel records: ${cs.inferredStaff} staff, ${cs.inferredCadet} cadet `
-        + `(${cs.explicit} already had personType set)`);
-    }
-    if (cs.rankNormalised) {
-      parts.push(`normalised ${cs.rankNormalised} legacy officer rank(s) to canonical -AAC form`);
-    }
-    parts.push('Review on Personnel page and correct any misclassifications — '
-      + 'WO2/WO1 are AAC senior cadet ranks, not ADF warrant officers');
+    // Say plainly what did NOT come across. A migration that silently drops a
+    // unit's entire loan history — because this build has nowhere to put a
+    // borrower — and reports success is worse than one that fails: the operator
+    // would assume the import was complete and never extract the data to CEA.
+    if (cs?.skipped) parts.push(`${cs.skipped} cadet record(s)`);
+    if (ls?.skipped) parts.push(`${ls.skipped} loan record(s)`);
+    if (rs?.skipped) parts.push(`${rs.skipped} equipment request(s)`);
+    parts.push('NOT imported — this build stores no personal information. '
+      + 'The v1 data is untouched in the source file. Extract these records to '
+      + 'the members\' CEA documents; do not re-import them here.');
     await Storage.audit.append({
       action: 'migration',
       user:   'system',

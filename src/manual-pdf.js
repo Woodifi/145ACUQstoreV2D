@@ -327,7 +327,7 @@ function _cover(doc, unitName, dateStr) {
   d.setTextColor(...C.muted);
   const descLines = [
     'This manual covers everything you need to manage your Q-Store:',
-    'inventory, loans, cadets, stocktaking, orders, and more.',
+    'inventory, loans, stocktaking, orders, and more.',
     '',
     'Written for all users — no technical knowledge required.',
   ];
@@ -353,8 +353,8 @@ function _cover(doc, unitName, dateStr) {
     '3. User Roles & Permissions  10. Audit Log',
     '4. Inventory                 11. Settings',
     '5. Loans & Returning         12. ' + (IS_DEFENCE_BUILD ? 'Backups' : 'Cloud Sync (OneDrive)'),
-    '6. Equipment Requests        13. Backup & Restore',
-    '7. Cadets & Nominal Roll     14-15. PIN Security & Recovery',
+    '6. Equipment Requests (Paper) 13. Backup & Restore',
+    '7. Issue Destinations        14-15. PIN Security & Recovery',
     '                             16-19. Kits, QR Codes, Troubleshooting',
   ];
   topics.forEach((t, i) => d.text(t, bx + 5, by + 14 + i * 7.5));
@@ -395,8 +395,8 @@ function _toc(doc, db) {
     [3,  'User Roles and Permissions'],
     [4,  'Inventory'],
     [5,  'Loans — Issuing and Returning Equipment'],
-    [6,  'Equipment Requests (Self-Service)'],
-    [7,  'Cadets and Nominal Roll'],
+    [6,  'Equipment Requests (Paper)'],
+    [7,  'Issue Destinations and Issue Numbers'],
     [8,  'Stocktake'],
     [9,  'AAC QStore Orders'],
     [10, 'Audit Log'],
@@ -445,8 +445,8 @@ function _s1(b) {
   b.bullets([
     'Track all Q-Store equipment with photos, quantities, and condition details',
     'Issue and return equipment with automatic stock updates',
-    'Let cadets and staff submit equipment requests from any device',
-    'Maintain a full nominal roll of cadets and staff',
+    'Print blank AB189 request forms for members to complete by hand',
+    'Track where equipment is without holding any personal information',
     'Run stocktakes with detailed condition recording for every item',
     'Import supply orders from the AAC QStore system and receive them into inventory',
     'Print loan vouchers, AB189 forms, stock reports, and QR code labels',
@@ -455,7 +455,7 @@ function _s1(b) {
   ]);
   b.gap();
   b.h3('Who uses it and how they log in');
-  b.p('QStore IMS has five roles: Commanding Officer (OC), Quartermaster (QM), Staff, Cadet, and Read-Only. Each role has a different level of access. Every user logs in with a 4-digit PIN. Only the OC can create user accounts and manage PINs.');
+  b.p('QStore IMS has four roles: Commanding Officer (OC), Quartermaster (QM), Staff, and Read-Only. Each role has a different level of access. Every user logs in with a 4-digit PIN. Only the OC can create user accounts and manage PINs. There is no cadet role — this build holds no cadet records and has nothing for a cadet account to see.');
   b.gap();
   b.h3('Where your data is kept');
   b.p(IS_DEFENCE_BUILD
@@ -493,11 +493,11 @@ function _s2(b) {
   b.h3('Step 2 — Add inventory items');
   b.p('See Section 4 — Inventory for step-by-step instructions. Start with the most frequently issued items.');
 
-  b.h3('Step 3 — Add cadets and staff');
-  b.p('See Section 7 — Cadets and Nominal Roll. You can add people one at a time or bulk-import from a spreadsheet.');
+  b.h3('Step 3 — Set up issue destinations');
+  b.p('See Section 7 — Issue Destinations and Issue Numbers. Destinations are the activities and places you issue equipment to; the OC maintains the list in Settings.');
 
   b.h2('Recording equipment already on loan when you start');
-  b.p('If equipment was already out with borrowers before QStore was installed, you need to record those loans so the system matches reality from day one.');
+  b.p('If equipment was already out before QStore was installed, record those loans against the correct destination — or against Individual with an issue number written onto the existing paperwork — so the system matches reality from day one.');
   b.p('On the Loans → Issue tab, tick "Record existing issue (no stock deduction)" on any item line. This records the loan and increases the On Loan count, but does NOT reduce On Hand — because the item was already out before QStore started tracking it. When the item is eventually returned, On Hand will automatically increase to reflect the stock coming back.');
   b.callout('Always use the "Record existing issue" option for pre-existing loans. Do not manually edit stock numbers.', 'tip');
 
@@ -529,10 +529,9 @@ function _s3(b) {
   b.table(
     ['Role', 'Description'],
     [
-      ['OC\n(Commanding Officer)', 'Full access to everything: inventory, loans, cadets, stocktake, orders, settings, users, and PIN management. Assign to the CO only. There should normally be only one OC account.'],
-      ['QM\n(Quartermaster)', 'Full operational access: inventory, loans, cadets, stocktake, orders, audit log, and equipment request approval. Cannot access Settings or manage user accounts.'],
-      ['Staff', 'Can view all pages and submit equipment requests. Cannot add or edit inventory, manage cadets, issue or return loans, or approve requests.'],
-      ['Cadet', 'Can view inventory, view their own active loans, and submit equipment requests. Cannot see other cadets\' loans.'],
+      ['OC\n(Commanding Officer)', 'Full access to everything: inventory, loans, stocktake, orders, settings, users, and PIN management. Assign to the CO only. There should normally be only one OC account.'],
+      ['QM\n(Quartermaster)', 'Full operational access: inventory, loans, stocktake, orders, and the audit log. Cannot access Settings or manage user accounts.'],
+      ['Staff', 'Can view pages and reports. Cannot add or edit inventory, or issue or return loans.'],
       ['Read-Only (RO)', 'View-only access to inventory and loan records. No actions can be taken.'],
     ],
     [30, 144],
@@ -541,21 +540,21 @@ function _s3(b) {
 
   b.h2('Full Permissions Reference');
   b.table(
-    ['Action', 'OC', 'QM', 'Staff', 'Cadet', 'RO'],
+    ['Action', 'OC', 'QM', 'Staff', 'RO'],
     [
-      ['View inventory, loans and cadets', '✓', '✓', '✓', '✓', '✓'],
-      ['Submit equipment requests', '✓', '✓', '✓', '✓', '—'],
-      ['Issue and return loans', '✓', '✓', '—', '—', '—'],
-      ['Approve or deny requests', '✓', '✓', '—', '—', '—'],
-      ['Add and edit inventory items', '✓', '✓', '—', '—', '—'],
-      ['Delete inventory items', '✓', '—', '—', '—', '—'],
-      ['Manage cadets and staff', '✓', '✓', '—', '—', '—'],
-      ['Run stocktake', '✓', '✓', '—', '—', '—'],
-      ['Import and manage orders', '✓', '✓', '—', '—', '—'],
-      ['View audit log', '✓', '✓', '—', '—', '—'],
-      ['Print reports and QR codes', '✓', '✓', '—', '—', '—'],
-      ['Manage user accounts', '✓', '—', '—', '—', '—'],
-      ['Access Settings', '✓', '—', '—', '—', '—'],
+      ['View inventory and loans', '✓', '✓', '✓', '✓'],
+      ['Submit equipment requests', '✓', '✓', '✓', '—'],
+      ['Issue and return loans', '✓', '✓', '—', '—'],
+      ['Approve or deny requests', '✓', '✓', '—', '—'],
+      ['Add and edit inventory items', '✓', '✓', '—', '—'],
+      ['Delete inventory items', '✓', '—', '—', '—'],
+      ['Manage staff', '✓', '✓', '—', '—'],
+      ['Run stocktake', '✓', '✓', '—', '—'],
+      ['Import and manage orders', '✓', '✓', '—', '—'],
+      ['View audit log', '✓', '✓', '—', '—'],
+      ['Print reports and QR codes', '✓', '✓', '—', '—'],
+      ['Manage user accounts', '✓', '—', '—', '—'],
+      ['Access Settings', '✓', '—', '—', '—'],
     ],
     [82, 18, 18, 18, 20, 18],
   );
@@ -637,7 +636,7 @@ function _s5(b) {
   b.h2('Issuing equipment (OC / QM)');
   b.steps([
     'Go to Loans → Issue tab.',
-    'Select the borrower by searching for their name or service number. For equipment going to an activity rather than a person (e.g. an annual camp gear pool), tick "Unit / Activity loan" and type a description.',
+    'Choose the destination from the list. For equipment going to a person, choose "Individual (see issue document)" — the system allocates an issue number to write on the paperwork. See Section 7.',
     'Select the purpose from the dropdown.',
     'Set the due date, or tick "Long-term loan" for equipment with no fixed return date.',
     'Add item lines — click + Add another item for each item. Search by name or NSN. The available quantity is shown next to each item.',
@@ -648,7 +647,7 @@ function _s5(b) {
   b.callout('Load a pre-defined kit with ⊞ Load kit to fill all item lines with one click. See Section 16 — Issue Kits.', 'tip');
 
   b.h3('Initial Issue (special purpose)');
-  b.p('"Initial Issue" is the purpose for permanently issuing uniform and equipment to a cadet for their full enlistment period.');
+  b.p('"Initial Issue" is the purpose for permanently issuing uniform and equipment to a member for their full enlistment period. Choose the destination "Individual" and record the issue number on the document.');
   b.bullets([
     'The due date is automatically set to 6 years from today and cannot be changed',
     'The Long-term loan toggle is disabled when Initial Issue is selected',
@@ -672,7 +671,7 @@ function _s5(b) {
   b.h2('Returning equipment (OC / QM)');
   b.steps([
     'Go to Loans → Return tab.',
-    'Select the borrower — only people with active loans appear in the list.',
+    'Select the issue number or destination — only those with active loans appear in the list. Check the issue document to confirm the person returning matches.',
     'Tick the items being returned.',
     'Set the condition on return: Serviceable, Unserviceable (needs repair), or Write-off (beyond repair).',
     'Add return remarks if needed, for example a description of any damage.',
@@ -689,14 +688,14 @@ function _s5(b) {
     'Returned — completed loan history',
     'All — the full loan history',
   ]);
-  b.p('Filter by borrower name using the search field at the top. Click any row to expand it and see full details. Use ⊙ Voucher or ⊙ AB189 to print documents for any loan.');
+  b.p('Filter by issue number or destination using the control at the top. Click any row to expand it and see full details. Use ⊙ Voucher or ⊙ AB189 to print documents for any loan — recipient fields print blank for hand completion.');
 
   b.gap(2);
   b.h3('Loan status badges explained');
   b.table(
     ['Badge', 'What it means'],
     [
-      ['Active',           'Loan is current — equipment is out with the borrower'],
+      ['Active',           'Loan is current — equipment is out'],
       ['Overdue',          'Past the due date and not yet returned'],
       ['Long-term',        'No fixed due date — issued indefinitely'],
       ['Returned',         'Equipment has been returned and the loan is closed'],
@@ -710,110 +709,43 @@ function _s5(b) {
 }
 
 function _s6(b) {
-  b.h1(6, 'Equipment Requests (Self-Service)');
-  b.p('The Requests page lets cadets and staff submit their own equipment requests online. The QM or OC reviews and approves them. This replaces paper AB189 forms for routine requests. When requests are waiting for approval, a number badge appears on the Requests navigation item.');
+  b.h1(6, 'Equipment Requests (Paper)');
+  b.p('Equipment requests are paper in this build. There is no Requests page: a request records who wants what, and this system does not store people.');
 
-  b.h2('For cadets and staff — submitting a request');
+  b.h2('How it works');
   b.steps([
-    'Go to Requests → New Request.',
-    'Select the purpose (e.g. Annual Camp, Training Activity, Parade Night).',
-    'Enter the date you need the equipment by (optional but helpful for the QM).',
-    'Add one line per item: a description, NSN if you know it, and the quantity you need. Click + Add item to add more lines.',
-    'Add any extra notes or context for the QM.',
-    'Click Submit Request.',
+    'Go to Loans → Issue and click "Blank AB189".',
+    'Give the printed form to the member. They complete their own details by hand.',
+    'Process the request from the paper as a normal issue.',
+    'Scan or save the completed AB189 and upload it to that member\'s CEA documents.',
   ]);
-  b.p('Your request gets a reference number (REQ-XXXX). Check My Requests to track its status.');
-
-  b.h2('Request statuses');
-  b.table(
-    ['Status', 'What it means'],
-    [
-      ['Pending',   'Submitted and waiting for the QM to review it'],
-      ['Approved',  'QM has approved it — the physical issue will happen separately'],
-      ['Issued',    'Approved and equipment has been issued; loan reference numbers are shown'],
-      ['Denied',    'Request was declined — the QM\'s reason is shown on your request card'],
-      ['Withdrawn', 'You cancelled the request before it was processed'],
-    ],
-    [28, 146],
-  );
-
-  b.h2('Withdrawing a request');
-  b.p('While a request is Pending, you can click Withdraw on the request card in My Requests to cancel it. Once a request is Approved, Issued, or Denied, it cannot be withdrawn.');
-
-  b.h2('For QM and OC — processing requests');
-  b.steps([
-    'Go to Requests → Pending.',
-    'Review each request card: requestor, purpose, required-by date, item lines, and notes.',
-    'Choose an action: Approve & Issue, Approve (issue later), or Deny.',
-  ]);
-  b.bullets([
-    'Approve & Issue — creates loan records immediately for all items. The system matches items by NSN first, then by description. Unmatched items are issued as non-stock loans.',
-    'Approve (issue later) — marks the request Approved. Issue items manually from Loans → Issue when ready.',
-    'Deny — requires a reason. The requestor can see the reason on their request card.',
-  ], { indent: 8 });
-
-  b.h2('Blank AB189 form (print and fill on paper)');
-  b.p('Click ⬇ Blank AB189 Form on any tab to download a ready-to-print blank form. Useful when:');
-  b.bullets([
-    'A cadet needs to submit a request in writing at camp or a field exercise',
-    'Brigade or the CO requires a signed paper copy for their records',
-    'The QM wants a physical form before entering the request into the system',
-  ]);
-
-  b.h2('Importing a completed AB189 PDF');
-  b.p('If a cadet has typed into a blank AB189 PDF on their computer, the QM can import it to automatically fill a new request:');
-  b.steps([
-    'On the Requests page, click ⬆ Import AB189 PDF.',
-    'Select the completed PDF file.',
-    'Review all pre-filled fields carefully and correct any errors before submitting.',
-  ]);
-  b.callout('PDF import works best with forms that were filled in digitally (typed on a computer). Scanned paper forms are not supported — those items would need to be entered manually.', 'note');
+  b.callout('The CEA document is the record of who requested and received the equipment. This system records only that the items went out, against an issue number.', 'note');
 }
 
 function _s7(b) {
-  b.h1(7, 'Cadets and Nominal Roll');
-  b.p('The Cadets page manages personnel records for cadets and staff. All logged-in users can view the nominal roll. Only OC and QM can add, edit, or deactivate records.');
+  b.h1(7, 'Issue Destinations and Issue Numbers');
+  b.p('This build holds no personal information. It does not know who has an item — only that the item went out, and where to.');
 
-  b.h2('Viewing the nominal roll');
-  b.p('Search by name or service number. Use the company, platoon, and section dropdowns to filter the list. Tick Show inactive to include deactivated records. The list is sorted automatically: staff first by rank then surname, then cadets grouped by their unit sub-structure.');
+  b.h2('Destinations');
+  b.p('Every issue is recorded against a destination chosen from a list the OC maintains in Settings. Destinations are activities and places: "Field exercise", "Range practice", "Maintenance / repair".');
+  b.p('It is a fixed list rather than a text box on purpose. A box next to the word "issue" collects names, and a name is exactly what this system must not hold.');
 
-  b.h2('Adding a person (OC / QM)');
+  b.h2('Issuing to a person');
+  b.p('Choose the destination "Individual (see issue document)". The system allocates an issue number — ISS-1042, for example — and shows it on screen.');
   b.steps([
-    'Click + Add cadet/staff.',
-    'Enter the service number, surname, given names, and rank.',
-    'Select company, platoon, and section if your unit sub-structure is configured in Settings (see below), or type a free-text platoon name.',
-    'Add email and notes if needed.',
-    'Click Save.',
+    'Write the issue number on the printed issue document (voucher or AB189).',
+    'The member completes their details on the paper and signs for the items.',
+    'Scan or save the completed document and upload it to that member\'s CEA documents.',
   ]);
-  b.p('The system automatically determines whether a person is a cadet or staff member based on the rank entered.');
+  b.callout('The issue number is the ONLY link between the equipment and the person holding it, and that link lives on the document in CEA. If the document is lost, the link is lost. This is the design, not a fault.', 'warn');
 
-  b.h2('Bulk import from a spreadsheet (OC / QM)');
-  b.p('To add many people at once, click ⇪ Import CSV. Prepare a spreadsheet with columns: svcNo, surname, givenNames, rank, company, platoon, section. Upload the file, check the preview for any errors, then click Confirm import.');
-  b.callout('Existing records with the same service number are skipped and not overwritten. The import is safe to run more than once.', 'tip');
-
-  b.h2('Editing and deactivating people');
-  b.p('Click Edit on any row to update the record. To deactivate someone who has left the unit, untick the Active checkbox and save. Their record and loan history are preserved — they just cannot be selected for new loans.');
-  b.callout('Deactivating a cadet automatically triggers the discharge process (see below). This is the correct process when a cadet leaves the unit.', 'warning');
-
-  b.h2('Cadet discharge — automatic loan recall');
-  b.p('When you deactivate a cadet by unticking Active and saving, QStore automatically:');
+  b.h2('What this means day to day');
   b.bullets([
-    'Sets the due date to today on all of that cadet\'s active loans',
-    'Flags those loans as "Discharged" in the All Loans table with a red warning badge',
-    'Shows a summary listing all outstanding equipment that needs to be recovered',
-    'Records a cadet_discharge entry in the audit log',
+    'Overdue items can be identified, but not who has them — check the issue documents in CEA',
+    'There is no automatic recall of a departing member\'s kit',
+    'Kit checklists and nominal rolls are not produced by this system',
+    'Every issue is recorded twice: once here, once in CEA',
   ]);
-  b.p('The outstanding loans stay active until the QM physically recovers and processes a return for each item through the normal return workflow.');
-
-  b.h2('Unit sub-structure (Company / Platoon / Section)');
-  b.p('If your unit is organised into companies, platoons, and sections, configure this structure in Settings → Unit sub-structure. Once configured:');
-  b.bullets([
-    'The cadet add/edit form shows cascading Company → Platoon → Section dropdowns instead of a free-text field',
-    'The cadets table groups records with colour-coded band headers between groups',
-    'The filter dropdowns cascade: selecting a Company shows only its Platoons, and so on',
-    'The printed nominal roll PDF uses the same group layout',
-  ]);
-  b.p('Use Settings → Unit sub-structure → ⇝ Migrate to bulk-reassign existing records after configuring the structure for the first time.');
 }
 
 function _s8(b) {
@@ -924,7 +856,7 @@ function _s10(b) {
     [
       ['add / adjust',                  'Inventory item added, edited, or deleted'],
       ['issue',                         'Equipment issued (including existing-loan and non-stock issues)'],
-      ['return',                        'Equipment returned from a borrower'],
+      ['return',                        'Equipment returned from an issue or destination'],
       ['cadet_add / update / delete',   'Person record created, changed, or removed'],
       ['cadet_discharge',               'Cadet deactivated — active loans recalled automatically'],
       ['request_submitted',             'Equipment request submitted by a user'],
@@ -980,7 +912,7 @@ function _s11(b) {
   b.callout('Removing a category does not affect existing inventory items — they keep their stored category name. Update individual items if you rename or remove a category.', 'note');
 
   b.h2('Unit Sub-Structure');
-  b.p('Configure the company / platoon / section hierarchy for your unit. Click Configure structure, add companies, platoons, and sections, then click Save structure. See Section 7 for full details on how this affects the Cadets page and nominal roll.');
+  b.p('Configure the company / platoon / section hierarchy for your unit. Click Configure structure, add companies, platoons, and sections, then click Save structure. The hierarchy is retained for unit administration; this build does not use it to group people, because it holds no person records.');
 
   b.h2('OC PIN Recovery');
   b.p('Generate a one-use recovery code for the OC account in case the OC forgets their PIN. See Section 15 for full instructions.');
@@ -1059,7 +991,7 @@ function _s13(b) {
     'A JSON file is downloaded with a name like qstore-backup-145acu-2026-05-20.json.',
     'Store this file somewhere safe and off the device — email it to yourself, save it to OneDrive, or copy it to a USB drive.',
   ]);
-  b.p('The backup contains everything: inventory, photos, loans, cadets, users, settings, supply orders, and the full audit log chain.');
+  b.p('The backup contains everything: inventory, photos, loans, users, settings, supply orders, and the full audit log chain.');
 
   b.h2('Importing a backup (OC)');
   b.steps([
@@ -1192,7 +1124,7 @@ function _s16(b) {
     'Click ⊞ Load kit.',
     'Select the kit from the list — all item lines are pre-filled instantly.',
     'Adjust individual quantities if needed (e.g. different sizes for uniform items).',
-    'Continue filling in the borrower, purpose, and due date, then click Issue.',
+    'Continue filling in the destination, purpose, and due date, then click Issue.',
   ]);
   b.bullets([
     'Kit items with no stock on hand are still added to the issue list and recorded as On Loan — a warning message lists the affected items so you can note or investigate them',

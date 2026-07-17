@@ -29,7 +29,6 @@ import * as Login     from './login.js';
 import * as Dashboard from './dashboard.js';
 import * as Inventory from './inventory.js';
 import * as Loans     from './loans.js';
-import * as Cadets    from './cadets.js';
 import * as Stocktake from './stocktake.js';
 import * as Audit     from './audit.js';
 import * as Users     from './users.js';
@@ -37,7 +36,6 @@ import * as Settings  from './settings.js';
 import * as Help      from './help.js';
 import * as TOTP      from '../totp.js';
 import * as Orders    from './orders.js';
-import * as Requests  from './requests.js';
 import * as Reference  from './reference.js';
 import * as Staff      from './staff.js';
 import * as ImsReports from './ims-reports.js';
@@ -51,11 +49,9 @@ const PAGES = {
   dashboard:  { label: 'Home',      perm: 'view',         mount: Dashboard.mount  },
   inventory:  { label: 'Inventory', perm: 'view',         mount: Inventory.mount  },
   loans:      { label: 'Loans',     perm: 'view',         mount: Loans.mount      },
-  cadets:     { label: 'Cadets',    perm: 'view',         mount: Cadets.mount     },
   staff:      { label: 'Staff',     perm: 'view',         mount: Staff.mount,      notForCadet: true },
   stocktake:  { label: 'Stocktake', perm: 'editItem',     mount: Stocktake.mount  },
   orders:     { label: 'Orders',    perm: 'editItem',     mount: Orders.mount     },
-  requests:   { label: 'Requests',  perm: 'requestIssue', mount: Requests.mount   },
   reports:    { label: 'Reports',   perm: 'audit',        mount: ImsReports.mount },
   audit:      { label: 'Audit',     perm: 'audit',        mount: Audit.mount      },
   users:      { label: 'Users',     coOnly: true,         mount: Users.mount      },
@@ -723,19 +719,11 @@ async function _updateOverdueBadge() {
     }
   }
 
-  // ---- Pending requests badge on "Requests" nav button (QM / CO only) ----
-  const reqNavBtn = _root.querySelector('.shell__nav-link[data-page="requests"]');
-  if (reqNavBtn && (AUTH.can('issue') || AUTH.isCO())) {
-    try {
-      const pending = await Storage.requests.listByStatus('pending');
-      if (pending.length > 0) {
-        reqNavBtn.innerHTML =
-          `Requests <span class="shell__nav-badge">${pending.length}</span>`;
-      } else {
-        reqNavBtn.textContent = 'Requests';
-      }
-    } catch { /* non-fatal */ }
-  }
+  // The pending-requests badge is gone with the Requests page. The digital
+  // request workflow stored requestorName/Rank/Svc — in plain text, as it
+  // happens — and a request is inherently "this person wants this item".
+  // Requests are now paper: print a blank AB189 from the Loans page, the member
+  // completes it by hand, and the finished form is filed to their CEA documents.
 }
 
 async function _teardownCurrentPage() {
@@ -773,9 +761,9 @@ async function _v2lSeedIfNeeded() {
     for (const item of seed.items || []) {
       await Storage.items.put(item);
     }
-    for (const cadet of seed.cadets || []) {
-      await Storage.cadets.put(cadet);
-    }
+    // Demo seed no longer creates cadet records — this build does not store
+    // them, and Storage.cadets.put() refuses. Seeded loans below go to a
+    // location or an issue number like any other.
     for (const member of seed.staff || []) {
       await Storage.staff.put(member);
     }

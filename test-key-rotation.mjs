@@ -59,14 +59,18 @@ console.log('=== key rotation ===');
 
 await Storage.init();
 
-// --- seed realistic PII (cadets are keyed by svcNo) ------------------------
-await Storage.cadets.put({
+// --- seed realistic PII -----------------------------------------------------
+// STAFF, not cadets. This build stores no cadet records (Storage.cadets.put
+// refuses), but rotation still has to work: staff and user accounts are adults
+// and remain PII-encrypted pending HQ's answer on whether "no PII" covers them.
+// Rotation matters exactly as much for their data as it did for cadets'.
+await Storage.staff.put({
   svcNo: '8012345', surname: 'Wodehouse', given: 'Alice',
-  email: 'alice@example.test', notes: 'Allergic to penicillin', rank: 'CDT',
+  email: 'alice@example.test', notes: 'Key holder, CQ store', rank: 'CAPT-AAC',
 });
-await Storage.cadets.put({
+await Storage.staff.put({
   svcNo: '8012346', surname: 'Brontë', given: 'Emily',
-  email: 'emily@example.test', notes: '', rank: 'LCPL',
+  email: 'emily@example.test', notes: '', rank: 'LT-AAC',
 });
 await Storage.audit.append({ action: 'item_add', user: 'QM', desc: 'Seeded item' });
 await Storage.audit.append({ action: 'issue',    user: 'QM', desc: 'Issued boots' });
@@ -78,9 +82,9 @@ ok('audit chain verifies before rotation', (await Storage.audit.verify()).ok);
 
 // Prove the data really is encrypted at rest, so the rest of the test means
 // something.
-const rawBefore = await rawRead('cadets');
+const rawBefore = await rawRead('staff');
 const beforeC1  = rawBefore.find((r) => r.svcNo === '8012345');
-ok('cadet surname is ciphertext at rest', String(beforeC1.surname).startsWith('~enc:'));
+ok('staff surname is ciphertext at rest', String(beforeC1.surname).startsWith('~enc:'));
 
 // --- rotate ----------------------------------------------------------------
 const result = await Storage.rotateKeys({ reason: 'test rotation' });
@@ -88,13 +92,13 @@ ok('rotation reports records re-encrypted', result.records === 2);
 ok('rotation reports audit entries re-signed', result.auditEntries === 2);
 
 // --- 1. PII survived -------------------------------------------------------
-const c1 = await Storage.cadets.get('8012345');
+const c1 = await Storage.staff.get('8012345');
 ok('surname survives rotation', c1.surname === 'Wodehouse');
 ok('given name survives rotation', c1.given === 'Alice');
 ok('email survives rotation', c1.email === 'alice@example.test');
-ok('notes survive rotation', c1.notes === 'Allergic to penicillin');
-ok('non-PII field untouched', c1.rank === 'CDT');
-const c2 = await Storage.cadets.get('8012346');
+ok('notes survive rotation', c1.notes === 'Key holder, CQ store');
+ok('non-PII field untouched', c1.rank === 'CAPT-AAC');
+const c2 = await Storage.staff.get('8012346');
 ok('second record survives (non-ASCII)', c2.surname === 'Brontë');
 ok('empty PII field stays empty', c2.notes === '');
 
@@ -104,7 +108,7 @@ const newAudB64 = await metaValue('auditKey');
 ok('piiKey changed', newPiiB64 !== oldPiiB64);
 ok('auditKey changed', newAudB64 !== oldAudB64);
 
-const rawAfter = await rawRead('cadets');
+const rawAfter = await rawRead('staff');
 const afterC1  = rawAfter.find((r) => r.svcNo === '8012345');
 ok('still ciphertext at rest after rotation', String(afterC1.surname).startsWith('~enc:'));
 ok('ciphertext actually changed', afterC1.surname !== beforeC1.surname);
@@ -115,14 +119,14 @@ ok('ciphertext actually changed', afterC1.surname !== beforeC1.surname);
 await PII.init(oldPiiB64);
 let oldKeyReadable = false;
 try {
-  const viaOld = await PII.decryptRecord({ ...afterC1 }, PII.PII_FIELDS_CADETS);
+  const viaOld = await PII.decryptRecord({ ...afterC1 }, PII.PII_FIELDS_STAFF);
   oldKeyReadable = viaOld.surname === 'Wodehouse';
 } catch { oldKeyReadable = false; }
 ok('OLD piiKey can no longer decrypt records', !oldKeyReadable);
 
 // Restore the live key so the rest of the assertions work.
 await PII.init(newPiiB64);
-ok('new piiKey reads records', (await Storage.cadets.get('8012345')).surname === 'Wodehouse');
+ok('new piiKey reads records', (await Storage.staff.get('8012345')).surname === 'Wodehouse');
 
 // --- 3. audit chain re-signed and marked -----------------------------------
 ok('audit chain verifies after rotation', (await Storage.audit.verify()).ok);
