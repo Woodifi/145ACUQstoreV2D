@@ -35,6 +35,8 @@ import * as Migration  from '../migration.js';
 import * as TotpSetup  from './totp-setup.js';
 import * as CsvUi      from './csv-import.js';
 import { getLicenseState, activateKey, deviceActivate } from '../license.js';
+import { generateLegacyQRecord, downloadPdf } from '../pdf.js';
+import * as Locations from '../locations.js';
 import { showToast }   from './toast.js';
 import * as Structure  from '../structure.js';
 import { CATEGORIES as DEFAULT_CATEGORIES } from './inventory.js';
@@ -76,8 +78,13 @@ export async function mount(rootEl) {
 // Render
 // -----------------------------------------------------------------------------
 
+let _legacySummary = { cadets: 0, loans: 0, requests: 0, total: 0 };
+
 async function _render() {
   const settings       = await Storage.settings.getAll();
+  // Legacy person data left over from a build that stored cadets. Zero on a
+  // fresh install; the section renders nothing in that case.
+  try { _legacySummary = await Storage.legacy.summary(); } catch (_) { /* non-fatal */ }
   const status         = Sync.getStatus();
   // Recovery status is per-user. The settings page already requires the OC
   // role at mount time, so the session userId is the OC's. If somehow we
@@ -108,6 +115,7 @@ async function _render() {
         ${_totpSectionHtml(totpUser)}
         ${_securitySectionHtml(settings)}
         ${_cloudSectionHtml(settings, status)}
+        ${_legacySectionHtml(_legacySummary)}
         ${_syncCryptoSectionHtml(settings)}
         ${_dataSectionHtml(settings)}
         ${_subscriptionSectionHtml(licenseState)}
@@ -871,6 +879,75 @@ function _totpSectionHtml(user) {
 // resolves cloud.js/sync.js to stubs so no cloud code is bundled at all.
 const IS_DEFENCE_BUILD =
   (typeof __QSTORE_DEFENCE__ !== 'undefined') && __QSTORE_DEFENCE__;
+
+/**
+ * Legacy person data — extract to CEA, then remove.
+ *
+ * Renders NOTHING when there is none, which is every fresh install. A unit that
+ * never held cadet data must never see this.
+ */
+function _legacySectionHtml(sum) {
+  if (!sum || sum.total === 0) return '';
+  const bits = [];
+  if (sum.cadets)   bits.push(`${sum.cadets} cadet record${sum.cadets === 1 ? '' : 's'}`);
+  if (sum.loans)    bits.push(`${sum.loans} loan${sum.loans === 1 ? '' : 's'} naming a borrower`);
+  if (sum.requests) bits.push(`${sum.requests} equipment request${sum.requests === 1 ? '' : 's'}`);
+
+  return `
+    <section class="settings__section" data-section="legacy">
+      <header class="settings__section-header">
+        <h2 class="settings__section-title">Legacy cadet data &mdash; action required</h2>
+        <p class="settings__section-hint">
+          This database still holds personal information from an earlier version.
+          It must be exported to each member's CEA documents and then removed.
+        </p>
+      </header>
+
+      <div class="settings__status-block settings__status-block--warn">
+        <span class="badge badge--neutral">Found</span>
+        ${esc(bits.join(', '))}. This information is not shown anywhere else in
+        the app and cannot be edited here.
+      </div>
+
+      <div class="modal__warn" style="margin-top:12px">
+        <strong>Read this before you start.</strong>
+        <ul style="margin:6px 0 0 18px">
+          <li>These are <strong>Commonwealth records</strong>. Under the Defence
+              Youth Manual (Section 1, Chapter 2, para 67), failure to comply with
+              records management obligations may expose you to
+              <strong>criminal penalties under the Archives Act 1983</strong>.
+              Deleting them before they reach CEA is not a shortcut &mdash; it is
+              the offence.</li>
+          <li>Every document generated here <strong>must be uploaded</strong> to
+              the member's CEA documents, in the unit's
+              <strong>approved CadetNet M365 location</strong>.</li>
+          <li><strong>Not</strong> a personal Microsoft account. <strong>Not</strong>
+              a personal OneDrive. <strong>Not</strong> any other cloud service.
+              Storing cadet information outside approved systems is what caused
+              this data to require removal in the first place.</li>
+          <li>If a document is generated and not uploaded, that member's equipment
+              can no longer be traced to them &mdash; the issue number on the
+              document is the only remaining link.</li>
+        </ul>
+      </div>
+
+      <div class="form__actions" style="margin-top:12px">
+        <button type="button" class="btn btn--primary" data-action="legacy-export">
+          &#9113; 1. Export Q records (one PDF per member)
+        </button>
+      </div>
+      <div class="form__actions">
+        <button type="button" class="btn btn--danger" data-action="legacy-purge">
+          2. Remove legacy data &mdash; only after every record is in CEA
+        </button>
+      </div>
+      <p class="settings__section-hint">
+        Step 2 refuses to run while any member is still un-exported. Export first;
+        the order is enforced in the storage layer, not just here.
+      </p>
+    </section>
+  `;
+}
 
 // Assigned via a constant ternary rather than guarded with an early return, so
 // esbuild can constant-fold __QSTORE_DEFENCE__ and DROP the unused branch
@@ -1797,6 +1874,8 @@ async function _onRootClick(e) {
     case 'recovery-generate':    await _doGenerateRecovery(e.target.closest('button')); break;
     case 'sync-crypto-reset':    await _doResetSyncEncryption(); break;
     case 'rotate-keys':          await _doRotateKeys(); break;
+    case 'legacy-export':        await _doLegacyExport(); break;
+    case 'legacy-purge':         await _doLegacyPurge(); break;
     case 'setup-2fa':            { const s = AUTH.getSession(); if (s?.userId) TotpSetup.openTotpSetup(s.userId); } break;
     case 'manage-2fa':           { const s = AUTH.getSession(); if (s?.userId) TotpSetup.openTotpManage(s.userId); } break;
     case 'logo-remove':          await _doRemoveLogo(); break;
@@ -2568,6 +2647,116 @@ async function _doRotateKeys() {
   } catch (err) {
     showToast('Key rotation FAILED: ' + (err.message || err)
       + ' — no changes were made.', 'error');
+  }
+}
+
+/**
+ * Step 1 — export a Q record per member and link their loans to it.
+ *
+ * The linking is the part that matters. Each member gets an issue number, it is
+ * stamped on their PDF, and it is written onto their loan records as the export
+ * runs. Afterwards the equipment record says "out to an individual, see
+ * ISS-1042" and ISS-1042 is the document going to CEA. The link is not
+ * destroyed — it is moved to where HQ says it belongs.
+ *
+ * Safe to re-run: a member already extracted has no borrower left on their
+ * loans, so they are simply skipped.
+ */
+async function _doLegacyExport() {
+  let entries;
+  try { entries = await Storage.legacy.list(); }
+  catch (err) { showToast('Could not read legacy data: ' + (err.message || err), 'error'); return; }
+
+  const pending = entries.filter((e) => e.loans.length > 0);
+  if (pending.length === 0) {
+    showToast('No members left to export — every Q record has been generated.', 'info');
+    return;
+  }
+
+  const ok = confirm(
+    `Generate ${pending.length} Q record PDF(s) — one per member?\n\n`
+    + 'Each PDF must then be uploaded to that member\'s CEA documents in the '
+    + 'unit\'s approved CadetNet M365 location.\n\n'
+    + 'NOT a personal Microsoft account or personal OneDrive.\n\n'
+    + 'Your browser will download them one at a time.'
+  );
+  if (!ok) return;
+
+  const unit = await Storage.settings.getAll();
+  const sess = AUTH.getSession();
+  let done = 0;
+  for (const { member, loans } of pending) {
+    try {
+      const issueNo = await Locations.nextIssueNo(Storage);
+      downloadPdf(await generateLegacyQRecord({ member, loans, unit, issueNo }));
+      // Link BEFORE counting it done. If this throws, the member keeps their
+      // borrower fields and will be picked up on the next run — better a
+      // duplicate PDF than a member silently dropped from the extraction.
+      await Storage.legacy.linkToIssue(member.svcNo, issueNo);
+      await Storage.audit.append({
+        action: 'legacy_qrecord_exported',
+        user:   sess?.name || 'unknown',
+        desc:   `Q record exported for service number ${member.svcNo} as ${issueNo}; `
+              + `${loans.length} loan(s) linked. MUST be uploaded to the member's CEA `
+              + 'documents in the approved CadetNet M365 location.',
+      });
+      done++;
+    } catch (err) {
+      showToast(`Export failed for ${member.svcNo}: ${err.message || err}`, 'error');
+      break;
+    }
+  }
+  await _render();
+  if (done > 0) {
+    openModal({
+      titleHtml: `${done} Q record${done === 1 ? '' : 's'} exported`,
+      size: 'sm',
+      bodyHtml: `
+        <div class="modal__warn">
+          <strong>These are not finished.</strong> Each PDF must now be uploaded
+          to that member's CEA documents, in the unit's approved CadetNet M365
+          location — not a personal Microsoft account, not a personal OneDrive.
+        </div>
+        <p class="modal__body">
+          Until a record is uploaded, that member's equipment cannot be traced to
+          them: the issue number on the PDF is the only remaining link.
+        </p>
+        <p class="modal__body">
+          These are Commonwealth records. Failure to manage them per the Defence
+          Youth Manual (S1 Ch2 para 67) may expose you to criminal penalties
+          under the <em>Archives Act 1983</em>.
+        </p>
+        <div class="form__actions">
+          <button type="button" class="btn btn--primary" data-action="modal-close">Understood</button>
+        </div>
+      `,
+    });
+  }
+}
+
+/** Step 2 — remove what is left. Irreversible, and gated on the data itself. */
+async function _doLegacyPurge() {
+  const sum = await Storage.legacy.summary();
+  if (sum.total === 0) { showToast('No legacy data to remove.', 'info'); return; }
+  if (sum.loans > 0) {
+    showToast(`${sum.loans} loan(s) still name a borrower — export those members first.`, 'warn');
+    return;
+  }
+  const typed = prompt(
+    'This permanently removes the remaining legacy cadet records and equipment '
+    + 'requests. It cannot be undone.\n\n'
+    + 'Only proceed if EVERY Q record has been uploaded to the members\' CEA '
+    + 'documents in the approved CadetNet M365 location.\n\n'
+    + 'Type REMOVE to confirm:'
+  );
+  if (typed !== 'REMOVE') { showToast('Cancelled — nothing was removed.', 'info'); return; }
+  try {
+    const res = await Storage.legacy.purge({ confirmedUploadedToCEA: true });
+    await _render();
+    showToast(`Removed ${res.cadets} cadet record(s) and ${res.requests} request(s). `
+      + 'Equipment records retained and linked to their issue documents.', 'success');
+  } catch (err) {
+    showToast('Removal refused: ' + (err.message || err), 'error');
   }
 }
 

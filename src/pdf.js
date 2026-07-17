@@ -1715,3 +1715,97 @@ function _unitSlug(unit) {
   const raw = unit.unitCode || unit.unitName || 'unit';
   return String(raw).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'unit';
 }
+
+// =============================================================================
+// Legacy Q record — the extraction artefact
+// =============================================================================
+// The ONE generator in this build that deliberately prints a person's details.
+//
+// Everything else prints recipient fields blank because this tool must not hold
+// a name. This is the exception, and it is the point: it is the artefact that
+// carries a member's Q record OUT of the legacy database and into their CEA
+// documents, per HQ AAC ICT direction of 16 July 2026 — "produce PDF based
+// exports of your respective cadet Q records, and upload them to the individual
+// members CEA documents".
+//
+// It exists so the data can leave. Once every record is uploaded, the legacy
+// data is removed and this generator has nothing left to print.
+//
+// The issue number stamped here is not decoration. It is written onto the
+// member's loan records at the same time, so after extraction the equipment
+// record points at THIS document. Lose the document and the link is gone —
+// which is why the footer says what it says.
+
+export async function generateLegacyQRecord(opts = {}) {
+  const { member, loans = [], unit = {}, issueNo } = opts;
+  if (!member?.svcNo) throw new Error('generateLegacyQRecord requires a member with a svcNo.');
+  if (!issueNo)       throw new Error('generateLegacyQRecord requires an issueNo.');
+
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  let y = _drawHeader(doc, PAGE.MARGIN, unit);
+
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
+  doc.text('Q-STORE RECORD — EQUIPMENT HELD', PAGE.MARGIN, y + 6);
+  y += 12;
+
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+  doc.text('Upload this record to this member\'s CEA documents.', PAGE.MARGIN, y);
+  y += 8;
+
+  y = _drawSectionBand(doc, y, 'Member');
+  const name = [member.rank, member.surname, member.given].filter(Boolean).join(' ');
+  y = _drawLabelValueRow(doc, y, 'Rank / Name',  name || '—');
+  y = _drawLabelValueRow(doc, y, 'Service No.',  member.svcNo);
+  if (member.plt || member.platoon) {
+    y = _drawLabelValueRow(doc, y, 'Platoon', member.platoon || member.plt);
+  }
+  y = _drawLabelValueRow(doc, y, 'Issue No.',    issueNo);
+  y += 4;
+
+  y = _drawSectionBand(doc, y, `Equipment held (${loans.length})`);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
+  doc.text('Ref',   PAGE.MARGIN,       y);
+  doc.text('Item',  PAGE.MARGIN + 26,  y);
+  doc.text('NSN',   PAGE.MARGIN + 96,  y);
+  doc.text('Qty',   PAGE.MARGIN + 132, y);
+  doc.text('Issued',PAGE.MARGIN + 146, y);
+  y += 4;
+  doc.setFont('helvetica', 'normal');
+  if (loans.length === 0) {
+    doc.text('No equipment recorded against this member.', PAGE.MARGIN, y + 2);
+    y += 8;
+  } else {
+    for (const l of loans) {
+      if (y > PAGE.H - 60) { _drawFooter(doc); doc.addPage(); y = _drawHeader(doc, PAGE.MARGIN, unit); }
+      doc.text(String(l.ref || ''),                     PAGE.MARGIN,       y);
+      doc.text(String(l.itemName || '').slice(0, 38),   PAGE.MARGIN + 26,  y);
+      doc.text(String(l.nsn || ''),                     PAGE.MARGIN + 96,  y);
+      doc.text(String(l.qty ?? ''),                     PAGE.MARGIN + 132, y);
+      doc.text(String(l.issueDate || ''),               PAGE.MARGIN + 146, y);
+      y += 5;
+    }
+    y += 3;
+  }
+
+  y = _drawSectionBand(doc, y, 'Record management');
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+  const notice = [
+    `This is a Commonwealth record. It must be uploaded to this member's CEA`,
+    `documents in the unit's approved CadetNet M365 location. It must NOT be`,
+    `stored on a personal Microsoft account, a personal OneDrive, or any other`,
+    `unapproved cloud service.`,
+    ``,
+    `Issue number ${issueNo} links this document to the unit's equipment records.`,
+    `If this document is not uploaded, that link is lost and the equipment can no`,
+    `longer be traced to the member holding it.`,
+  ];
+  for (const line of notice) { doc.text(line, PAGE.MARGIN, y); y += 4; }
+
+  _drawFooter(doc);
+  const slug = _unitSlug(unit);
+  return {
+    filename: `QRecord_${slug}_${String(member.svcNo).replace(/[^a-zA-Z0-9_-]/g, '_')}_${issueNo}.pdf`,
+    blob:     doc.output('blob'),
+    bytes:    doc.output('arraybuffer').byteLength,
+  };
+}
