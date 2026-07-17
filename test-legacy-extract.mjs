@@ -101,5 +101,57 @@ ok('the purge is audited', rows.some((r) => r.action === 'legacy_pii_purged'));
 ok('the audit entry says it is irreversible',
   /irreversible/i.test(rows.find((r) => r.action === 'legacy_pii_purged')?.desc || ''));
 
+// --- THE DEADLOCK ------------------------------------------------------------
+// Reported from a walkthrough: "after doing the export and clicking remove it is
+// still showing that there are q-records not exported but they were all done."
+//
+// summary() counted every loan carrying a borrower. list() only returned loans
+// whose borrowerSvc matched a CADET. So three kinds were counted forever and
+// never offered for export — UNIT-LOAN activity loans, staff loans, and phantom
+// borrowers — and purge() refused permanently. The operator could export every
+// record they were shown and still be told records remained. Unfixable from the
+// UI: a dead end.
+//
+// list() now groups on the LOANS, which is where the truth is.
+console.log('\n--- deadlock regression ---');
+await Storage.importAll({
+  schemaVersion: 4, meta: [], settings: [], counters: [], items: [], audit: [],
+  users: [], stocktakeCounts: [], kits: [], supplyOrders: [], photos: [], pendingRequests: [],
+  cadets: [{ svcNo: '8012345', surname: 'Wodehouse', given: 'Alice', rank: 'CDT' }],
+  staff:  [{ svcNo: '9000001', surname: 'Laidlaw',   given: 'Doug',  rank: 'CAPT-AAC' }],
+  loans: [
+    { ref: 'D-1', itemId: 'i1', qty: 1, active: true, borrowerName: 'CDT Wodehouse A.', borrowerSvc: '8012345' },
+    { ref: 'D-2', itemId: 'i2', qty: 1, active: true, borrowerName: 'Annual Camp 2026', borrowerSvc: 'UNIT-LOAN' },
+    { ref: 'D-3', itemId: 'i3', qty: 1, active: true, borrowerName: 'CAPT Laidlaw D.',  borrowerSvc: '9000001' },
+    { ref: 'D-4', itemId: 'i4', qty: 1, active: true, borrowerName: 'CDT Ghost G.',     borrowerSvc: '8099999' },
+  ],
+});
+ok('summary counts all four borrower-carrying loans',
+  (await Storage.legacy.summary()).loans === 4);
+
+ok('activity loans convert without a PDF',
+  (await Storage.legacy.convertActivityLoans()).converted === 1);
+const d2 = await Storage.loans.get('D-2');
+ok('the activity loan became a destination', d2.location === 'Annual Camp 2026' && !d2.borrowerSvc);
+
+const people = (await Storage.legacy.list()).filter((e) => e.kind === 'person');
+ok('list() surfaces the CADET', people.some((e) => e.member.svcNo === '8012345'));
+ok('list() surfaces the STAFF member (not in the cadets store)',
+  people.some((e) => e.member.svcNo === '9000001'));
+ok('list() surfaces the PHANTOM (no person record at all)',
+  people.some((e) => e.member.svcNo === '8099999'));
+ok('exactly three people need a Q record', people.length === 3);
+
+for (const e of people) {
+  await Storage.legacy.linkToIssue(e.member.svcNo, `ISS-${e.member.svcNo}`,
+    { borrowerName: e.member.surname });
+}
+ok('after exporting everything list() offers, NOTHING names a borrower',
+  (await Storage.legacy.summary()).loans === 0);
+
+const purged = await Storage.legacy.purge({ confirmedUploadedToCEA: true });
+ok('purge now SUCCEEDS — the deadlock is gone', purged.cadets === 1);
+ok('all four equipment records survive', (await Storage.loans.list()).length === 4);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

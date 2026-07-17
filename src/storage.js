@@ -1595,14 +1595,89 @@ export async function dropDatabase() {
 // Nothing here should make it easy to do the second without the first.
 
 export const legacy = {
-  /** Every legacy cadet, with the loans recorded against them. */
+  /**
+   * Every legacy borrower found ON THE LOANS, with their loans.
+   *
+   * ★ Previously this walked the CADETS store and matched loans to it, which
+   * deadlocked the whole flow: summary() counts every loan carrying a borrower,
+   * but only cadet-matched loans were ever offered for export. Anything else was
+   * counted forever and never exportable, so purge() refused permanently. A unit
+   * could export every record it was shown and still be told records remained.
+   *
+   * Three kinds were invisible:
+   *   - UNIT-LOAN — the old unit/activity loans. borrowerSvc is the literal
+   *     'UNIT-LOAN' and borrowerName is an ACTIVITY, not a person.
+   *   - staff loans — staff live in their own store, never in `cadets`.
+   *   - phantom borrowers — a borrowerSvc with no matching record. Not
+   *     hypothetical: this repo has a commit titled "detect and remove phantom
+   *     borrowers from loan records". That feature was deleted in step 2; the
+   *     data it existed for was not.
+   *
+   * So group on the LOANS, which is where the truth is, and resolve the member
+   * from cadets → staff → the loan's own denormalised borrowerName. That last
+   * fallback matters: borrowerName is enough to produce a Q record even when the
+   * person record is long gone, which is precisely the phantom case.
+   */
   async list() {
+    const loans = await _all(STORES.LOANS);
+    const withBorrower = loans.filter((l) => l.borrowerName || l.borrowerSvc);
+    if (withBorrower.length === 0) return [];
+
     const cadets = await PII.decryptAll(await _all(STORES.CADETS), PII.PII_FIELDS_CADETS);
-    const loans  = await _all(STORES.LOANS);
-    return cadets.map((c) => ({
-      member: c,
-      loans:  loans.filter((l) => l.borrowerSvc === c.svcNo),
-    }));
+    const staff  = await PII.decryptAll(await _all(STORES.STAFF),  PII.PII_FIELDS_STAFF);
+    const bySvc  = new Map();
+    for (const c of cadets) bySvc.set(c.svcNo, c);
+    for (const st of staff) if (!bySvc.has(st.svcNo)) bySvc.set(st.svcNo, st);
+
+    const groups = new Map();
+    for (const l of withBorrower) {
+      const key = l.borrowerSvc || `name:${l.borrowerName}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(l);
+    }
+
+    const out = [];
+    for (const [key, ls] of groups) {
+      // Activity loans are not a person. No Q record, no PDF — they convert to
+      // a destination, which is what they always were.
+      if (key === 'UNIT-LOAN') {
+        out.push({ kind: 'activity', member: null, activity: ls[0].borrowerName || 'Unit / activity', loans: ls });
+        continue;
+      }
+      const rec = bySvc.get(key);
+      out.push({
+        kind:   'person',
+        member: rec || {
+          // Synthesised from the loan. A phantom borrower still held equipment,
+          // and their Q record still has to reach CEA.
+          svcNo:   ls[0].borrowerSvc || '',
+          surname: ls[0].borrowerName || 'Unknown',
+          given:   '', rank: '', _synthesised: !rec,
+        },
+        loans: ls,
+      });
+    }
+    return out;
+  },
+
+  /**
+   * Convert the old unit/activity loans to destinations. No person involved, so
+   * no export and no CEA document — borrowerName was an activity name all along.
+   */
+  async convertActivityLoans() {
+    const rows = await _all(STORES.LOANS);
+    const acts = rows.filter((l) => l.borrowerSvc === 'UNIT-LOAN');
+    if (acts.length === 0) return { converted: 0 };
+    const tx = _db.transaction(STORES.LOANS, 'readwrite');
+    const os = tx.objectStore(STORES.LOANS);
+    for (const l of acts) {
+      const next = { ...l, location: l.borrowerName || 'Unit / activity', issueNo: '' };
+      delete next.borrowerName;
+      delete next.borrowerSvc;
+      os.put(next);
+    }
+    await _txDone(tx);
+    return { converted: acts.length };
   },
 
   /** Counts for the UI, without decrypting anything. */
@@ -1630,10 +1705,16 @@ export const legacy = {
    * untraceable. The link is not destroyed; it is moved to where HQ says it
    * belongs.
    */
-  async linkToIssue(svcNo, issueNo) {
-    if (!svcNo || !issueNo) throw new Error('linkToIssue requires svcNo and issueNo.');
+  async linkToIssue(svcNo, issueNo, { borrowerName } = {}) {
+    if (!issueNo) throw new Error('linkToIssue requires an issueNo.');
+    if (!svcNo && !borrowerName) throw new Error('linkToIssue requires svcNo or borrowerName.');
     const rows = await _all(STORES.LOANS);
-    const mine = rows.filter((l) => l.borrowerSvc === svcNo);
+    // Match on svcNo where there is one; fall back to the denormalised name, so
+    // a phantom borrower with no service number is still linkable rather than
+    // stranded — stranded is what deadlocked purge().
+    const mine = svcNo
+      ? rows.filter((l) => l.borrowerSvc === svcNo)
+      : rows.filter((l) => !l.borrowerSvc && l.borrowerName === borrowerName);
     if (mine.length === 0) return { linked: 0 };
     const tx = _db.transaction(STORES.LOANS, 'readwrite');
     const os = tx.objectStore(STORES.LOANS);

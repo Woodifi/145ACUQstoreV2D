@@ -2675,11 +2675,28 @@ async function _doRotateKeys() {
  * loans, so they are simply skipped.
  */
 async function _doLegacyExport() {
+  // Activity loans first: they carry an ACTIVITY name, not a person, so they
+  // convert straight to a destination with no PDF and no CEA document. They were
+  // previously counted as outstanding forever and never offered for export —
+  // which is what made purge() refuse permanently.
+  try {
+    const conv = await Storage.legacy.convertActivityLoans();
+    if (conv.converted > 0) {
+      showToast(`${conv.converted} unit/activity loan(s) converted to destinations — `
+        + 'no personal information, no document needed.', 'info', 5000);
+    }
+  } catch (err) {
+    showToast('Could not convert activity loans: ' + (err.message || err), 'error');
+    return;
+  }
+
   let entries;
   try { entries = await Storage.legacy.list(); }
   catch (err) { showToast('Could not read legacy data: ' + (err.message || err), 'error'); return; }
 
-  const pending = entries.filter((e) => e.loans.length > 0);
+  // Only people get a Q record. Staff and phantom borrowers included — a
+  // phantom still held equipment, and their record still has to reach CEA.
+  const pending = entries.filter((e) => e.kind === 'person' && e.loans.length > 0);
   if (pending.length === 0) {
     showToast('No members left to export — every Q record has been generated.', 'info');
     return;
@@ -2730,17 +2747,17 @@ async function _doLegacyExport() {
       // Link BEFORE counting it done. If this throws, the member keeps their
       // borrower fields and will be picked up on the next run — better a
       // duplicate PDF than a member silently dropped from the extraction.
-      await Storage.legacy.linkToIssue(member.svcNo, issueNo);
+      await Storage.legacy.linkToIssue(member.svcNo, issueNo, { borrowerName: member.surname });
       await Storage.audit.append({
         action: 'legacy_qrecord_exported',
         user:   sess?.name || 'unknown',
-        desc:   `Q record exported for service number ${member.svcNo} as ${issueNo}; `
+        desc:   `Q record exported for ${member.svcNo || member.surname} as ${issueNo}; `
               + `${loans.length} loan(s) linked. MUST be uploaded to the member's CEA `
               + 'documents in the approved CadetNet M365 location.',
       });
       done++;
     } catch (err) {
-      showToast(`Export failed for ${member.svcNo}: ${err.message || err}`, 'error');
+      showToast(`Export failed for ${member.svcNo || member.surname}: ${err.message || err}`, 'error');
       break;
     }
   }
