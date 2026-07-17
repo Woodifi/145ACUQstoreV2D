@@ -1575,3 +1575,114 @@ export async function dropDatabase() {
     }
   }
 }
+
+// =============================================================================
+// Legacy person data — extraction and disposal
+// =============================================================================
+// The exit path for units upgrading from a build that stored cadets.
+//
+// HQ AAC ICT, 16 July 2026: "The local copy of the nominal roll should be
+// disposed off once the data is entered in CEA" … "Once there is no enduring
+// need to retain the data on local devices, it should be removed" … "produce PDF
+// based exports of your respective cadet Q records, and upload them to the
+// individual members CEA documents".
+//
+// So: extract to CEA, then remove. In that order, and never the reverse.
+//
+// The two halves are deliberately SEPARATE functions. Extraction is safe and
+// repeatable. Disposal destroys Commonwealth records — DYM S1 Ch2 para 67
+// carries criminal penalties under the Archives Act 1983 for getting it wrong.
+// Nothing here should make it easy to do the second without the first.
+
+export const legacy = {
+  /** Every legacy cadet, with the loans recorded against them. */
+  async list() {
+    const cadets = await PII.decryptAll(await _all(STORES.CADETS), PII.PII_FIELDS_CADETS);
+    const loans  = await _all(STORES.LOANS);
+    return cadets.map((c) => ({
+      member: c,
+      loans:  loans.filter((l) => l.borrowerSvc === c.svcNo),
+    }));
+  },
+
+  /** Counts for the UI, without decrypting anything. */
+  async summary() {
+    const cadets = await _all(STORES.CADETS);
+    const loans  = await _all(STORES.LOANS);
+    const reqs   = await _all(STORES.REQUESTS);
+    return {
+      cadets:   cadets.length,
+      loans:    loans.filter((l) => l.borrowerName || l.borrowerSvc).length,
+      requests: reqs.length,
+      total:    cadets.length + loans.filter((l) => l.borrowerName || l.borrowerSvc).length + reqs.length,
+    };
+  },
+
+  /**
+   * Link a member's loans to the Q record just generated for them.
+   *
+   * This is what makes extraction a CONVERSION rather than a deletion. The issue
+   * number stamped on the PDF is written onto their loans, and the borrower
+   * fields are stripped. Afterwards the equipment record says "out to an
+   * individual, see ISS-1042" — and ISS-1042 is the document now in CEA.
+   *
+   * Without this the loans would simply lose their borrower and become
+   * untraceable. The link is not destroyed; it is moved to where HQ says it
+   * belongs.
+   */
+  async linkToIssue(svcNo, issueNo) {
+    if (!svcNo || !issueNo) throw new Error('linkToIssue requires svcNo and issueNo.');
+    const rows = await _all(STORES.LOANS);
+    const mine = rows.filter((l) => l.borrowerSvc === svcNo);
+    if (mine.length === 0) return { linked: 0 };
+    const tx = _db.transaction(STORES.LOANS, 'readwrite');
+    const os = tx.objectStore(STORES.LOANS);
+    for (const l of mine) {
+      const next = { ...l, location: 'individual', issueNo };
+      delete next.borrowerName;
+      delete next.borrowerSvc;
+      os.put(next);
+    }
+    await _txDone(tx);
+    return { linked: mine.length };
+  },
+
+  /**
+   * Remove all remaining legacy person data. IRREVERSIBLE.
+   *
+   * Refuses if any loan still names a borrower — that means a member has not
+   * been extracted, and destroying their record before it reaches CEA is the
+   * exact failure the Archives Act penalises. The caller cannot talk it out of
+   * this: the check is on the data, not on a flag the UI passes in.
+   */
+  async purge({ confirmedUploadedToCEA } = {}) {
+    if (confirmedUploadedToCEA !== true) {
+      throw new Error('purge() requires explicit confirmation that every Q record is in CEA.');
+    }
+    const loans = await _all(STORES.LOANS);
+    const unlinked = loans.filter((l) => l.borrowerName || l.borrowerSvc);
+    if (unlinked.length > 0) {
+      throw new Error(
+        `${unlinked.length} loan(s) still name a borrower — those members have not been `
+        + 'extracted. Generate and upload their Q records first. Refusing to destroy '
+        + 'records that are not yet in CEA.'
+      );
+    }
+    const cadetCount = (await _all(STORES.CADETS)).length;
+    const reqCount   = (await _all(STORES.REQUESTS)).length;
+
+    const tx = _db.transaction([STORES.CADETS, STORES.REQUESTS], 'readwrite');
+    tx.objectStore(STORES.CADETS).clear();
+    tx.objectStore(STORES.REQUESTS).clear();
+    await _txDone(tx);
+
+    await audit.append({
+      action: 'legacy_pii_purged',
+      user:   'system',
+      desc:   `Legacy person data removed after extraction to CEA: ${cadetCount} cadet `
+            + `record(s), ${reqCount} equipment request(s). Loans retained as equipment `
+            + 'records, linked to their issue documents. This action is irreversible.',
+    });
+    return { cadets: cadetCount, requests: reqCount };
+  },
+};
