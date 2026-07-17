@@ -103,27 +103,70 @@ should go to CEA.
 
 ---
 
-## 4. Current state — and what it does not resolve
+## 4. What the software holds
 
-Stated plainly, because it is the substance of HQ's objection:
+The design at §5 is **built**. This section states what a unit's database actually
+contains, in three distinct states, because they are not the same and the
+difference matters.
 
-**The software as it exists today holds a persistent, aggregate dataset of cadet
-identifiers (service number, surname, given name, rank) and therefore does not
-meet the test at §2.** Recent changes reduce the exposure; they do not answer the
-objection.
+### 4.1 A fresh install — no personal information
 
-| Change made | Effect | Meets §2? |
-|---|---|---|
-| Cloud synchronisation removed entirely from the Defence build (compiled out, not disabled — §6.1) | No data leaves the device | **No** — persistence is the objection, not location |
-| Cadet email addresses and free-text notes removed from the schema, with a migration deleting them from existing records (§6.2) | Sensitive information no longer held | **No** — reduces the dataset, does not make it transitory |
-| Encryption, access control, audit (§6.3–§6.6) | Reduces harm from compromise | **No** — controls on a dataset that should not persist |
+A new install of the Defence build holds **no cadet personal information at all**.
+There is no cadets store to fill: the Cadets page is gone, the storage layer
+refuses to write a cadet record, there is no cadet role and no cadet can sign in,
+the cadet CSV import is removed, and loans record a destination and an issue
+number rather than a person. This is the state HQ's advice of 17 July addresses.
 
-These are worth having on their own merits. **None of them removes the personal
-information, and I do not present them as answering HQ's objection.** HQ's advice
-of 17 July, which sees no issue with a tool carrying no PII, is not treated as
-covering this version.
+### 4.2 An upgraded install — legacy data, pending extraction
 
----
+A unit upgrading from an earlier build **still holds that build's data**: cadet
+records, loans naming a borrower, equipment requests with requestor details, and
+cadet login accounts.
+
+That data is retained **deliberately, and only so it can leave**. It is not
+displayed anywhere, cannot be edited, and cannot be added to. Discarding it would
+be worse than keeping it: extraction to CEA has to come first, and a build that
+silently destroyed the records a unit is required to extract would be committing
+the offence rather than avoiding it.
+
+The tool provides a supervised path (§6.7): export a Q record per member, upload
+each to that member's CEA documents, then remove what is left. Removal refuses
+while any member remains un-exported.
+
+**Until a unit completes that, its database carries cadet personal information,
+and this document does not claim otherwise.**
+
+### 4.3 After extraction — one residue, stated plainly
+
+Once extraction and removal are complete, the database holds no cadet records, no
+cadet logins, no requests, and no loan naming anyone — **with one exception.**
+
+**The audit log retains the names of cadets who used the earlier build.** Every
+audit entry records the user who performed the action. A cadet who signed in to
+the old software is named in that history, and nothing above touches it.
+
+This is not an oversight, and it is not fixable in the software:
+
+- The audit chain is an HMAC construction. Altering any entry breaks verification
+  for that entry and every one after it, and **a re-signed chain is
+  indistinguishable from a forged one** — the same reason audit-key rotation
+  restores nothing (§9).
+- The audit log **is** the Commonwealth record of what happened. Editing it so the
+  system looks compliant is the conduct the *Archives Act 1983* addresses, not a
+  remedy for it.
+
+The forward position is clean: this build cannot add a name to the audit log —
+there is no cadet role, no cadet sign-in, and no cadet action to record. But an
+upgraded database carries that history permanently.
+
+**So the accurate claim is: no cadet personal information except historic audit
+entries naming cadets who used the previous build.** Not "no cadet personal
+information". The difference is small and it is real, and a reviewer would find it
+whether or not it were written here.
+
+> **[DIRECTION SOUGHT — §13]** Whether those historic audit entries are acceptable
+> where they are, or require some other treatment, is a question for HQ. I do not
+> propose to alter an audit log on my own initiative.
 
 ## 5. Design — no individual identifiers at all
 
@@ -176,10 +219,13 @@ person's details will therefore be removed rather than discouraged, and this is
 recorded here so that the constraint is understood as binding rather than
 aspirational.
 
-**Status: designed, not built.** It is a substantial change and is not presented
-as existing. HQ's advice of 17 July is understood as applying to a tool of this
-description — **not** to the version currently held at the trial units, which does
-carry cadet identifiers (§4) and which I do not treat as covered.
+**Status: built.** Implemented as described. HQ's advice of 17 July is understood
+as applying to a tool of this description; §4 states exactly what a database
+contains in each of the three states, including what an upgraded one still carries
+until it is extracted, and the audit residue that survives afterwards.
+
+**No claim is made that this has been independently examined.** §13.3 asks HQ to
+test it against the condition rather than rely on my assessment that it meets it.
 
 ---
 
@@ -268,6 +314,27 @@ encrypting under AES-256-GCM.
 An operator-initiated key rotation re-encrypts all personal information under a
 newly generated key and re-signs the audit chain — see §10 for why it exists and
 what it does not achieve.
+
+### 6.7 Legacy extraction to CEA
+
+For units upgrading from an earlier build, the software implements HQ's direction
+of 16 July — *"produce PDF based exports of your respective cadet Q records, and
+upload them to the individual members CEA documents"*, then *"once there is no
+enduring need to retain the data on local devices, it should be removed"*.
+
+1. The software detects legacy personal information and says so.
+2. **Export** produces one Q record PDF per member, listing the equipment they
+   hold. Each carries an issue number, which is simultaneously written onto that
+   member's equipment records — so afterwards the equipment points at the
+   document rather than at a person. The link is not destroyed; it moves to CEA.
+3. Each PDF is uploaded to that member's CEA documents, in the unit's approved
+   CadetNet M365 location. The document states this on its face.
+4. **Removal** deletes what remains, and **refuses while any member is still
+   un-exported** — enforced against the data, not against a confirmation. A
+   record that has not reached CEA cannot be destroyed by this software.
+
+Unit/activity loans convert to a destination with no document, having never
+involved a person. Every step is audited.
 
 ---
 
@@ -558,11 +625,16 @@ cited.
 2. **Acceptance of the CadetNet M365 offer.** CPL Jenkins offered assistance with
    a solution in CadetNet M365, and a secured staff-only library or list. I would
    like to take that up.
-3. **Confirmation once built.** HQ's advice of 17 July is understood as applying
-   in principle to a tool carrying no PII. Once the design at §5 exists, I would
-   welcome the opportunity to have it examined against that condition rather than
-   relying on my own assessment that it meets it.
-4. **Support for the CEA Q-record capability** referred to at §3. If the unit's
+3. **Examination against the condition.** The design at §5 is built. I would
+   welcome it being tested against HQ's condition rather than relying on my own
+   assessment that it meets it.
+4. **Direction on the audit residue (§4.3).** After extraction and removal, an
+   upgraded database still names, in its own audit history, cadets who used the
+   previous build. That history cannot be altered without destroying its
+   integrity and is itself a Commonwealth record. I seek direction on whether it
+   is acceptable as it stands. **I do not propose to alter an audit log on my own
+   initiative.**
+5. **Support for the CEA Q-record capability** referred to at §3. If the unit's
    experience or this software is useful evidence for that business case, it is
    available for that purpose, at no cost and with no expectation.
 
