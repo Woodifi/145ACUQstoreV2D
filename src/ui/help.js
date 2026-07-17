@@ -34,7 +34,7 @@ const SECTIONS = [
       You will be prompted to change this immediately — do so before continuing.</p>
 
       <h4>Initial setup</h4>
-      <p>After first login, the Dashboard shows a <strong>setup checklist</strong> with three steps: set unit details, add your first inventory item, and add cadets.
+      <p>After first login, the Dashboard shows a <strong>setup checklist</strong> with three steps: set unit details, add your first inventory item, and set up issue destinations.
       Click <strong>Go →</strong> on any step to jump straight there. The checklist disappears once all three steps are complete, or when you dismiss it.</p>
       <ol>
         <li>Go to <strong>Settings → Unit details</strong> (the section is highlighted with a "⬅ Start here" badge until you save a unit name)</li>
@@ -69,23 +69,22 @@ const SECTIONS = [
         <thead><tr><th>Role</th><th>What they can do</th></tr></thead>
         <tbody>
           <tr><td><strong>OC</strong></td><td>Full access including Settings, Users, approvals, and PIN management. Assign to the Commanding Officer only.</td></tr>
-          <tr><td><strong>QM</strong></td><td>Full operational access — inventory, loans, cadets, stocktake, orders, audit, equipment request approval. Cannot access Settings.</td></tr>
-          <tr><td><strong>Staff</strong></td><td>View all pages and submit equipment requests. Cannot add/edit inventory or manage cadets.</td></tr>
-          <tr><td><strong>Cadet</strong></td><td>View inventory, view their own loans, and submit equipment requests.</td></tr>
+          <tr><td><strong>QM</strong></td><td>Full operational access — inventory, loans, stocktake, orders, audit. Cannot access Settings.</td></tr>
+          <tr><td><strong>Staff</strong></td><td>View pages and reports. Cannot add or edit inventory.</td></tr>
           <tr><td><strong>Read-Only</strong></td><td>View-only. No actions.</td></tr>
         </tbody>
       </table>
       <table class="help__table" style="margin-top:0.5rem">
-        <thead><tr><th>Action</th><th>OC</th><th>QM</th><th>Staff</th><th>Cadet</th><th>RO</th></tr></thead>
+        <thead><tr><th>Action</th><th>OC</th><th>QM</th><th>Staff</th><th>RO</th></tr></thead>
         <tbody>
-          <tr><td>View inventory / cadets / loans</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
-          <tr><td>Submit equipment requests</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>—</td></tr>
-          <tr><td>Issue / return loans</td><td>✓</td><td>✓</td><td>—</td><td>—</td><td>—</td></tr>
-          <tr><td>Approve / deny requests</td><td>✓</td><td>✓</td><td>—</td><td>—</td><td>—</td></tr>
-          <tr><td>Edit inventory / cadets</td><td>✓</td><td>✓</td><td>—</td><td>—</td><td>—</td></tr>
-          <tr><td>Stocktake / Orders</td><td>✓</td><td>✓</td><td>—</td><td>—</td><td>—</td></tr>
-          <tr><td>Audit log</td><td>✓</td><td>✓</td><td>—</td><td>—</td><td>—</td></tr>
-          <tr><td>Settings / Users</td><td>✓</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+          <tr><td>View inventory / loans</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+          <tr><td>Submit equipment requests</td><td>✓</td><td>✓</td><td>✓</td><td>—</td></tr>
+          <tr><td>Issue / return loans</td><td>✓</td><td>✓</td><td>—</td><td>—</td></tr>
+          <tr><td>Approve / deny requests</td><td>✓</td><td>✓</td><td>—</td><td>—</td></tr>
+          <tr><td>Edit inventory</td><td>✓</td><td>✓</td><td>—</td><td>—</td></tr>
+          <tr><td>Stocktake / Orders</td><td>✓</td><td>✓</td><td>—</td><td>—</td></tr>
+          <tr><td>Audit log</td><td>✓</td><td>✓</td><td>—</td><td>—</td></tr>
+          <tr><td>Settings / Users</td><td>✓</td><td>—</td><td>—</td><td>—</td></tr>
         </tbody>
       </table>
       <p class="help__note">Only the OC can access the <strong>Users</strong> and <strong>Settings</strong> pages. Only OC and QM can issue/return loans, approve requests, edit inventory, or run stocktakes.</p>
@@ -159,7 +158,7 @@ const SECTIONS = [
       <p>Click <strong>Edit</strong> on any row. The condition breakdown fields are pre-filled from current data. All changes are recorded in the audit log.</p>
 
       <h4>Loan history</h4>
-      <p>Click <strong>History</strong> on any row to see the full loan history for that item — borrower, dates, quantity, and return status.</p>
+      <p>Click <strong>History</strong> on any row to see the full loan history for that item — issue number or destination, dates, quantity, and return status.</p>
 
       <h4>Deleting an item <span class="help__role">OC only</span></h4>
       <p>Click <strong>Delete</strong> and provide a reason. Deletion is permanent.</p>
@@ -182,7 +181,7 @@ const SECTIONS = [
       <h4>Issuing equipment <span class="help__role">OC / QM</span></h4>
       <ol>
         <li>Go to <strong>Loans → Issue</strong> tab</li>
-        <li>Select the borrower, purpose, issue date, and due date</li>
+        <li>Select the destination (or <strong>Individual</strong>, which allocates an issue number), purpose, issue date, and due date</li>
         <li>Add item lines (search by name or NSN, set quantity)</li>
         <li>Click <strong>Issue</strong></li>
       </ol>
@@ -214,54 +213,29 @@ const SECTIONS = [
 
       <h4>All Loans tab</h4>
       <p>Filter by Active, Returned, Overdue, or All. Search by loan reference, item, issue number or destination. Use the <strong>Issue / destination</strong> filter to show only loans against one issue document or location — pill counts update to match. This build does not record who holds an item: that is on the issue document, filed in the member's CEA documents.</p>
-      <p>Loans belonging to a discharged cadet are flagged with a red <strong>Discharged</strong> badge. These are automatically recalled (due date set to discharge date) when a cadet is deactivated.</p>
+      <p class="help__note">This build does not record who holds an item, so it cannot flag a discharged member's outstanding kit or recall it automatically. Chasing kit from a departing member is a documents task in CEA.</p>
     `,
   },
   {
     id: 'requests',
-    title: 'Equipment requests',
+    title: 'Equipment requests (paper)',
     icon: '📋',
     body: `
-      <p>The <strong>Requests</strong> page lets cadets and staff submit equipment requests that QMs and OCs can then approve, issue, or deny — all within the IMS.</p>
+      <p>Equipment requests are <strong>paper</strong> in this build. There is no
+      Requests page: a request records who wants what, and this system does not
+      store people.</p>
 
-      <h4>Submitting a request (all roles except Read-Only)</h4>
+      <h4>How it works</h4>
       <ol>
-        <li>Go to <strong>Requests → Submit Request</strong></li>
-        <li>Enter the purpose, required-by date, and optional notes</li>
-        <li>Add item lines — description, NSN (optional), and quantity</li>
-        <li>Click <strong>Submit Request</strong></li>
+        <li>Go to <strong>Loans → Issue</strong> and click <strong>⎙ Blank AB189</strong></li>
+        <li>Give the printed form to the member — they complete their own details by hand</li>
+        <li>Process the request from the paper as a normal issue</li>
+        <li>Scan or save the completed AB189 and upload it to that member's
+            <strong>CEA documents</strong></li>
       </ol>
-      <p>The request is assigned a reference number (REQ-NNNN) and appears in the QM's pending queue immediately.</p>
-      <p>You can also <strong>import a pre-filled AB189 PDF</strong>: click <strong>Import AB189 PDF</strong> to extract the purpose, required-by date, and item lines from a scanned or digital AB189 form. Review and edit before submitting.</p>
-
-      <h4>Request statuses</h4>
-      <table class="help__table">
-        <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
-        <tbody>
-          <tr><td><span style="color:#b45309">Pending</span></td><td>Awaiting QM/OC review</td></tr>
-          <tr><td><span style="color:#1d4ed8">Approved</span></td><td>Approved but items not yet physically issued</td></tr>
-          <tr><td><span style="color:#166534">Issued</span></td><td>Items issued and loan record(s) created</td></tr>
-          <tr><td><span style="color:#991b1b">Denied</span></td><td>Request rejected (denial reason shown)</td></tr>
-          <tr><td>Withdrawn</td><td>Withdrawn by the requestor before a decision</td></tr>
-        </tbody>
-      </table>
-
-      <h4>Withdrawing a request</h4>
-      <p>Open your request from <strong>My Requests</strong> and click <strong>Withdraw</strong>. Only pending requests can be withdrawn.</p>
-
-      <h4>QM / OC — reviewing requests <span class="help__role">OC / QM</span></h4>
-      <p>The <strong>Pending</strong> tab shows all requests awaiting a decision. A nav badge shows the count of pending requests. From the detail view:</p>
-      <ul>
-        <li><strong>Approve &amp; Issue</strong> — creates loan records immediately. Each line is matched to inventory by NSN, then by name; unmatched lines become non-stock loan lines. Loan references are stored on the request.</li>
-        <li><strong>Approve</strong> — marks the request approved without creating loans (use when items will be issued later at the counter).</li>
-        <li><strong>Deny</strong> — enter a denial reason; the requestor sees this on their My Requests tab.</li>
-      </ul>
-
-      <h4>Blank AB189 PDF</h4>
-      <p>Click <strong>⎙ Blank AB189</strong> to download a print-ready blank AB189 Equipment Request form. The form includes your unit details and approval blocks — cadets fill it in by hand and hand it to the QM, who can then scan/import it.</p>
-
-      <h4>All Requests tab <span class="help__role">OC / QM</span></h4>
-      <p>Shows all requests regardless of status. Use the status filter to narrow the list.</p>
+      <p class="help__note">The CEA document is the record of who requested and
+      received the equipment. This system records only that the items went out,
+      against an issue number.</p>
     `,
   },
   {
@@ -286,41 +260,6 @@ const SECTIONS = [
         <li>Adjust quantities as needed</li>
       </ol>
       <p class="help__note">Items with zero available stock are skipped with a warning. Kit quantities are capped at available stock.</p>
-    `,
-  },
-  {
-    id: 'cadets',
-    title: 'Cadets / nominal roll',
-    icon: '🪖',
-    body: `
-      <h4>Viewing the roll</h4>
-      <p>All logged-in users can view the nominal roll. Search by name or service number. Filter by Company, Platoon, and Section (or by platoon if unit sub-structure is not configured). Tick <strong>Show inactive</strong> to see deactivated records.</p>
-      <p><strong>Sort order:</strong> Staff always appear first, then cadets grouped by Company → Platoon → Section (config order), then rank high-to-low, surname A–Z within each group.</p>
-      <table class="help__table">
-        <thead><tr><th>Group</th><th>Rank order (high → low)</th></tr></thead>
-        <tbody>
-          <tr><td>Staff</td><td>COL-AAC · LTCOL-AAC · MAJ-AAC · CAPT-AAC · LT-AAC · 2LT-AAC · DAH</td></tr>
-          <tr><td>Cadets</td><td>UO · WO1 · WO2 · SSGT · SGT · CPL · LCPL · CDT</td></tr>
-        </tbody>
-      </table>
-
-      <h4>Unit sub-structure (Company / Platoon / Section)</h4>
-      <p>Configure your unit's hierarchy in <strong>Settings → Unit sub-structure</strong>. Once set, the cadet add/edit form shows cascading Company → Platoon → Section dropdowns. The table gains group-band headers between sections, and filter controls cascade. The nominal roll PDF also renders with group bands.</p>
-      <p>Existing records with only a free-text platoon continue to display correctly in legacy mode until re-saved with the new dropdowns.</p>
-
-      <h4>Adding a person <span class="help__role">OC / QM</span></h4>
-      <ol>
-        <li>Click <strong>+ Add cadet/staff</strong></li>
-        <li>Enter service number, surname, given names, rank</li>
-        <li>Select Company → Platoon → Section (if structure configured) or enter Platoon (if not)</li>
-        <li>Person type (cadet or staff) is set automatically from the rank</li>
-        <li>Click <strong>Save</strong></li>
-      </ol>
-
-      <h4>Deactivating a person (discharge)</h4>
-      <p>Click <strong>Edit</strong> and untick <strong>Active</strong>, then click <strong>Save</strong>.</p>
-      <p><strong>Automatic loan recall:</strong> If the cadet has any active loans at the time of deactivation, a discharge modal lists all outstanding items. All active loans are automatically recalled — their due date is set to today and they are flagged as <strong>Discharged</strong> in the All Loans list with a red badge and border. The QM should retrieve these items.</p>
-      <p class="help__note">Deactivated records and all loan history are retained indefinitely. Tick <strong>Show inactive</strong> on the Cadets page to view them.</p>
     `,
   },
   {
@@ -432,9 +371,6 @@ const SECTIONS = [
           <tr><td>add / adjust</td><td>Inventory item added or edited</td></tr>
           <tr><td>item_delete</td><td>Inventory item deleted</td></tr>
           <tr><td>issue / return</td><td>Loan issued or returned</td></tr>
-          <tr><td>cadet_add / cadet_update</td><td>Nominal roll changes</td></tr>
-          <tr><td>cadet_discharge</td><td>Cadet deactivated — outstanding loans automatically recalled</td></tr>
-          <tr><td>cadet_viewed</td><td>Cadet equipment profile opened (PII read-access logged)</td></tr>
           <tr><td>staff_viewed</td><td>Staff record opened for editing (PII read-access logged)</td></tr>
           <tr><td>user_add / user_update / user_delete</td><td>User account management</td></tr>
           <tr><td>pin_change</td><td>PIN set or reset</td></tr>
@@ -448,10 +384,6 @@ const SECTIONS = [
           <tr><td>order-import</td><td>AAC QStore order PDF imported</td></tr>
           <tr><td>order-received</td><td>Order approved and items received into IMS</td></tr>
           <tr><td>order-delete</td><td>Order record deleted</td></tr>
-          <tr><td>request_submitted</td><td>Equipment request submitted by a user</td></tr>
-          <tr><td>request_approved</td><td>Equipment request approved (and optionally issued) by QM/OC</td></tr>
-          <tr><td>request_denied</td><td>Equipment request denied by QM/OC</td></tr>
-          <tr><td>request_withdrawn</td><td>Equipment request withdrawn by the requestor</td></tr>
         </tbody>
       </table>
     `,
@@ -513,8 +445,8 @@ const SECTIONS = [
         <li>An encrypted <code>.qstore</code> file is downloaded</li>
         <li>Store the file off-device in a secure location</li>
       </ol>
-      <p>The backup includes all inventory, photos, loans, cadets, users, settings, and the audit chain.</p>
-      <p class="help__note">Backups are always encrypted; there is no unencrypted option. The backup contains the keys that protect cadet personal information, so an unencrypted copy would give anyone who found the file both the data and the key to read it.</p>
+      <p>The backup includes all inventory, photos, loans, users, settings, and the audit chain.</p>
+      <p class="help__note">Backups are always encrypted; there is no unencrypted option. The backup contains the keys that protect personal information, so an unencrypted copy would give anyone who found the file both the data and the key to read it.</p>
       <p class="help__note">Encrypted backups use AES-256-GCM with PBKDF2 key derivation. The file is unreadable without the correct password — keep it safe, there is no recovery path. Losing it does not affect your live data; only that backup file becomes unreadable.</p>
 
       <h4>Importing a backup <span class="help__role">OC</span></h4>
