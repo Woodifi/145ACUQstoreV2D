@@ -1422,8 +1422,6 @@ function _dataSectionHtml(settings) {
             true/false/yes/no/1/0 as values.
           </p>
           <div class="form__actions">
-            <button type="button" class="btn btn--primary"
-                    data-action="import-cadets-csv">Import cadets from CSV&hellip;</button>
           </div>
         </div>
       </details>
@@ -1817,7 +1815,6 @@ async function _onRootClick(e) {
     case 'import-data':     await _doImportData(e.target.closest('button')); break;
     case 'import-v1':       await _doImportV1(e.target.closest('button')); break;
     case 'import-items-csv':  CsvUi.openItemsCsvImport();  break;
-    case 'import-cadets-csv': CsvUi.openCadetsCsvImport(); break;
     case 'recovery-generate':    await _doGenerateRecovery(e.target.closest('button')); break;
     case 'sync-crypto-reset':    await _doResetSyncEncryption(); break;
     case 'rotate-keys':          await _doRotateKeys(); break;

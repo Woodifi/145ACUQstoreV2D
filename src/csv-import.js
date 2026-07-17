@@ -8,7 +8,6 @@
 //
 // Two domain functions:
 //   parseItemsCsv(text)   → { rows, columns, errors }
-//   parseCadetsCsv(text)  → { rows, columns, errors }
 //
 // Each row in `rows` is a normalised object ready for storage.put(), plus
 // metadata: sourceLine, status ('new' | 'update' | 'invalid'), warnings.
@@ -57,25 +56,6 @@ const ITEM_COLUMN_ALIASES = {
   loc:        ['loc', 'location', 'shelf', 'bin'],
 };
 
-const CADET_COLUMN_ALIASES = {
-  // Field names match the v2 cadet schema in src/ui/cadets.js. The schema
-  // is intentionally lean (no phone/dob/joinDate) — see cadets.js for the
-  // rationale. CSV columns for those will be tolerated but ignored.
-  svcNo:      ['svcno', 'serviceno', 'servicenumber', 'no', 'number'],
-  surname:    ['surname', 'lastname', 'familyname', 'last'],
-  given:      ['given', 'givenname', 'givennames', 'firstname', 'first'],
-  rank:       ['rank'],
-  // Structure-aware placement. If company/platoon/section are present they
-  // are written directly; legacy plt is also mapped to platoon for compat
-  // with old Brigade exports that use a single platoon column.
-  company:    ['company', 'coy', 'squadron', 'sqn'],
-  platoon:    ['platoon', 'plt', 'troop', 'section_group'],
-  section:    ['section', 'sec', 'subsection'],
-  active:     ['active', 'status'],
-  // No email/notes aliases for cadets: those fields no longer exist on a cadet
-  // record (youth protection). A CSV carrying them is accepted, but the columns
-  // are ignored rather than silently reintroducing the data we just removed.
-};
 
 // Build reverse lookup at module load: alias → canonical.
 function _buildLookup(aliases) {
@@ -89,7 +69,6 @@ function _buildLookup(aliases) {
   return m;
 }
 const ITEM_LOOKUP  = _buildLookup(ITEM_COLUMN_ALIASES);
-const CADET_LOOKUP = _buildLookup(CADET_COLUMN_ALIASES);
 
 function _normaliseHeader(raw) {
   return String(raw || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
@@ -152,38 +131,6 @@ export async function parseItemsCsv(text) {
   return { rows, columns: columnMap, errors: [] };
 }
 
-/**
- * Parse a CSV text blob containing cadet records.
- * Same return shape as parseItemsCsv.
- */
-export async function parseCadetsCsv(text) {
-  const parsed = _parseCsv(text);
-  if (parsed.fatalError) {
-    return { rows: [], columns: { mapped: {}, unrecognised: [] }, errors: [parsed.fatalError] };
-  }
-
-  const { headers, rows: rawRows } = parsed;
-  const columnMap = _mapHeaders(headers, CADET_LOOKUP);
-  const errors = [];
-
-  // See comment in parseItemsCsv re: == null vs falsy on column indexes.
-  if (columnMap.mapped.svcNo == null) {
-    errors.push('Missing required column: svcNo (also accepts: serviceNo, number).');
-  }
-  if (columnMap.mapped.surname == null) {
-    errors.push('Missing required column: surname (also accepts: lastName, familyName).');
-  }
-
-  if (errors.length > 0) {
-    return { rows: [], columns: columnMap, errors };
-  }
-
-  const existing = await Storage.cadets.list();
-  const bySvcNo = new Map(existing.map((c) => [String(c.svcNo || '').trim(), c]));
-
-  const rows = rawRows.map((raw, idx) => _validateCadetRow(raw, idx, columnMap.mapped, bySvcNo));
-  return { rows, columns: columnMap, errors: [] };
-}
 
 // -----------------------------------------------------------------------------
 // Commit — caller passes back the validated rows (or a filtered subset)
@@ -229,33 +176,6 @@ export async function commitItems(rows) {
   return { inserted, updated, skipped };
 }
 
-export async function commitCadets(rows) {
-  let inserted = 0, updated = 0, skipped = 0;
-  for (const row of rows) {
-    if (row._status === 'invalid') { skipped++; continue; }
-    const { _line, _status, _warnings, ...payload } = row;
-    if (_status === 'update') {
-      const existing = await Storage.cadets.get(payload.svcNo);
-      if (existing) {
-        await Storage.cadets.put({
-          ...existing,
-          ...payload,
-          updatedAt: new Date().toISOString(),
-        });
-      } else {
-        await Storage.cadets.put({
-          ...payload,
-          createdAt: new Date().toISOString(),
-        });
-      }
-      updated++;
-    } else {
-      await Storage.cadets.put(payload);
-      inserted++;
-    }
-  }
-  return { inserted, updated, skipped };
-}
 
 // -----------------------------------------------------------------------------
 // Internal: PapaParse wrapper
@@ -391,82 +311,6 @@ function _validateItemRow(raw, idx, columnIdx, byId, byNsn) {
   return base;
 }
 
-function _validateCadetRow(raw, idx, columnIdx, bySvcNo) {
-  const line = idx + 2;
-  const warnings = [];
-  const get = (canonical) => {
-    const i = columnIdx[canonical];
-    return i != null ? (raw[i] || '') : '';
-  };
-
-  const svcNo   = get('svcNo').trim();
-  const surname = get('surname').trim();
-  if (!svcNo) {
-    return { _line: line, _status: 'invalid', _warnings: ['Missing required field: svcNo.'] };
-  }
-  if (!surname) {
-    return { _line: line, _status: 'invalid', _warnings: ['Missing required field: surname.'] };
-  }
-
-  // Service numbers should be reasonably numeric — warn if not, but accept.
-  if (!/^\d{4,10}$/.test(svcNo)) {
-    warnings.push(`svcNo "${svcNo}" is not 4-10 digits (kept as-is).`);
-  }
-
-  const rawRank = get('rank').trim();
-  const rank = rawRank ? normalizeRank(rawRank) : '';
-  if (rawRank && !rank) {
-    warnings.push(`Rank "${rawRank}" not recognised — kept blank.`);
-  }
-
-  // active: accept TRUE/FALSE/yes/no/1/0; default true if blank.
-  const activeRaw = get('active').toLowerCase().trim();
-  const active = activeRaw === '' ? true
-    : ['true', 'yes', 'y', '1', 'active'].includes(activeRaw) ? true
-    : ['false', 'no', 'n', '0', 'inactive'].includes(activeRaw) ? false
-    : true;
-  if (activeRaw && !['true','yes','y','1','active','false','no','n','0','inactive'].includes(activeRaw)) {
-    warnings.push(`active "${activeRaw}" not recognised — defaulted to true.`);
-  }
-
-  const status = bySvcNo.has(svcNo) ? 'update' : 'new';
-
-  // Build the row in the v2 cadet schema. personType is derived from rank
-  // the same way the manual add path and the migration both do, so manual
-  // entry, v1-imported, and CSV-imported cadets all carry the same field
-  // and the cadets list filters work consistently.
-  const personType = _inferPersonType(rank);
-
-  // Structure fields: new schema uses company/platoon/section; legacy uses
-  // plt. If the CSV has the structured columns, populate both for compat.
-  // If only a legacy `platoon` column exists, write platoon (which maps
-  // to both plt and platoon keys) and leave company/section blank.
-  const company  = get('company').trim();
-  const platoon  = get('platoon').trim();
-  const section  = get('section').trim();
-
-  const base = {
-    _line:     line,
-    _status:   status,
-    _warnings: warnings,
-    svcNo,
-    surname,
-    given:    get('given').trim(),
-    rank,
-    // Legacy field — kept so existing filters/reports that read `plt` still work.
-    plt:      platoon || get('platoon').trim(),
-    // Structure-aware fields — blank if the CSV doesn't carry them.
-    company,
-    platoon,
-    section,
-    personType,
-    active,
-  };
-  if (status === 'new') {
-    base.createdAt = new Date().toISOString();
-  }
-  return base;
-}
 
 // -----------------------------------------------------------------------------
 // Helpers
@@ -486,17 +330,4 @@ function _parseInt(s, warnings, fieldName) {
 function _newItemId() {
   // Same shape as the manual-add path in inventory.js.
   return 'i-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
-}
-
-// -----------------------------------------------------------------------------
-// personType inference — duplicated from ui/cadets.js to avoid creating a
-// dependency from src/* on src/ui/*. The logic is small and stable; if it
-// ever needs to grow, lift it into ranks.js so all three callers share one
-// implementation.
-// -----------------------------------------------------------------------------
-
-function _inferPersonType(rank) {
-  if (!rank) return 'cadet';
-  // Cadet ranks all start with 'CDT'; staff ranks don't.
-  return /^CDT/.test(rank) ? 'cadet' : 'staff';
 }

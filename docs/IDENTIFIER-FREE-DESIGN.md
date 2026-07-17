@@ -142,6 +142,30 @@ This is precisely why the direction at §13.1 is being sought, and why the
 controls statement must not claim an upgraded unit carries no PII until its
 legacy rows are gone.
 
+## Findings from step 6
+
+**v1 loans cannot be converted, only skipped.** Every v1 loan carries
+`borrowerName`/`borrowerSvc` — it records who holds an item. The identifier-free
+model needs an issue-document number to stand in for the person, and a v1 loan
+has none to map onto. Inventing one would invent a link to a document that does
+not exist. So v1 person data is not imported at all; it stays in the v1 file and
+belongs in CEA.
+
+**The skip must be loud.** A migration that silently drops a unit's entire loan
+history and reports success is worse than one that fails: the operator assumes
+the import was complete and never extracts the data. The import now writes an
+audit entry naming what was skipped and directing extraction to CEA, and
+`test-v1-import` asserts that entry exists — that assertion is the point of the
+test now.
+
+**I broke this file twice with regex surgery** before doing it by line number
+with a pre-flight guard that refuses to cut a block containing an items-path
+*definition*. The first attempt deleted every shared helper (`_parseCsv`,
+`_mapHeaders`, `_validateItemRow`) because `commitCadets` was the last export and
+"cut to the next export" ran to EOF. The second ate `parseItemsCsv` because a
+non-greedy regex started at the wrong `/**`. Both were caught by running the
+test, not by reading the diff.
+
 ## Findings from step 5
 
 **Two stores declare PII encryption they never apply.** `pii.js` defines
@@ -225,9 +249,11 @@ loans.js: `pdf.js` (17), `requests.js` (20), `ims-reports.js` (8),
    `generateRequestAB189` deleted; `Storage.requests.put()` refuses; the blank
    AB189 print moved to the Loans page, since deleting the module would
    otherwise have taken the replacement workflow with it.
-6. **CSV import** — cadet import removed.
-6a. **v1 import** — removed or rewritten. It currently writes person-carrying
-    loans and is rejected by `loans.put()`. See findings above.
+6. ~~**CSV import**~~ — DONE. Cadet CSV import removed (parse, commit, aliases,
+   validator, personType inference). The items importer is untouched.
+6a. ~~**v1 import**~~ — DONE. Imports equipment; cadets, loans and requests are
+    NOT imported and the skip is written to the audit log with a direction to
+    extract them to CEA.
 7. **Login** — cadet role removed.
 8. **Free text** — per the table above.
 9. **Migration** — gated on §13.1.
