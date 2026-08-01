@@ -2,8 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#0e1014">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <!-- Browser chrome follows the app surface: the light canvas by default,
+       the dark canvas when the OS asks for dark. -->
+  <meta name="theme-color" content="#F5F7FA" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0B1220" media="(prefers-color-scheme: dark)">
   <title>QStore IMS</title>
   <link rel="stylesheet" href="qstore.css">
 </head>

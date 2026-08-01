@@ -1,47 +1,291 @@
 /* =============================================================================
  * QStore IMS v2 — Global stylesheet
  * =============================================================================
- * Defence-aesthetic dark theme. Single file, imported once by index.html.
+ * ITEMORA IMS · QStore — Operational Accountability Platform.
+ * Single file, imported once by index.html.
  *
- * Palette:
- *   --bg-deep      Background (charcoal, near-black)
- *   --bg-panel     Card/panel surface (slightly lighter)
- *   --bg-input     Input/key surface
- *   --border       Subtle border lines
- *   --text-primary Main text (off-white)
- *   --text-muted   Secondary text (grey)
- *   --gold         AAC accent (rank tab gold)
- *   --danger       Errors / warnings
- *   --warn         Banner warnings
- *   --good         Success
+ * Light is the default surface (per the ITEMORA design guide); dark is a
+ * first-class alternative selected via [data-theme="dark"], and
+ * [data-theme="system"] follows the OS. Every colour below is a token — no
+ * component should introduce a raw hex value.
  *
- * Typography is system fonts — no web-font dependency, works offline.
+ * ── Brand palette ───────────────────────────────────────────────────────────
+ *   --brand        Primary Blue   #1B4F9A   Primary actions, active nav, links
+ *   --good         Success        #2FBF71   Available, in-stock, complete
+ *   --warn         Warning        #FFB000   Service due, low stock, attention
+ *   --danger       Danger         #E53935   Overdue, destructive, errors
+ *   --info         Information    #2196F3   Neutral notices
+ *
+ * ── Neutrals ────────────────────────────────────────────────────────────────
+ *   --bg-deep      Background     #F5F7FA   App canvas behind cards
+ *   --bg-panel     Card/Surface   #FFFFFF   Card and panel surfaces
+ *   --border       Border         #E5E7EB   Hairlines and dividers
+ *   --text-primary Text Primary   #111827   Body and headings
+ *   --text-muted   Text Secondary #6B7280   Labels, meta, captions
+ *
+ * ── Typography ──────────────────────────────────────────────────────────────
+ * Inter for UI text, IBM Plex Mono for numerics and identifiers, per the
+ * design guide. Both are requested by family name only and fall back to the
+ * system stack — this build ships to air-gapped Defence environments, so no
+ * web font is ever fetched over the network. If Inter is present locally (or
+ * embedded by the packager) it is used; otherwise the UI degrades to the
+ * platform font against the same fixed scale.
+ *
+ *   --font-sans   Headings, body, controls
+ *   --font-mono   Numbers, asset IDs, serials, refs — anything read
+ *                 digit-by-digit, where tabular figures matter
+ *
+ * Type scale (design guide): heading 18–28, subheading 15–18, body 14–16,
+ * mono 13–16. The steps below are fixed so no screen invents its own size:
+ * the stylesheet previously carried eleven ad-hoc font sizes and 44 distinct
+ * padding declarations, which is what made the UI read as disjointed.
+ *
+ * ── Spacing ─────────────────────────────────────────────────────────────────
+ * A 4px base scale. Components use --sp-* rather than ad-hoc pixel padding so
+ * vertical rhythm stays consistent from screen to screen.
+ *
  * Touch targets are 56px minimum on PIN keys; 44px elsewhere (Apple HIG).
  * ============================================================================= */
 
 :root {
-  --bg-deep:       #0e1014;
-  --bg-panel:      #181c22;
-  --bg-input:      #21262e;
-  --bg-input-hi:   #2c333d;
-  --border:        #2f3640;
-  --border-hi:     #4a5260;
-  --text-primary:  #e8e8e8;
-  --text-muted:    #8893a0;
-  --text-dim:      #5a6470;
-  --gold:          #c4a96b;
-  --gold-hi:       #d4ba80;
-  --danger:        #ff6b6b;
-  --warn:          #ffb86b;
-  --good:          #6ae07a;
-  --info:          #6bb0ff;
+  color-scheme: light;
 
-  --radius-sm:     4px;
-  --radius-md:     8px;
-  --radius-lg:     12px;
+  /* ── Brand ──────────────────────────────────────────────────────────────── */
+  --brand:         #1B4F9A;
+  --brand-hi:      #17427F;   /* hover/pressed — darker on light surfaces  */
+  --brand-weak:    #E8EEF7;   /* tinted fill: selected rows, soft badges   */
+  --brand-on:      #FFFFFF;   /* text on a --brand fill                    */
 
-  --shadow-card:   0 8px 24px rgba(0, 0, 0, 0.4);
-  --shadow-modal:  0 16px 48px rgba(0, 0, 0, 0.6);
+  /* Status. Each has a --*-weak tint for badge and banner fills, and a
+   * --*-on for text placed on the solid colour, so no component has to
+   * hand-mix an rgba() and drift from the palette. */
+  --good:          #2FBF71;
+  --good-weak:     #E6F7EE;
+  --good-on:       #0B5132;
+  --warn:          #FFB000;
+  --warn-weak:     #FFF4DE;
+  --warn-on:       #6B4A00;
+  --danger:        #E53935;
+  --danger-weak:   #FDEAEA;
+  --danger-on:     #8C1C1A;
+  --info:          #2196F3;
+  --info-weak:     #E6F2FE;
+  --info-on:       #0B4C86;
+
+  /* --*-on is text on the SOLID colour. --*-ink is text on the pale --*-weak
+   * tint. They are different problems: on a light surface the tint is pale so
+   * the ink must be dark, while on a dark surface the tint is dark so the ink
+   * must be light. Conflating the two is why a warning banner rendered dark
+   * brown on dark brown in dark mode. */
+  --brand-ink:     #17427F;
+  --good-ink:      #0B5132;
+  --warn-ink:      #6B4A00;
+  --danger-ink:    #8C1C1A;
+  --info-ink:      #0B4C86;
+
+  /* Solid destructive fill + its text. Split from --danger because the accent
+   * red is tuned for borders and text, not for carrying white type. */
+  --danger-solid:    #C62828;
+  --danger-solid-on: #FFFFFF;
+
+  /* ── Neutrals ───────────────────────────────────────────────────────────── */
+  --bg-deep:       #F5F7FA;
+  --bg-panel:      #FFFFFF;
+  --bg-input:      #FFFFFF;
+  --bg-input-hi:   #EEF2F7;
+  --bg-subtle:     #F9FAFB;   /* table headers, striping, inset wells      */
+  --border:        #E5E7EB;
+  --border-hi:     #CBD5E1;
+  --text-primary:  #111827;
+  --text-muted:    #6B7280;
+  --text-dim:      #6B7280;
+  --text-on-brand: #FFFFFF;
+
+  /* The sidebar is deep navy in every theme — it anchors the layout and keeps
+   * the platform recognisable whichever surface mode is active. */
+  --nav-bg:        #102A4C;
+  --nav-bg-hi:     #173761;
+  --nav-text:      #C7D5E8;
+  --nav-text-hi:   #FFFFFF;
+  --nav-active-bg: #1B4F9A;
+  --nav-border:    #1D3A63;
+
+  /* --gold is kept as an alias so no rule written against the previous
+   * defence palette silently loses its accent. It now resolves to the ITEMORA
+   * primary blue. New code should use --brand. */
+  --gold:          var(--brand);
+  --gold-hi:       var(--brand-hi);
+
+  /* ── Typography ─────────────────────────────────────────────────────────── */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+               Helvetica, Arial, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas,
+               'Liberation Mono', monospace;
+
+  --fs-display:    28px;   /* page title, hero numerals */
+  --fs-h1:         22px;
+  --fs-h2:         18px;   /* section titles            */
+  --fs-h3:         16px;   /* card titles, subheadings  */
+  --fs-body:       15px;   /* default body              */
+  --fs-sm:         14px;   /* dense body, table cells   */
+  --fs-xs:         13px;   /* meta, captions            */
+  --fs-micro:      11px;   /* uppercase eyebrow labels  */
+
+  --fw-regular:    400;
+  --fw-medium:     500;
+  --fw-semibold:   600;
+  --fw-bold:       700;
+
+  /* ── Spacing (4px base) ─────────────────────────────────────────────────── */
+  --sp-1:          4px;
+  --sp-2:          8px;
+  --sp-3:          12px;
+  --sp-4:          16px;
+  --sp-5:          20px;
+  --sp-6:          24px;
+  --sp-8:          32px;
+  --sp-10:         40px;
+  --sp-12:         48px;
+
+  /* ── Shape ──────────────────────────────────────────────────────────────── */
+  --radius-sm:     6px;
+  --radius-md:     10px;
+  --radius-lg:     14px;
+  --radius-pill:   999px;
+
+  /* Light-surface elevation is soft and short — a long black shadow reads as
+   * grime on a white canvas. */
+  --shadow-card:   0 1px 2px rgba(16, 24, 40, 0.04),
+                   0 1px 3px rgba(16, 24, 40, 0.06);
+  --shadow-raised: 0 4px 12px rgba(16, 24, 40, 0.08);
+  --shadow-modal:  0 24px 48px -12px rgba(16, 24, 40, 0.25);
+
+  /* ── Layout ─────────────────────────────────────────────────────────────── */
+  --nav-w:         240px;   /* sidebar width on desktop */
+  --topbar-h:      64px;
+  --content-max:   1440px;
+}
+
+/* =============================================================================
+ * DARK THEME
+ * =============================================================================
+ * Selected explicitly via [data-theme="dark"], or via [data-theme="system"]
+ * when the OS asks for dark. Only tokens are redefined — not one component
+ * rule is duplicated, so the two themes cannot drift apart.
+ *
+ * This is what makes the theme setting real. theme.js has always written
+ * data-theme onto <html> and Settings has always reported "Theme set to
+ * light", but the stylesheet carried no [data-theme] selector at all, so the
+ * control changed nothing on screen.
+ * ============================================================================= */
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --brand:         #4C8DE0;   /* lifted for contrast on dark surfaces */
+  --brand-hi:      #6AA3EA;
+  --brand-weak:    #16294A;
+  --brand-on:      #06121F;
+
+  --good:          #46D68A;
+  --good-weak:     #10301F;
+  --good-on:       #04150C;
+  --warn:          #FFC24D;
+  --warn-weak:     #33280A;
+  --warn-on:       #1C1300;
+  --danger:        #FF6B67;
+  --danger-weak:   #3A1614;
+  --danger-on:     #1A0605;
+  --info:          #64B5F6;
+  --info-weak:     #10273D;
+  --info-on:       #04121F;
+
+  /* Tints are dark here, so the ink is the bright end of each hue. */
+  --brand-ink:     #7FB0EC;
+  --good-ink:      #46D68A;
+  --warn-ink:      #FFC24D;
+  --danger-ink:    #FF8A87;
+  --info-ink:      #7CC0F8;
+
+  --danger-solid:    #FF6B67;
+  --danger-solid-on: #1A0605;
+
+  --bg-deep:       #0B1220;
+  --bg-panel:      #131C2B;
+  --bg-input:      #1A2434;
+  --bg-input-hi:   #223044;
+  --bg-subtle:     #172233;
+  --border:        #263449;
+  --border-hi:     #38495F;
+  --text-primary:  #E8EDF4;
+  --text-muted:    #97A5B8;
+  --text-dim:      #8A97A8;
+
+  --nav-bg:        #0A1526;
+  --nav-bg-hi:     #14243C;
+  --nav-text:      #A9BAD0;
+  --nav-active-bg: #1B4F9A;
+  --nav-border:    #1A2A42;
+
+  --shadow-card:   0 1px 2px rgba(0, 0, 0, 0.40),
+                   0 1px 3px rgba(0, 0, 0, 0.30);
+  --shadow-raised: 0 4px 14px rgba(0, 0, 0, 0.45);
+  --shadow-modal:  0 24px 48px -12px rgba(0, 0, 0, 0.70);
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-theme="system"] {
+    color-scheme: dark;
+
+    --brand:         #4C8DE0;
+    --brand-hi:      #6AA3EA;
+    --brand-weak:    #16294A;
+    --brand-on:      #06121F;
+
+    --good:          #46D68A;
+    --good-weak:     #10301F;
+    --good-on:       #04150C;
+    --warn:          #FFC24D;
+    --warn-weak:     #33280A;
+    --warn-on:       #1C1300;
+    --danger:        #FF6B67;
+    --danger-weak:   #3A1614;
+    --danger-on:     #1A0605;
+    --info:          #64B5F6;
+    --info-weak:     #10273D;
+    --info-on:       #04121F;
+
+    --brand-ink:     #7FB0EC;
+    --good-ink:      #46D68A;
+    --warn-ink:      #FFC24D;
+    --danger-ink:    #FF8A87;
+    --info-ink:      #7CC0F8;
+
+    --danger-solid:    #FF6B67;
+    --danger-solid-on: #1A0605;
+
+    --bg-deep:       #0B1220;
+    --bg-panel:      #131C2B;
+    --bg-input:      #1A2434;
+    --bg-input-hi:   #223044;
+    --bg-subtle:     #172233;
+    --border:        #263449;
+    --border-hi:     #38495F;
+    --text-primary:  #E8EDF4;
+    --text-muted:    #97A5B8;
+    --text-dim:      #8A97A8;
+
+    --nav-bg:        #0A1526;
+    --nav-bg-hi:     #14243C;
+    --nav-text:      #A9BAD0;
+    --nav-active-bg: #1B4F9A;
+    --nav-border:    #1A2A42;
+
+    --shadow-card:   0 1px 2px rgba(0, 0, 0, 0.40),
+                     0 1px 3px rgba(0, 0, 0, 0.30);
+    --shadow-raised: 0 4px 14px rgba(0, 0, 0, 0.45);
+    --shadow-modal:  0 24px 48px -12px rgba(0, 0, 0, 0.70);
+  }
 }
 
 * { box-sizing: border-box; }
@@ -55,16 +299,20 @@ html, body {
 body {
   background: var(--bg-deep);
   color: var(--text-primary);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-               Helvetica, Arial, sans-serif;
-  font-size: 15px;
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Nothing in this app is a horizontally-scrolling document. Wide content
+   * (tables, toolbars) scrolls inside its own container instead — see
+   * .table-wrap and the responsive section. */
+  overflow-x: hidden;
 }
 
 #app {
   min-height: 100vh;
+  min-height: 100dvh;   /* keeps the shell off the mobile URL bar */
   display: flex;
   flex-direction: column;
 }
@@ -74,14 +322,23 @@ button {
   cursor: pointer;
 }
 
-button:focus-visible,
-input:focus-visible {
-  outline: 2px solid var(--gold);
+/* One focus ring for the whole app. Two-tone so it stays visible on both the
+ * white canvas and the navy sidebar. */
+:where(button, input, select, textarea, a, [tabindex]):focus-visible {
+  outline: 2px solid var(--brand);
   outline-offset: 2px;
+  border-radius: var(--radius-sm);
 }
 
-input {
+input, select, textarea {
   font: inherit;
+}
+
+/* Numerals, identifiers and anything compared digit-by-digit are set in mono
+ * with tabular figures so columns of figures line up. */
+:where(code, kbd, samp, pre) {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 /* =============================================================================
@@ -434,15 +691,15 @@ input {
 }
 
 .shell__banner--warn {
-  background: rgba(255, 184, 107, 0.08);
+  background: var(--warn-weak);
   color: var(--warn);
-  border-bottom-color: rgba(255, 184, 107, 0.3);
+  border-bottom-color: var(--warn);
 }
 
 .shell__banner-action {
   margin-left: auto;
   background: var(--warn);
-  color: #2a1f0a;
+  color: var(--warn-on);
   border: none;
   padding: 6px 12px;
   border-radius: var(--radius-sm);
@@ -451,7 +708,7 @@ input {
 }
 
 .shell__banner-action:hover {
-  background: #ffc887;
+  background: var(--warn);
 }
 
 .shell__placeholder {
@@ -514,7 +771,7 @@ input {
 .modal__backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(16, 24, 40, 0.5);
 }
 
 .modal__panel {
@@ -602,7 +859,7 @@ input {
 
 .btn--primary {
   background: var(--gold);
-  color: #1a1408;
+  color: var(--warn-on);
   border-color: var(--gold);
 }
 
@@ -787,7 +1044,7 @@ input {
 }
 
 .inv__row:hover td {
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--bg-subtle);
 }
 
 .inv__col-nsn   { width: 130px; }
@@ -855,7 +1112,7 @@ input {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.3px;
-  background: rgba(106, 224, 122, 0.15);
+  background: var(--good-weak);
   color: var(--good);
 }
 
@@ -869,13 +1126,13 @@ input {
  *                  (a derived state from unsvc > 0 with serviceable flag)
  * --unknown:       legacy/garbage condition value, kept visible but neutral
  */
-.inv__cond--serviceable      { background: rgba(106, 224, 122, 0.15); color: var(--good); }
-.inv__cond--unserviceable    { background: rgba(255, 107, 107, 0.15); color: var(--danger); }
-.inv__cond--partial-unsvc    { background: rgba(255, 184, 107, 0.15); color: var(--warn); }
-.inv__cond--repair           { background: rgba(107, 176, 255, 0.15); color: var(--info); }
-.inv__cond--calibration-due  { background: rgba(196, 169, 107, 0.15); color: var(--gold); }
-.inv__cond--written-off      { background: rgba(255, 107, 107, 0.15); color: var(--danger); }
-.inv__cond--unknown          { background: rgba(136, 147, 160, 0.15); color: var(--text-muted); }
+.inv__cond--serviceable      { background: var(--good-weak); color: var(--good-ink); }
+.inv__cond--unserviceable    { background: var(--danger-weak); color: var(--danger-ink); }
+.inv__cond--partial-unsvc    { background: var(--warn-weak); color: var(--warn-ink); }
+.inv__cond--repair           { background: var(--info-weak); color: var(--info-ink); }
+.inv__cond--calibration-due  { background: var(--brand-weak); color: var(--brand-ink); }
+.inv__cond--written-off      { background: var(--danger-weak); color: var(--danger-ink); }
+.inv__cond--unknown          { background: var(--bg-input-hi); color: var(--text-muted); }
 
 .inv__row-actions {
   display: flex;
@@ -938,8 +1195,8 @@ input {
 }
 
 .modal__warn {
-  background: rgba(255, 107, 107, 0.08);
-  border: 1px solid rgba(255, 107, 107, 0.3);
+  background: var(--danger-weak);
+  border: 1px solid var(--danger);
   border-radius: var(--radius-sm);
   padding: 10px 12px;
   margin: 0 0 12px;
@@ -1079,12 +1336,12 @@ input {
 
 .btn--danger {
   background: var(--danger);
-  color: #2a0a0a;
+  color: var(--danger-on);
   border-color: var(--danger);
 }
 
 .btn--danger:hover {
-  background: #ff8888;
+  background: var(--danger);
 }
 
 .btn--sm {
@@ -1287,7 +1544,7 @@ input {
 .settings__sync-error {
   font-size: 13px;
   color: var(--danger);
-  background: rgba(255, 107, 107, 0.08);
+  background: var(--danger-weak);
   padding: 8px 10px;
   border-radius: var(--radius-sm);
 }
@@ -1470,13 +1727,13 @@ input {
 }
 
 .settings__status--ok {
-  border-color: rgba(196, 169, 107, 0.35);
-  background:   rgba(196, 169, 107, 0.06);
+  border-color: var(--brand);
+  background:   var(--brand-weak);
 }
 
 .settings__status--warn {
-  border-color: rgba(255, 184, 107, 0.35);
-  background:   rgba(255, 184, 107, 0.08);
+  border-color: var(--warn);
+  background:   var(--warn-weak);
 }
 
 /* "Forgot PIN?" link beneath the keypad on the login screen, OC-only. */
@@ -1626,7 +1883,7 @@ input {
 }
 
 .cad__row:hover td {
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--bg-subtle);
 }
 
 /* Inactive rows are visually de-emphasised — they're still listed for
@@ -1672,8 +1929,8 @@ input {
   letter-spacing: 0.3px;
 }
 
-.cad__badge--staff    { background: rgba(196, 169, 107, 0.15); color: var(--gold);   }
-.cad__badge--inactive { background: rgba(136, 147, 160, 0.15); color: var(--text-muted); }
+.cad__badge--staff    { background: var(--brand-weak); color: var(--brand-ink);   }
+.cad__badge--inactive { background: var(--bg-input-hi); color: var(--text-muted); }
 
 .cad__empty {
   padding: 32px 16px;
@@ -1906,7 +2163,7 @@ input {
   color: var(--text-primary);
 }
 
-.loan__return-row:hover { background: rgba(255, 255, 255, 0.03); }
+.loan__return-row:hover { background: var(--bg-subtle); }
 
 .loan__return-row--overdue { color: var(--danger); }
 
@@ -1994,7 +2251,7 @@ input {
 
 .loan__pill-count {
   font-size: 11px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-input-hi);
   padding: 1px 6px;
   border-radius: 8px;
   color: var(--text-muted);
@@ -2042,7 +2299,7 @@ input {
   vertical-align: top;
 }
 
-.loan__row:hover td { background: rgba(255, 255, 255, 0.02); }
+.loan__row:hover td { background: var(--bg-subtle); }
 
 .loan__row--returned td { opacity: 0.55; }
 
@@ -2079,9 +2336,9 @@ input {
   white-space: nowrap;
 }
 
-.loan__badge--active   { background: rgba(106, 224, 122, 0.15); color: var(--good);   }
-.loan__badge--overdue  { background: rgba(255, 107, 107, 0.15); color: var(--danger); }
-.loan__badge--returned { background: rgba(136, 147, 160, 0.15); color: var(--text-muted); }
+.loan__badge--active   { background: var(--good-weak); color: var(--good-ink);   }
+.loan__badge--overdue  { background: var(--danger-weak); color: var(--danger-ink); }
+.loan__badge--returned { background: var(--bg-input-hi); color: var(--text-muted); }
 
 .loan__empty {
   padding: 32px 16px;
@@ -2172,7 +2429,7 @@ input {
 }
 
 .aud__verify code {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--bg-input-hi);
   padding: 1px 6px;
   border-radius: 3px;
   font-family: 'SF Mono', Consolas, monospace;
@@ -2180,13 +2437,13 @@ input {
 }
 
 .aud__verify--ok {
-  border-color: rgba(106, 224, 122, 0.35);
-  background:   rgba(106, 224, 122, 0.06);
+  border-color: var(--good);
+  background:   var(--good-weak);
 }
 
 .aud__verify--bad {
-  border-color: rgba(255, 107, 107, 0.45);
-  background:   rgba(255, 107, 107, 0.08);
+  border-color: var(--danger);
+  background:   var(--danger-weak);
 }
 
 .aud__meta {
@@ -2229,12 +2486,12 @@ input {
   vertical-align: top;
 }
 
-.aud__row:hover td { background: rgba(255, 255, 255, 0.02); }
+.aud__row:hover td { background: var(--bg-subtle); }
 
 /* Rows past the chain-break get a red left border + faint red background,
  * making it visually clear which entries are no longer trustworthy. */
 .aud__row--broken td {
-  background: rgba(255, 107, 107, 0.05);
+  background: var(--danger-weak);
   border-left: 2px solid var(--danger);
 }
 
@@ -2281,13 +2538,13 @@ input {
   margin-right: 4px;
 }
 
-.aud__badge--mutation { background: rgba(196, 169, 107, 0.15); color: var(--gold);   }
-.aud__badge--security { background: rgba(107, 176, 255, 0.15); color: var(--info);   }
-.aud__badge--auth     { background: rgba(106, 224, 122, 0.15); color: var(--good);   }
-.aud__badge--failure  { background: rgba(255, 107, 107, 0.15); color: var(--danger); }
-.aud__badge--other    { background: rgba(136, 147, 160, 0.15); color: var(--text-muted); }
+.aud__badge--mutation { background: var(--brand-weak); color: var(--brand-ink);   }
+.aud__badge--security { background: var(--info-weak); color: var(--info-ink);   }
+.aud__badge--auth     { background: var(--good-weak); color: var(--good-ink);   }
+.aud__badge--failure  { background: var(--danger-weak); color: var(--danger-ink); }
+.aud__badge--other    { background: var(--bg-input-hi); color: var(--text-muted); }
 .aud__badge--imported {
-  background: rgba(136, 147, 160, 0.15);
+  background: var(--bg-input-hi);
   color: var(--text-muted);
   font-style: italic;
 }
@@ -2342,8 +2599,8 @@ input {
 /* Cloud-policy specific tint — blue/info, distinct from the warn-coloured
  * status block so users register it as guidance rather than a problem. */
 .settings__notice--policy {
-  border-color: rgba(107, 176, 255, 0.35);
-  background:   rgba(107, 176, 255, 0.06);
+  border-color: var(--info);
+  background:   var(--info-weak);
 }
 
 /* Loans All-tab toolbar — Print outstanding button placement. The
@@ -2423,10 +2680,10 @@ input {
   color: var(--text-primary);
 }
 
-.settings__csv-count--new      { border-color: rgba(106, 224, 122, 0.4); }
-.settings__csv-count--update   { border-color: rgba(107, 176, 255, 0.4); }
-.settings__csv-count--invalid  { border-color: rgba(255, 107, 107, 0.4); }
-.settings__csv-count--warn     { border-color: rgba(255, 184, 107, 0.4); }
+.settings__csv-count--new      { border-color: var(--good); }
+.settings__csv-count--update   { border-color: var(--info); }
+.settings__csv-count--invalid  { border-color: var(--danger); }
+.settings__csv-count--warn     { border-color: var(--warn); }
 
 /* Preview table — narrower than the page table; shrunk for modal context. */
 .settings__csv-preview {
@@ -2453,7 +2710,7 @@ input {
 
 .settings__csv-row--invalid td {
   color: var(--text-muted);
-  background: rgba(255, 107, 107, 0.05);
+  background: var(--danger-weak);
 }
 
 .settings__csv-status {
@@ -2466,9 +2723,9 @@ input {
   letter-spacing: 0.3px;
 }
 
-.settings__csv-status--new     { background: rgba(106, 224, 122, 0.15); color: var(--good); }
-.settings__csv-status--update  { background: rgba(107, 176, 255, 0.15); color: var(--info); }
-.settings__csv-status--invalid { background: rgba(255, 107, 107, 0.15); color: var(--danger); }
+.settings__csv-status--new     { background: var(--good-weak); color: var(--good-ink); }
+.settings__csv-status--update  { background: var(--info-weak); color: var(--info-ink); }
+.settings__csv-status--invalid { background: var(--danger-weak); color: var(--danger-ink); }
 
 .settings__csv-unrecog {
   font-family: monospace;
@@ -2521,13 +2778,15 @@ input {
 }
 
 .stk__status-badge--idle  {
-  background: rgba(136, 147, 160, 0.15);
-  color: var(--text-muted);
+  background: var(--bg-input-hi);
+  /* 11px badge text is body copy, so it takes the primary tone — the muted
+   * tone against this fill lands at 4.3:1. */
+  color: var(--text-primary);
 }
 
 .stk__status-badge--draft {
-  background: rgba(196, 169, 107, 0.20);
-  color: var(--gold);
+  background: var(--brand-weak);
+  color: var(--brand-ink);
 }
 
 .stk__status-text {
@@ -2583,10 +2842,10 @@ input {
   color: var(--text-muted);
 }
 
-.stk__summary-tile--counted { border-color: rgba(107, 176, 255, 0.3); }
-.stk__summary-tile--match   { border-color: rgba(106, 224, 122, 0.3); }
-.stk__summary-tile--over    { border-color: rgba(255, 184, 107, 0.3); }
-.stk__summary-tile--short   { border-color: rgba(255, 107, 107, 0.3); }
+.stk__summary-tile--counted { border-color: var(--info); }
+.stk__summary-tile--match   { border-color: var(--good); }
+.stk__summary-tile--over    { border-color: var(--warn); }
+.stk__summary-tile--short   { border-color: var(--danger); }
 
 /* Main table. Same shape as inventory but with input cells. */
 .stk__table {
@@ -2617,7 +2876,7 @@ input {
 }
 
 .stk__table tbody tr:hover {
-  background: rgba(196, 169, 107, 0.04);
+  background: var(--brand-weak);
 }
 
 .stk__col-num,
@@ -2650,12 +2909,12 @@ input {
 
 .stk__count--invalid {
   border-color: var(--danger);
-  background: rgba(255, 107, 107, 0.08);
+  background: var(--danger-weak);
 }
 
 .stk__cond--orphan {
   border-color: var(--warn);
-  background: rgba(255, 184, 107, 0.08);
+  background: var(--warn-weak);
 }
 
 .stk__count:focus,
@@ -2734,4 +2993,1768 @@ input {
   font-family: monospace;
   color: var(--text-muted);
   font-size: 11px;
+}
+
+/* =============================================================================
+ * ITEMORA DESIGN SYSTEM
+ * =============================================================================
+ * Everything below is the humanised layer added in the ITEMORA redesign. It is
+ * appended last on purpose: at equal specificity the later rule wins, so this
+ * section restyles the original components without those rules having to be
+ * hunted down and rewritten one at a time.
+ *
+ * It exists because an audit of this build found that 554 of the 796 class
+ * names the UI renders — 70% — had no CSS rule at all. Whole screens (the
+ * dashboard, orders, most of settings) were falling back to browser defaults.
+ * That, not a wrong shade of blue, is what made the product feel disjointed.
+ *
+ * Order: layout shell → primitives → page surfaces → responsive.
+ * ============================================================================= */
+
+/* =============================================================================
+ * SHELL — sidebar + content column
+ * ============================================================================= */
+
+.shell {
+  display: grid;
+  grid-template-columns: var(--nav-w) minmax(0, 1fr);
+  grid-template-rows: 100vh;
+  grid-template-rows: 100dvh;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--bg-deep);
+}
+
+/* The content column scrolls; the sidebar does not move with it. */
+.shell__body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;           /* lets wide tables shrink instead of pushing out */
+  overflow-y: auto;
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────────────────── */
+
+.shell__sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--nav-bg);
+  border-right: 1px solid var(--nav-border);
+  color: var(--nav-text);
+}
+
+.shell__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-5) var(--sp-4);
+  border-bottom: 1px solid var(--nav-border);
+  flex: 0 0 auto;
+}
+
+.shell__brand-mark {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.shell__brand-logo {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  flex: 0 0 auto;
+}
+
+.shell__brand-text { min-width: 0; }
+
+.shell__brand-name {
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-bold);
+  color: var(--nav-text-hi);
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  /* Unit names are user-supplied and can be long; two lines then ellipsis
+   * rather than shoving the sidebar wider. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.shell__brand-code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-medium);
+  color: var(--nav-text);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-top: 2px;
+  opacity: 0.85;
+}
+
+/* ── Nav ──────────────────────────────────────────────────────────────────── */
+
+.shell__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--sp-3) var(--sp-2);
+  margin: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.shell__nav-link {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  min-height: 44px;               /* HIG touch target */
+  padding: var(--sp-2) var(--sp-3);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--nav-text);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  letter-spacing: 0;
+  text-align: left;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.shell__nav-link:hover {
+  background: var(--nav-bg-hi);
+  color: var(--nav-text-hi);
+}
+
+.shell__nav-link.is-active {
+  background: var(--nav-active-bg);
+  color: #FFFFFF;
+  font-weight: var(--fw-semibold);
+  border-color: transparent;
+}
+
+/* Nav icons are SVG masks tinted by currentColor, so they follow hover and
+ * active states and need no second asset per theme. Inline data URIs keep the
+ * build single-file and make no network request — this product ships to
+ * air-gapped environments. */
+.shell__nav-link::before {
+  content: '';
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  background-color: currentColor;
+  -webkit-mask: var(--nav-icon) center / 20px 20px no-repeat;
+          mask: var(--nav-icon) center / 20px 20px no-repeat;
+  opacity: 0.9;
+}
+
+.shell__nav-link[data-page="dashboard"] { --nav-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 10.5 12 3l9 7.5'/%3E%3Cpath d='M5 9.5V20h5v-6h4v6h5V9.5'/%3E%3C/svg%3E"); }
+.shell__nav-link[data-page="inventory"] { --nav-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 8.5 12 3.5 3 8.5l9 5 9-5Z'/%3E%3Cpath d='M3 8.5v7l9 5 9-5v-7'/%3E%3Cpath d='M12 13.5v7'/%3E%3C/svg%3E"); }
+.shell__nav-link[data-page="loans"] { --nav-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='5' y='4' width='14' height='17' rx='2'/%3E%3Cpath d='M9 3h6v3H9z'/%3E%3Cpath d='M9 11h6M9 15h4'/%3E%3C/svg%3E"); }
+.shell__nav-link[data-page="staff"] { --nav-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='9' cy='8' r='3.2'/%3E%3Cpath d='M3 20a6 6 0 0 1 12 0'/%3E%3Cpath d='M16 5.6a3.2 3.2 0 0 1 0 5.8'/%3E%3Cpath d='M17.5 14.5A6 6 0 0 1 21 20'/%3E%3C/svg%3E"); }
+.shell__nav-link[data-page="stocktake"] { --nav-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 4h6v3H9z'/%3E%3Crect x='5' y='4' width='14' height='17' rx='2'/%3E%3Cpath d='m8.5 13 2 2 4-4'/%3E%3C/svg%3E"); }
+.shell__nav-link[data-page="orders"] { --nav-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 5h2l2.2 10.2a2 2 0 0 0 2 1.6h7.2a2 2 0 0 0 2-1.5L20 8H6'/%3E%3Ccircle cx='10' cy='20' r='1.3'/%3E%3Ccircle cx='17' cy='20' r='1.3'/%3E%3C/svg%3E"); }
+.shell__nav-link[data-page="reports"] { --nav-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 20V4'/%3E%3Cpath d='M4 20h16'/%3E%3Cpath d='M8 20v-6M12.5 20V8M17 20v-9'/%3E%3C/svg%3E"); }
+.shell__nav-link[data-page="audit"] { --nav-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6'/%3E%3Cpath d='m15 15 5 5'/%3E%3C/svg%3E"); }
+.shell__nav-link[data-page="users"] { --nav-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='8' r='3.4'/%3E%3Cpath d='M5 20a7 7 0 0 1 14 0'/%3E%3C/svg%3E"); }
+.shell__nav-link[data-page="settings"] { --nav-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='3.2'/%3E%3Cpath d='M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1Z'/%3E%3C/svg%3E"); }
+.shell__nav-link[data-page="reference"] { --nav-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5z'/%3E%3Cpath d='M5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3'/%3E%3C/svg%3E"); }
+.shell__nav-link[data-page="help"] { --nav-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='8.5'/%3E%3Cpath d='M9.8 9.3a2.3 2.3 0 1 1 3 2.2c-.6.2-.9.7-.9 1.3v.5'/%3E%3Cpath d='M12 16.6h.01'/%3E%3C/svg%3E"); }
+
+/* Overdue-loans count riding on the Loans item. */
+.shell__nav-badge {
+  margin-left: auto;
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--danger);
+  color: #FFFFFF;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-bold);
+  line-height: 20px;
+  text-align: center;
+}
+
+/* ── Sidebar footer: sync + account ───────────────────────────────────────── */
+
+.shell__nav-foot {
+  flex: 0 0 auto;
+  padding: var(--sp-3);
+  border-top: 1px solid var(--nav-border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.shell__nav-account {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.shell__nav-avatar {
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-pill);
+  background: var(--nav-active-bg);
+  color: #FFFFFF;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.02em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shell__nav-user {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.shell__nav-username {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  color: var(--nav-text-hi);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell__nav-userrole {
+  font-size: var(--fs-micro);
+  color: var(--nav-text);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.85;
+}
+
+.shell__nav-signout {
+  width: 100%;
+  min-height: 40px;
+  background: transparent;
+  border: 1px solid var(--nav-border);
+  border-radius: var(--radius-sm);
+  color: var(--nav-text);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  transition: border-color 120ms ease, color 120ms ease, background-color 120ms ease;
+}
+
+.shell__nav-signout:hover {
+  background: var(--nav-bg-hi);
+  border-color: var(--danger);
+  color: #FFFFFF;
+}
+
+/* Sync indicator sits in the sidebar foot, on navy. */
+.shell__sync {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-micro);
+  color: var(--nav-text);
+  padding: 0 var(--sp-1);
+  letter-spacing: 0.02em;
+}
+
+.shell__sync:hover { color: var(--nav-text-hi); }
+.shell__sync--signed-in     { color: var(--good); }
+.shell__sync--busy          { color: var(--info); }
+.shell__sync--error         { color: var(--danger); }
+.shell__sync--unconfigured,
+.shell__sync--not-signed-in { color: var(--nav-text); opacity: 0.7; }
+
+/* ── Topbar ───────────────────────────────────────────────────────────────── */
+
+.shell__topbar {
+  flex: 0 0 auto;
+  min-height: var(--topbar-h);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-6);
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.shell__unit {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
+  margin-right: auto;
+}
+
+.shell__page-name {
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell__unit-code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.shell__topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex: 0 0 auto;
+}
+
+.shell__help {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-input-hi);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.shell__help:hover {
+  background: var(--brand-weak);
+  color: var(--brand);
+  border-color: var(--brand);
+}
+
+.shell__session {
+  text-align: right;
+  margin-right: 0;
+  min-width: 0;
+}
+
+.shell__session-name {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.shell__session-role {
+  font-size: var(--fs-micro);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 1px;
+}
+
+.shell__logout {
+  min-height: 36px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+}
+
+.shell__logout:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: var(--danger-weak);
+}
+
+/* ── Hamburger + scrim (mobile drawer) ────────────────────────────────────── */
+
+.shell__hamburger {
+  display: none;                  /* desktop: sidebar is always present */
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.shell__hamburger span {
+  display: block;
+  width: 18px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--text-primary);
+  transition: transform 160ms ease, opacity 160ms ease;
+}
+
+.shell__hamburger[aria-expanded="true"] span:nth-child(1) { transform: translateY(6px) rotate(45deg); }
+.shell__hamburger[aria-expanded="true"] span:nth-child(2) { opacity: 0; }
+.shell__hamburger[aria-expanded="true"] span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
+
+.shell__scrim {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(16, 24, 40, 0.5);
+  z-index: 40;
+}
+
+.shell__main {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--sp-6);
+  display: block;
+}
+
+.shell__loading {
+  padding: var(--sp-12) var(--sp-6);
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+/* =============================================================================
+ * PRIMITIVES — buttons
+ * =============================================================================
+ * One button scale for the whole app. Sizes are driven by the touch target,
+ * not by whatever padding a given screen happened to use. */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  min-height: 40px;
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  line-height: 1.2;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-primary);
+  white-space: nowrap;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Solid fills carry white text. The generic colour mapping applied across this
+ * stylesheet treats a status colour as a tint; on a solid fill the readable
+ * pairing is the --*-on token, and for the brand blue that is white. */
+.btn--primary {
+  background: var(--brand);
+  color: var(--brand-on);
+  border-color: var(--brand);
+  font-weight: var(--fw-semibold);
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: var(--brand-hi);
+  border-color: var(--brand-hi);
+}
+
+.btn--danger {
+  background: var(--danger-solid);
+  color: var(--danger-solid-on);
+  border-color: var(--danger-solid);
+  font-weight: var(--fw-semibold);
+}
+
+.btn--danger:hover:not(:disabled) {
+  /* The original rule repeated the base colour, so the button looked inert on
+   * hover. Darkening gives the press some feedback. */
+  filter: brightness(0.92);
+}
+
+.btn--ghost {
+  border-color: var(--border);
+  color: var(--text-muted);
+  background: var(--bg-panel);
+}
+
+.btn--ghost:hover:not(:disabled) {
+  background: var(--bg-input-hi);
+  color: var(--text-primary);
+  border-color: var(--border-hi);
+}
+
+.btn--outline {
+  background: transparent;
+  border-color: var(--brand);
+  color: var(--brand);
+  font-weight: var(--fw-medium);
+}
+
+.btn--outline:hover:not(:disabled) {
+  background: var(--brand-weak);
+}
+
+.btn--danger-ghost {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--danger);
+}
+
+.btn--danger-ghost:hover:not(:disabled) {
+  background: var(--danger-weak);
+  border-color: var(--danger);
+}
+
+.btn--sm {
+  min-height: 32px;
+  padding: var(--sp-1) var(--sp-3);
+  font-size: var(--fs-xs);
+}
+
+.btn--xs {
+  min-height: 26px;
+  padding: 2px var(--sp-2);
+  font-size: var(--fs-micro);
+  border-radius: var(--radius-sm);
+}
+
+/* =============================================================================
+ * RETROFIT LAYER
+ * =============================================================================
+ * Everything below is wrapped in :where(), which contributes zero specificity.
+ * That is deliberate and load-bearing: these rules supply a default to the
+ * hundreds of class names the UI renders but never styled, while losing to any
+ * existing rule that already styles a component properly. The retrofit can
+ * fill gaps; it cannot silently change something that already worked.
+ *
+ * Selectors match on the shared BEM element vocabulary (__section, __table,
+ * __badge, __row, __title, __empty …) which the codebase already uses
+ * consistently across blocks, so one rule serves every page.
+ *
+ * The :not([class*="__x-"]) guards stop an element selector swallowing its own
+ * children — __section must not also match __section-title.
+ * ============================================================================= */
+
+/* ── Page heading ─────────────────────────────────────────────────────────── */
+
+:where(.shell__main [class$="__header"], .shell__main [class*="__header "]) {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-5);
+}
+
+:where(.shell__main h1, .shell__main [class*="__title"]:not([class*="__title-"])) {
+  font-size: var(--fs-h1);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+  letter-spacing: -0.015em;
+  margin: 0;
+  line-height: 1.25;
+}
+
+:where(.shell__main h2, .shell__main [class*="__section-title"]) {
+  font-size: var(--fs-h2);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  margin: 0 0 var(--sp-3);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+:where(.shell__main h3) {
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  margin: 0 0 var(--sp-2);
+}
+
+:where(.shell__main [class*="__meta"], .shell__main [class*="__sub"]:not([class*="__subhead"])) {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+:where(.shell__main [class*="__hint"], .shell__main [class*="__note"]) {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* Uppercase eyebrow labels. */
+:where(.shell__main [class*="__subhead"], .shell__main [class*="__eyebrow"]) {
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin: 0 0 var(--sp-2);
+}
+
+/* ── Card surfaces ────────────────────────────────────────────────────────── */
+
+:where(.shell__main
+        [class*="__section"]:not([class*="__section-"]):not([class*="__sections"]),
+       .shell__main [class*="__card"]:not([class*="__card-"]),
+       .shell__main [class*="__panel"]:not([class*="__panel-"]),
+       .shell__main [class*="__block"]:not([class*="__block-"])) {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: var(--sp-5);
+  margin-bottom: var(--sp-5);
+}
+
+/* ── Tables ───────────────────────────────────────────────────────────────── */
+
+/* Wide tables scroll inside their own container. This is what keeps the page
+ * itself from scrolling sideways on a phone. */
+:where(.shell__main [class*="__table-wrap"], .shell__main .table-wrap) {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: var(--radius-md);
+}
+
+:where(.shell__main table) {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+
+:where(.shell__main thead th) {
+  text-align: left;
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+  padding: var(--sp-3) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+:where(.shell__main tbody td) {
+  padding: var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
+  vertical-align: middle;
+}
+
+:where(.shell__main tbody tr:last-child td) { border-bottom: none; }
+
+:where(.shell__main tbody tr:hover td) { background: var(--bg-subtle); }
+
+/* Identifiers, quantities, dates and refs are compared character by character,
+ * so they are set in mono with tabular figures. */
+:where(.shell__main [class*="__ref"],
+       .shell__main [class*="__qty"],
+       .shell__main [class*="__serial"],
+       .shell__main [class*="__nsn"],
+       .shell__main [class*="__id"]:not([class*="__ident"]),
+       .shell__main [class*="__ts"],
+       .shell__main [class*="__date"]:not([class*="__date-"]),
+       .shell__main [class*="__num"]) {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-xs);
+}
+
+/* ── Badges / pills / status chips ────────────────────────────────────────── */
+
+:where(.shell__main [class*="__badge"]:not([class*="__badge-"]),
+       .shell__main [class*="__pill"]:not([class*="__pill-"]),
+       .shell__main [class*="__status"]:not([class*="__status-"]),
+       .shell__main .badge) {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 3px var(--sp-2);
+  border-radius: var(--radius-pill);
+  background: var(--bg-input-hi);
+  color: var(--text-primary);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  line-height: 1.5;
+}
+
+/* Shared status vocabulary. These carry real specificity because a status
+ * colour is meaning, not decoration — "Overdue" must be red on every screen. */
+.badge--success,
+[class*="__badge--ok"],
+[class*="__badge--active"],
+[class*="__badge--available"],
+[class*="--serviceable"]      { background: var(--good-weak);   color: var(--good-ink); }
+
+[class*="__badge--warn"],
+[class*="__badge--draft"],
+[class*="__badge--due"]       { background: var(--warn-weak);   color: var(--warn-ink); }
+
+[class*="__badge--overdue"],
+[class*="__badge--error"],
+[class*="__badge--invalid"]   { background: var(--danger-weak); color: var(--danger-ink); }
+
+[class*="__badge--info"],
+[class*="__badge--new"]       { background: var(--info-weak);   color: var(--info-ink); }
+
+.badge--neutral,
+[class*="__badge--none"],
+[class*="__badge--returned"]  { background: var(--bg-input-hi); color: var(--text-primary); }
+
+/* ── Forms ────────────────────────────────────────────────────────────────── */
+
+:where(.shell__main input:not([type="checkbox"]):not([type="radio"]),
+       .shell__main select,
+       .shell__main textarea) {
+  width: 100%;
+  min-height: 40px;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-input);
+  border: 1px solid var(--border-hi);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+:where(.shell__main input:hover, .shell__main select:hover) { border-color: var(--brand); }
+
+.shell__main input:focus,
+.shell__main select:focus,
+.shell__main textarea:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-weak);
+}
+
+:where(.shell__main label, .shell__main [class*="__label"]) {
+  display: block;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+  margin-bottom: var(--sp-1);
+}
+
+:where(.shell__main [class*="__field"]) { margin-bottom: var(--sp-4); }
+
+/* Toolbars: search + filters + actions in a row that wraps rather than
+ * overflowing. */
+:where(.shell__main [class*="__toolbar"],
+       .shell__main [class*="__filters"],
+       .shell__main [class*="__actions"]:not([class*="__actions-"])) {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+/* A search box should not stretch across a 1400px monitor. */
+:where(.shell__main [class*="__search"]:not([class*="__search-"])) {
+  max-width: 360px;
+  flex: 1 1 220px;
+}
+
+/* ── Tabs ─────────────────────────────────────────────────────────────────── */
+
+:where(.shell__main [class*="__tabs"]) {
+  display: flex;
+  gap: var(--sp-1);
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--sp-4);
+}
+
+:where(.shell__main [class*="__tab"]:not([class*="__tabs"]):not([class*="__table"])) {
+  min-height: 40px;
+  padding: var(--sp-2) var(--sp-4);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+[class*="__tab--active"],
+[class*="__tab"].is-active {
+  color: var(--brand);
+  border-bottom-color: var(--brand);
+  font-weight: var(--fw-semibold);
+}
+
+/* ── Empty states ─────────────────────────────────────────────────────────── */
+
+:where(.shell__main [class*="__empty"]:not([class*="__empty-"])) {
+  padding: var(--sp-10) var(--sp-6);
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  background: var(--bg-panel);
+  border: 1px dashed var(--border-hi);
+  border-radius: var(--radius-md);
+}
+
+:where(.shell__main [class*="__empty-hint"]) {
+  display: block;
+  margin-top: var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+/* ── Links ────────────────────────────────────────────────────────────────── */
+
+:where(.shell__main a, .shell__main [class*="__link"]) {
+  color: var(--brand);
+  text-decoration: none;
+  font-weight: var(--fw-medium);
+}
+
+:where(.shell__main a:hover, .shell__main [class*="__link"]:hover) {
+  text-decoration: underline;
+}
+
+/* ── Row status tints ─────────────────────────────────────────────────────── */
+
+[class*="__row--overdue"] td,
+[class*="__row--broken"] td,
+[class*="__row--invalid"] td { background: var(--danger-weak); }
+
+[class*="__row--low-stock"] td,
+[class*="__row--zero-stock"] td { background: var(--warn-weak); }
+
+[class*="__row--selected"] td { background: var(--brand-weak); }
+
+[class*="__row--returned"] td,
+[class*="__row--inactive"] td,
+[class*="__row--discharged"] td { color: var(--text-muted); }
+
+/* =============================================================================
+ * DASHBOARD
+ * =============================================================================
+ * The landing screen. It previously had no CSS whatsoever — 49 class names,
+ * zero rules — so it rendered as unstyled browser defaults: a stack of bare
+ * headings, naked tables and default grey buttons. This is the screen the
+ * "disjointed" complaint was mostly about. */
+
+.dash { max-width: var(--content-max); }
+
+.dash__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-6);
+}
+
+.dash__title {
+  font-size: var(--fs-display);
+  font-weight: var(--fw-bold);
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  margin: 0;
+  line-height: 1.15;
+}
+
+.dash__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.dash__meta strong { color: var(--text-primary); font-weight: var(--fw-semibold); }
+
+.dash__refresh {
+  min-height: 32px;
+  width: 32px;
+  padding: 0;
+  font-size: var(--fs-h3);
+  line-height: 1;
+}
+
+.dash__loading {
+  padding: var(--sp-12);
+  text-align: center;
+  color: var(--text-muted);
+}
+
+/* ── Stat tiles ───────────────────────────────────────────────────────────── */
+
+.dash__tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-6);
+}
+
+.dash__tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-5);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+  transition: box-shadow 140ms ease, transform 140ms ease;
+}
+
+.dash__tile:hover {
+  box-shadow: var(--shadow-raised);
+  transform: translateY(-1px);
+}
+
+/* A 3px status rail rather than a full colour wash — the number stays the
+ * loudest thing in the tile, which is the point of a tile. */
+.dash__tile::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--border-hi);
+}
+
+.dash__tile--active::before { background: var(--info); }
+.dash__tile--warn::before   { background: var(--warn); }
+.dash__tile--danger::before { background: var(--danger); }
+
+.dash__tile-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-display);
+  font-weight: var(--fw-bold);
+  line-height: 1.1;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
+.dash__tile--active .dash__tile-num { color: var(--info); }
+.dash__tile--warn   .dash__tile-num { color: var(--warn-ink); }
+.dash__tile--danger .dash__tile-num { color: var(--danger); }
+
+.dash__tile-lbl {
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+/* ── Sections ─────────────────────────────────────────────────────────────── */
+
+.dash__section {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: var(--sp-5);
+  margin-bottom: var(--sp-5);
+}
+
+.dash__section--overdue { border-color: var(--danger); }
+
+.dash__section-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-h2);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  margin: 0 0 var(--sp-4);
+}
+
+.dash__overdue-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 var(--sp-2);
+  border-radius: var(--radius-pill);
+  background: var(--danger);
+  color: #FFFFFF;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-bold);
+}
+
+.dash__link {
+  display: inline-block;
+  margin-top: var(--sp-3);
+  color: var(--brand);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  text-decoration: none;
+}
+
+.dash__link:hover { text-decoration: underline; }
+
+/* ── Overdue + activity tables ────────────────────────────────────────────── */
+
+.dash__overdue-table,
+.dash__activity {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+
+.dash__overdue-table th {
+  text-align: left;
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.dash__overdue-table td,
+.dash__activity td {
+  padding: var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.dash__overdue-table tr:last-child td,
+.dash__activity tr:last-child td { border-bottom: none; }
+
+.dash__overdue-row:hover td,
+.dash__activity-row:hover td { background: var(--bg-subtle); }
+
+.dash__overdue-ref,
+.dash__overdue-qty,
+.dash__overdue-date,
+.dash__activity-ts {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.dash__overdue-qty { text-align: right; }
+
+.dash__overdue-days {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  color: var(--danger);
+  white-space: nowrap;
+}
+
+.dash__activity-badge {
+  display: inline-block;
+  padding: 2px var(--sp-2);
+  border-radius: var(--radius-pill);
+  background: var(--brand-weak);
+  color: var(--brand-ink);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+}
+
+.dash__activity-user {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.dash__activity-desc {
+  font-size: var(--fs-xs);
+  color: var(--text-primary);
+}
+
+/* ── Stocktake status strip ───────────────────────────────────────────────── */
+
+.dash__stkstatus {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.dash__stkstatus--draft {
+  background: var(--warn-weak);
+  border-color: var(--warn);
+}
+
+.dash__stkstatus-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px var(--sp-3);
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.dash__stkstatus-badge--draft { background: var(--warn);   color: var(--warn-on); }
+.dash__stkstatus-badge--ok    { background: var(--good);   color: var(--good-on); }
+.dash__stkstatus-badge--none  { background: var(--bg-input-hi); color: var(--text-primary); }
+
+.dash__stkstatus-text {
+  font-size: var(--fs-sm);
+  color: var(--text-primary);
+}
+
+/* ── Quick actions ────────────────────────────────────────────────────────── */
+
+.dash__actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--sp-3);
+}
+
+.dash__action-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 52px;
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-align: left;
+  transition: border-color 120ms ease, background-color 120ms ease,
+              box-shadow 120ms ease;
+}
+
+.dash__action-btn:hover {
+  border-color: var(--brand);
+  background: var(--brand-weak);
+  color: var(--brand);
+  box-shadow: var(--shadow-card);
+}
+
+/* ── First-run setup checklist ────────────────────────────────────────────── */
+
+.dash__setup-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--brand);
+  border-left: 3px solid var(--brand);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: var(--sp-5);
+  margin-bottom: var(--sp-6);
+}
+
+.dash__setup-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+
+.dash__setup-icon { font-size: var(--fs-h1); line-height: 1; }
+
+.dash__setup-title {
+  display: block;
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.dash__setup-sub {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.dash__setup-dismiss { margin-left: auto; flex: 0 0 auto; }
+
+.dash__setup-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.dash__setup-step {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.dash__setup-step--done {
+  background: var(--good-weak);
+  border-color: var(--good);
+}
+
+.dash__setup-check {
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-input-hi);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dash__setup-step--done .dash__setup-check {
+  background: var(--good);
+  color: #FFFFFF;
+}
+
+.dash__setup-step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.dash__setup-step-body strong {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+}
+
+.dash__setup-hint { font-size: var(--fs-xs); color: var(--text-muted); }
+
+.dash__setup-go { flex: 0 0 auto; }
+
+/* =============================================================================
+ * RESPONSIVE
+ * =============================================================================
+ * Before this section the stylesheet carried exactly one media query in 2,737
+ * lines. On a 390px phone the shell forced the document to roughly 1,490px
+ * wide — the app was scrolled sideways before it was touched.
+ *
+ * Breakpoints:
+ *   ≤1200px  content padding tightens
+ *   ≤1024px  sidebar becomes an off-canvas drawer (tablet + phone)
+ *   ≤640px   single-column, denser type, tables scroll in place
+ * ============================================================================= */
+
+@media (max-width: 1200px) {
+  .shell__main   { padding: var(--sp-5); }
+  .shell__topbar { padding: var(--sp-3) var(--sp-5); }
+}
+
+/* ── Tablet and below: sidebar becomes a drawer ───────────────────────────── */
+
+@media (max-width: 1024px) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .shell__sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(280px, 85vw);
+    z-index: 50;
+    transform: translateX(-100%);
+    transition: transform 200ms ease;
+    box-shadow: none;
+  }
+
+  .shell__sidebar.is-open {
+    transform: translateX(0);
+    box-shadow: var(--shadow-modal);
+  }
+
+  .shell__scrim:not([hidden]) { display: block; }
+
+  .shell__hamburger { display: flex; }
+
+  /* Locks the page behind the open drawer. */
+  body.is-nav-open { overflow: hidden; }
+
+  /* Reduce motion preferences must win over the slide. */
+  @media (prefers-reduced-motion: reduce) {
+    .shell__sidebar { transition: none; }
+  }
+}
+
+/* ── Phone ────────────────────────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  :root {
+    --fs-display: 24px;
+    --fs-h1:      20px;
+    --fs-h2:      17px;
+  }
+
+  .shell__main {
+    padding: var(--sp-4) var(--sp-3);
+  }
+
+  .shell__topbar {
+    padding: var(--sp-2) var(--sp-3);
+    gap: var(--sp-2);
+  }
+
+  /* The topbar keeps the menu button and the unit it belongs to. Identity and
+   * sign-out live in the drawer on a phone rather than being crushed into a
+   * 390px strip. */
+  .shell__session,
+  .shell__logout { display: none; }
+
+  .shell__page-name { font-size: var(--fs-sm); }
+
+  .dash__tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--sp-3);
+  }
+
+  .dash__tile { padding: var(--sp-4); }
+
+  .dash__actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  .dash__section,
+  .dash__setup-card { padding: var(--sp-4); }
+
+  :where(.shell__main [class*="__section"]:not([class*="__section-"])) {
+    padding: var(--sp-4);
+  }
+
+  /* Any table wide enough to overflow scrolls within its own box instead of
+   * dragging the whole page sideways. */
+  .shell__main table {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    white-space: nowrap;
+  }
+
+  /* Toolbars stack rather than squeeze. */
+  :where(.shell__main [class*="__toolbar"], .shell__main [class*="__filters"]) {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  :where(.shell__main [class*="__search"]:not([class*="__search-"])) {
+    max-width: none;
+  }
+
+  /* Buttons in a wrapped action row get room to be tapped. */
+  :where(.shell__main [class*="__actions"]:not([class*="__actions-"]) .btn) {
+    flex: 1 1 auto;
+  }
+}
+
+@media (max-width: 400px) {
+  .dash__tiles,
+  .dash__actions { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ── Print ────────────────────────────────────────────────────────────────── */
+
+@media print {
+  .shell { display: block; }
+  .shell__sidebar,
+  .shell__topbar,
+  .shell__scrim,
+  .shell__banner { display: none !important; }
+  .shell__main { padding: 0; }
+  .dash__section,
+  .dash__tile { box-shadow: none; break-inside: avoid; }
+}
+
+/* =============================================================================
+ * TOUCH TARGETS
+ * =============================================================================
+ * Small utility controls (refresh, dismiss, help, "Go →") sit at 32–40px,
+ * which is comfortable with a mouse and fiddly with a thumb. Both conditions
+ * below raise them to the 44px HIG minimum:
+ *
+ *   pointer: coarse   the correct signal — a touch device of any size,
+ *                     including a large tablet or a touchscreen laptop
+ *   max-width: 640px  a phone-sized viewport, whatever it reports
+ *
+ * Desktop pointer users keep the denser control sizes. */
+
+@media (pointer: coarse) {
+  .btn,
+  .btn--sm,
+  .btn--xs,
+  .shell__help,
+  .shell__hamburger,
+  .shell__nav-signout,
+  .shell__logout { min-height: 44px; }
+
+  .shell__help,
+  .dash__refresh { width: 44px; min-height: 44px; }
+
+  .shell__main a,
+  .dash__link {
+    display: inline-block;
+    padding-block: var(--sp-2);
+  }
+}
+
+@media (max-width: 640px) {
+  .btn--sm,
+  .btn--xs,
+  .dash__setup-go,
+  .dash__setup-dismiss { min-height: 44px; }
+
+  .shell__help,
+  .shell__hamburger,
+  .dash__refresh { width: 44px; min-height: 44px; flex-basis: 44px; }
+
+  .dash__link { display: inline-block; padding-block: var(--sp-2); }
+}
+
+/* =============================================================================
+ * SHELL BANNERS
+ * =============================================================================
+ * Full-width notices above the page: default PIN in use, licence state, the
+ * sandbox marker. */
+
+.shell__banner {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-6);
+  font-size: var(--fs-sm);
+  border-bottom: 1px solid var(--border);
+}
+
+/* On a pale tint the mid-weight status colour is too light to read as body
+ * text — the --*-on tokens exist for exactly this pairing. */
+.shell__banner--warn {
+  background: var(--warn-weak);
+  color: var(--warn-ink);
+  border-bottom-color: var(--warn);
+}
+
+.shell__banner--error {
+  background: var(--danger-weak);
+  color: var(--danger-ink);
+  border-bottom-color: var(--danger);
+}
+
+.shell__banner strong { font-weight: var(--fw-semibold); }
+
+.shell__banner-action {
+  margin-left: auto;
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--warn);
+  color: var(--warn-on);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+}
+
+.shell__banner-action:hover { filter: brightness(0.94); }
+
+@media (max-width: 640px) {
+  /* Three columns in a 390px strip forces every one of them to wrap. Stacking
+   * gives the message a full line and the action a full-width tap target. */
+  .shell__banner {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--sp-2);
+    padding: var(--sp-3);
+  }
+
+  .shell__banner-action {
+    margin-left: 0;
+    width: 100%;
+    min-height: 44px;
+  }
+}
+
+/* =============================================================================
+ * TOOLBAR CONTROLS
+ * =============================================================================
+ * Form inputs default to width:100%, which is right inside a form column and
+ * wrong for a filter sitting in a toolbar row — there it wraps onto its own
+ * line and stretches the full width of the page. Inline controls size to their
+ * content instead, and only go full-width once the toolbar stacks on mobile. */
+
+.shell__main [class*="__toolbar"] select,
+.shell__main [class*="__filters"] select,
+.shell__main [class*="__toolbar"] input:not([type="checkbox"]):not([type="radio"]),
+.shell__main [class*="__filters"] input:not([type="checkbox"]):not([type="radio"]) {
+  width: auto;
+  max-width: 260px;
+}
+
+/* The search field is the one control that should take up the slack. */
+.shell__main [class*="__filters"] [class*="__search"] {
+  flex: 1 1 220px;
+  width: auto;
+  max-width: 380px;
+}
+
+@media (max-width: 640px) {
+  .shell__main [class*="__toolbar"] select,
+  .shell__main [class*="__filters"] select,
+  .shell__main [class*="__toolbar"] input:not([type="checkbox"]):not([type="radio"]),
+  .shell__main [class*="__filters"] input:not([type="checkbox"]):not([type="radio"]),
+  .shell__main [class*="__filters"] [class*="__search"] {
+    width: 100%;
+    max-width: none;
+  }
+}
+
+/* =============================================================================
+ * INLINE NOTICES
+ * =============================================================================
+ * An advisory that sits inside a page rather than across the top of the shell.
+ * Rendered as an icon column beside a text column so the icon stays beside the
+ * first line instead of stranded on a line of its own. */
+
+.inv__stocktake-warn,
+[class*="__notice"],
+[class*="__advisory"] {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--sp-3);
+  align-items: start;
+  padding: var(--sp-3) var(--sp-4);
+  margin-bottom: var(--sp-4);
+  background: var(--warn-weak);
+  border: 1px solid var(--warn);
+  border-left-width: 3px;
+  border-radius: var(--radius-sm);
+  color: var(--warn-ink);
+  font-size: var(--fs-xs);
+  line-height: 1.55;
+}
+
+.inv__stocktake-warn-icon {
+  font-size: var(--fs-h3);
+  line-height: 1.3;
+}
+
+.inv__stocktake-warn-body strong {
+  font-weight: var(--fw-semibold);
+  color: var(--warn-ink);
+}
+
+.inv__stocktake-warn-link {
+  display: inline-block;
+  margin-left: var(--sp-1);
+  color: var(--brand-ink);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+}
+
+/* =============================================================================
+ * LOANS — batch issue line
+ * =============================================================================
+ * A line is three stacked rows: column labels, the fields, then the per-line
+ * options. The original .loan__line rule laid its children out as a horizontal
+ * flex row, which was right when the inputs were direct children and wrong
+ * once the label/field/options wrappers were introduced — the labels ended up
+ * beside the fields instead of above them. None of the wrapper classes had any
+ * CSS, so nothing corrected it. */
+
+.loan__line {
+  display: flex;
+  flex-direction: column;
+  /* The original rule set align-items:flex-end for a horizontal row. Once the
+   * direction became column that same declaration pinned every row to the
+   * right-hand edge, so it has to be reset explicitly, not just left unset. */
+  align-items: stretch;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+}
+
+.loan__line--nonstock { border-left: 3px solid var(--info); }
+.loan__line--existing { border-left: 3px solid var(--warn); }
+
+/* Labels mirror the field row's column widths so each sits over its input. */
+.loan__line-labels {
+  display: flex;
+  gap: var(--sp-2);
+  margin: 0;
+}
+
+.loan__line-label-main,
+.loan__line-label-qty {
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.loan__line-label-main { flex: 1 1 auto; min-width: 0; }
+.loan__line-label-qty  { flex: 0 0 92px; }
+
+.loan__line-row {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: flex-start;
+}
+
+.loan__line-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.loan__qty-field {
+  flex: 0 0 92px;
+  margin: 0;
+}
+
+.loan__qty-field input { text-align: right; }
+
+.loan__line-remove,
+.loan__line-spacer {
+  flex: 0 0 40px;
+  width: 40px;
+}
+
+.loan__line-remove {
+  min-height: 40px;
+  padding: 0;
+  font-size: var(--fs-h3);
+  line-height: 1;
+  align-self: flex-start;
+  margin-bottom: 0;
+}
+
+.loan__line-opts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-4);
+}
+
+/* Checkbox options read as one unit: box, then its label, then its hint. */
+.loan__line-nonstock-lbl,
+.loan__line-existing-lbl {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-regular);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.loan__line-nonstock-lbl input,
+.loan__line-existing-lbl input {
+  width: auto;
+  min-height: 0;
+  margin: 0;
+  accent-color: var(--brand);
+}
+
+.loan__line-nonstock-hint,
+.loan__line-existing-hint {
+  flex: 1 1 100%;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.loan__line-nsn-field { display: block; margin: 0; flex: 1 1 260px; }
+
+.loan__stock-badge {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+@media (max-width: 640px) {
+  /* Qty drops under the item field rather than being squeezed to a sliver. */
+  .loan__line-labels { display: none; }
+
+  .loan__line-row { flex-wrap: wrap; }
+
+  .loan__line-main { flex: 1 1 100%; }
+
+  .loan__qty-field { flex: 1 1 auto; }
+
+  .loan__qty-field input { text-align: left; }
+}
+
+/* Touch sizing, continued. The base .btn is 40px and the tabs 41–43px, which
+ * is fine under a mouse and short of the 44px HIG minimum under a thumb. Raise
+ * every control on a phone-sized viewport, and on any touch device.
+ *
+ * Links sitting inline inside a sentence are deliberately excluded: padding
+ * them to 44px would break the line box of the prose they belong to. WCAG
+ * 2.5.8 exempts inline targets for exactly this reason. Standalone links that
+ * act as buttons ("View all →") are included. */
+@media (max-width: 640px), (pointer: coarse) {
+  .shell__main .btn,
+  .shell__main [class*="__tab"]:not([class*="__tabs"]):not([class*="__table"]),
+  .shell__main [class*="__action-btn"] { min-height: 44px; }
+
+  .dash__link,
+  .dash__link--more {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
 }
