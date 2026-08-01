@@ -38,10 +38,11 @@ import * as PII from './pii.js';
 import { requireEdit } from './license.js';
 import { inferPersonType } from './ranks.js';
 import { tokenFromInstallId } from './device.js';
+import * as Ledger from './ledger.js';
 
 // V2L sandbox: use a separate DB so learning data never touches production IDB.
 const DEFAULT_DB_NAME = (typeof __V2L_DB_NAME__ !== 'undefined') ? __V2L_DB_NAME__ : 'qstore';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 let _dbName = DEFAULT_DB_NAME;
 
@@ -60,6 +61,7 @@ export const STORES = Object.freeze({
   KITS:          'kits',
   SUPPLY_ORDERS: 'supplyOrders',
   STAFF:         'staff',
+  MOVEMENTS:     'movements',
 });
 
 let _db = null;
@@ -110,6 +112,7 @@ export async function init({ dbName } = {}) {
     _auditKey = await _loadAuditKey();
     await _loadOrGenPiiKey();
     await _markRefNamespaceStart();
+    await _seedOpeningBalances();
     return _db;
   })();
   try {
@@ -187,6 +190,17 @@ function _runSchemaMigrations(db, oldVersion) {
     const staff = db.createObjectStore(STORES.STAFF, { keyPath: 'svcNo' });
     staff.createIndex('surname',    'surname',    { unique: false });
     staff.createIndex('personType', 'personType', { unique: false });
+  }
+  if (oldVersion < 5) {
+    // Stock movement ledger. Stock figures are derived from this; the numbers
+    // on the item records are a cache of the derivation, not the truth. See
+    // src/ledger.js for why a stored count cannot be reconciled between two
+    // devices and a movement can.
+    const mv = db.createObjectStore(STORES.MOVEMENTS, { keyPath: 'id' });
+    mv.createIndex('itemId', 'itemId', { unique: false });
+    mv.createIndex('ts',     'ts',     { unique: false });
+    mv.createIndex('device', 'device', { unique: false });
+    mv.createIndex('ref',    'ref',    { unique: false });
   }
   // Future schema upgrades go here. Bump DB_VERSION above and add a new
   // `if (oldVersion < N)` block. NEVER remove old blocks — users on older
@@ -266,6 +280,185 @@ async function _stamp(record) {
     updatedAt: new Date().toISOString(),
     updatedBy: await _deviceToken(),
   };
+}
+
+// -----------------------------------------------------------------------------
+// Stock movements
+// -----------------------------------------------------------------------------
+// Every change to a stock field writes a movement, and the movement is written
+// in the SAME IndexedDB transaction as the item itself. Splitting them would
+// let a crash between the two leave the ledger disagreeing with the cache,
+// which is the exact fault the ledger exists to make impossible.
+//
+// The movement is computed by diffing the stored row against the incoming one
+// rather than from what the caller says it is doing. That is deliberate: it
+// means no call site can forget to write to the ledger, because it does not
+// write to the ledger — the choke point does, from what actually changed.
+// There are eight code paths that move stock across five files, and a design
+// that relied on each of them remembering would be wrong the first time
+// somebody added a ninth.
+
+/**
+ * Write an item and record whatever stock movement it represents.
+ *
+ * @param {IDBTransaction} tx  must already include ITEMS and MOVEMENTS
+ * @param {object} after       the item to store
+ * @param {object} ctx         {kind, mode, ref, user, reason}
+ * @param {string} device      this install's token, resolved before the tx
+ */
+async function _putItemWithMovement(tx, after, ctx, device) {
+  const itemsStore = tx.objectStore(STORES.ITEMS);
+  const before = (await _reqDone(itemsStore.get(after.id))) || null;
+
+  itemsStore.put(after);
+
+  const absolute = ctx?.mode === Ledger.MODE_ABSOLUTE;
+  const delta = Ledger.diffFields(before, after);
+
+  // An absolute movement is recorded even when the numbers happen to match,
+  // because "I counted them and there are 40" is a fact worth keeping even if
+  // the book already said 40. A delta of nothing is not.
+  if (!delta && !absolute) return;
+
+  const values = absolute
+    ? { onHand: after.onHand ?? null, onLoan: after.onLoan ?? null, unsvc: after.unsvc ?? null }
+    : delta;
+
+  tx.objectStore(STORES.MOVEMENTS).put({
+    id:     `MV-${device}-${_uuid()}`,
+    itemId: after.id,
+    ts:     new Date().toISOString(),
+    device,
+    kind:   ctx?.kind || Ledger.KINDS.ADJUST,
+    mode:   absolute ? Ledger.MODE_ABSOLUTE : Ledger.MODE_DELTA,
+    onHand: values.onHand ?? null,
+    onLoan: values.onLoan ?? null,
+    unsvc:  values.unsvc  ?? null,
+    ref:    ctx?.ref    || '',
+    reason: ctx?.reason || '',
+    user:   ctx?.user   || '',
+  });
+}
+
+export const movements = {
+  /** Every movement, oldest first. */
+  async list() {
+    const rows = await _all(STORES.MOVEMENTS);
+    return rows.sort(Ledger.compareMovements);
+  },
+
+  async listForItem(itemId) {
+    const tx  = _db.transaction(STORES.MOVEMENTS, 'readonly');
+    const idx = tx.objectStore(STORES.MOVEMENTS).index('itemId');
+    const rows = await _reqDone(idx.getAll(itemId));
+    return rows.sort(Ledger.compareMovements);
+  },
+
+  async count() {
+    const tx = _db.transaction(STORES.MOVEMENTS, 'readonly');
+    return _reqDone(tx.objectStore(STORES.MOVEMENTS).count());
+  },
+
+  /**
+   * Stock derived from the ledger, for one item.
+   * @returns {Promise<{onHand:number,onLoan:number,unsvc:number}>}
+   */
+  async derive(itemId) {
+    return Ledger.derive(await this.listForItem(itemId));
+  },
+
+  /**
+   * Compare the cached figures on the item records against the ledger.
+   *
+   * They must agree. A disagreement means either a write bypassed the choke
+   * point or a movement was lost, both of which surface otherwise as a quietly
+   * wrong stock figure discovered at the next stocktake.
+   */
+  async checkIntegrity() {
+    return Ledger.checkIntegrity(await _all(STORES.ITEMS), await this.list());
+  },
+
+  /** Provenance of the current ledger — devices, span, competing recounts. */
+  async summarise() {
+    return Ledger.summarise(await this.list());
+  },
+
+  /**
+   * Rebuild the cached figures on the item records from the ledger.
+   *
+   * This is what a merge will call once it has unioned two devices' movements:
+   * the union is the input, the cache is regenerated, and two concurrent issues
+   * both land because both movements are present. Also the repair path if the
+   * cache is ever found to have drifted.
+   *
+   * @returns {Promise<{updated:number, changes:Array}>}
+   */
+  async recomputeAll() {
+    const items = await _all(STORES.ITEMS);
+    const derived = Ledger.deriveAll(await this.list());
+    const changes = [];
+
+    const tx = _db.transaction(STORES.ITEMS, 'readwrite');
+    const store = tx.objectStore(STORES.ITEMS);
+    for (const item of items) {
+      const d = derived.get(item.id);
+      if (!d) continue;
+      const before = { onHand: item.onHand, onLoan: item.onLoan, unsvc: item.unsvc };
+      if (Number(before.onHand || 0) === d.onHand
+       && Number(before.onLoan || 0) === d.onLoan
+       && Number(before.unsvc  || 0) === d.unsvc) continue;
+      changes.push({ itemId: item.id, name: item.name || '', before, after: d });
+      store.put({ ...item, ...d });
+    }
+    await _txDone(tx);
+    return { updated: changes.length, changes };
+  },
+};
+
+/**
+ * Give every pre-ledger item an opening balance.
+ *
+ * Runs once, on the first boot after upgrading. Without it the ledger would
+ * derive zero for every item that existed before it, and recomputeAll() would
+ * wipe a unit's stock figures to nothing — so this is not an optimisation, it
+ * is what makes the derivation true of an existing database.
+ *
+ * The opening movement is absolute and carries the figures the item already
+ * held. It asserts "this is what the book said when the ledger started", which
+ * is the honest claim: the movements that produced those figures happened
+ * before there was anywhere to record them and cannot be reconstructed.
+ */
+async function _seedOpeningBalances() {
+  const done = await _kvGet(STORES.META, 'ledgerOpenedAt');
+  if (done) return;
+
+  const items = await _all(STORES.ITEMS);
+  const device = await _deviceToken();
+  const ts = new Date().toISOString();
+
+  if (items.length) {
+    const tx = _db.transaction(STORES.MOVEMENTS, 'readwrite');
+    const store = tx.objectStore(STORES.MOVEMENTS);
+    for (const item of items) {
+      store.put({
+        id:     `MV-${device}-${_uuid()}`,
+        itemId: item.id,
+        ts,
+        device,
+        kind:   Ledger.KINDS.OPENING,
+        mode:   Ledger.MODE_ABSOLUTE,
+        onHand: Number(item.onHand) || 0,
+        onLoan: Number(item.onLoan) || 0,
+        unsvc:  Number(item.unsvc)  || 0,
+        ref:    '',
+        reason: 'Opening balance — figures carried forward from before the movement ledger existed.',
+        user:   '',
+      });
+    }
+    await _txDone(tx);
+  }
+
+  await _kvSet(STORES.META, 'ledgerOpenedAt', ts);
 }
 
 async function _loadAuditKey() {
@@ -604,12 +797,23 @@ export const items = {
     return (await _reqDone(tx.objectStore(STORES.ITEMS).get(id))) || null;
   },
 
-  async put(item) {
+  /**
+   * Write an item.
+   *
+   * @param {object} item
+   * @param {object} [ctx]  movement context — {kind, mode, ref, user, reason}.
+   *   Omitted, a stock change is recorded as a delta of kind 'adjust', which is
+   *   what a manual edit or a CSV import is. Callers that know better say so:
+   *   a stocktake passes mode:'absolute' because a recount is a new baseline,
+   *   not a change.
+   */
+  async put(item, ctx) {
     requireEdit();
     if (!item?.id) throw new Error('Item.id required');
     const row = await _stamp(item);
-    const tx = _db.transaction(STORES.ITEMS, 'readwrite');
-    tx.objectStore(STORES.ITEMS).put(row);
+    const device = await _deviceToken();
+    const tx = _db.transaction([STORES.ITEMS, STORES.MOVEMENTS], 'readwrite');
+    await _putItemWithMovement(tx, row, ctx, device);
     await _txDone(tx);
   },
 
@@ -1309,9 +1513,14 @@ export const atomic = {
   async issue(loan, updatedItem) {
     if (!loan?.ref)        throw new Error('Loan.ref required');
     if (!updatedItem?.id)  throw new Error('Item.id required');
-    const encLoan = await PII.encryptRecord(loan, PII.PII_FIELDS_LOANS);
-    const tx = _db.transaction([STORES.ITEMS, STORES.LOANS], 'readwrite');
-    tx.objectStore(STORES.ITEMS).put(updatedItem);
+    const encLoan = await _stamp(await PII.encryptRecord(loan, PII.PII_FIELDS_LOANS));
+    const device  = await _deviceToken();
+    const tx = _db.transaction([STORES.ITEMS, STORES.LOANS, STORES.MOVEMENTS], 'readwrite');
+    await _putItemWithMovement(
+      tx, await _stamp(updatedItem),
+      { kind: Ledger.KINDS.ISSUE, ref: loan.ref, user: loan.issuedBy || '' },
+      device,
+    );
     tx.objectStore(STORES.LOANS).put(encLoan);
     await _txDone(tx);
   },
@@ -1324,9 +1533,14 @@ export const atomic = {
   async return(loan, updatedItem) {
     if (!loan?.ref)        throw new Error('Loan.ref required');
     if (!updatedItem?.id)  throw new Error('Item.id required');
-    const encLoan = await PII.encryptRecord(loan, PII.PII_FIELDS_LOANS);
-    const tx = _db.transaction([STORES.ITEMS, STORES.LOANS], 'readwrite');
-    tx.objectStore(STORES.ITEMS).put(updatedItem);
+    const encLoan = await _stamp(await PII.encryptRecord(loan, PII.PII_FIELDS_LOANS));
+    const device  = await _deviceToken();
+    const tx = _db.transaction([STORES.ITEMS, STORES.LOANS, STORES.MOVEMENTS], 'readwrite');
+    await _putItemWithMovement(
+      tx, await _stamp(updatedItem),
+      { kind: Ledger.KINDS.RETURN, ref: loan.ref, user: loan.returnedBy || '' },
+      device,
+    );
     tx.objectStore(STORES.LOANS).put(encLoan);
     await _txDone(tx);
   },
@@ -1336,16 +1550,37 @@ export const atomic = {
    * draft store in one IDB transaction.
    * @param {object[]} itemUpdates - array of updated item records (id required each)
    */
-  async stocktakeFinalise(itemUpdates) {
+  /**
+   * Finalise a stocktake.
+   *
+   * Recorded as ABSOLUTE movements, not deltas. A stocktake is a physical
+   * recount — it asserts "there are 38 of these, whatever the book said" — and
+   * replaying it as a delta would make it compose with concurrent issues from
+   * another device instead of superseding them. That distinction is the reason
+   * the ledger has two modes at all.
+   *
+   * @param {object[]} itemUpdates  items carrying the counted figures
+   * @param {object} [ctx]          {user}
+   */
+  async stocktakeFinalise(itemUpdates, ctx) {
     if (!Array.isArray(itemUpdates)) throw new Error('itemUpdates must be an array');
-    const tx = _db.transaction([STORES.ITEMS, STORES.STOCKTAKE], 'readwrite');
-    const itemsStore     = tx.objectStore(STORES.ITEMS);
-    const stocktakeStore = tx.objectStore(STORES.STOCKTAKE);
-    for (const item of itemUpdates) {
-      if (!item?.id) throw new Error('Each item update must have an id');
-      itemsStore.put(item);
+    const device = await _deviceToken();
+    const stamped = await Promise.all(itemUpdates.map(async (i) => {
+      if (!i?.id) throw new Error('Each item update must have an id');
+      return _stamp(i);
+    }));
+
+    const tx = _db.transaction(
+      [STORES.ITEMS, STORES.STOCKTAKE, STORES.MOVEMENTS], 'readwrite');
+    for (const item of stamped) {
+      await _putItemWithMovement(tx, item, {
+        kind:   Ledger.KINDS.STOCKTAKE,
+        mode:   Ledger.MODE_ABSOLUTE,
+        user:   ctx?.user || '',
+        reason: 'Physical stocktake count.',
+      }, device);
     }
-    stocktakeStore.clear();
+    tx.objectStore(STORES.STOCKTAKE).clear();
     await _txDone(tx);
   },
 };
@@ -1531,6 +1766,11 @@ export async function exportAll() {
     stocktakeCounts: await _all(STORES.STOCKTAKE),
     kits:            await _all(STORES.KITS),
     supplyOrders:    await _all(STORES.SUPPLY_ORDERS),
+    // The ledger travels with the data. A backup carrying stock figures but no
+    // movements would restore numbers that could never afterwards be
+    // reconciled against another device — which is the situation the ledger
+    // exists to end.
+    movements:       await _all(STORES.MOVEMENTS),
   };
 
   const photoRows = await _all(STORES.PHOTOS);
@@ -1618,6 +1858,7 @@ export async function importAll(snapshot) {
     STORES.META, STORES.SETTINGS, STORES.COUNTERS, STORES.ITEMS, STORES.CADETS,
     STORES.STAFF, STORES.LOANS, STORES.AUDIT, STORES.USERS, STORES.REQUESTS,
     STORES.STOCKTAKE, STORES.PHOTOS, STORES.KITS, STORES.SUPPLY_ORDERS,
+    STORES.MOVEMENTS,
   ];
   const tx = _db.transaction(stores, 'readwrite');
   const put = (name, rows) => {
@@ -1666,6 +1907,10 @@ export async function importAll(snapshot) {
   put(STORES.STOCKTAKE,     snapshot.stocktakeCounts);
   put(STORES.KITS,          snapshot.kits);
   put(STORES.SUPPLY_ORDERS, snapshot.supplyOrders);
+  // Absent from any backup written before v2.4. Such a snapshot restores its
+  // stock figures with no ledger behind them; _seedOpeningBalances gives them
+  // an opening balance on the next boot so the derivation is true of them too.
+  put(STORES.MOVEMENTS,     snapshot.movements);
 
   const photoStore = tx.objectStore(STORES.PHOTOS);
   for (const p of snapshot.photos || []) {
@@ -1701,6 +1946,16 @@ export async function importAll(snapshot) {
   // the number of records actually facing extraction and disposal. Counting the
   // snapshot would name adults as cadets in the audit entry and overstate the
   // extraction backlog by exactly the records that no longer need it.
+  // A snapshot written before v2.4 carries stock figures but no movements.
+  // Restoring it would leave the ledger empty behind a populated inventory, and
+  // the first recomputeAll() would derive zero for everything and wipe the
+  // unit's stock. Reseeding gives those figures an opening balance so the
+  // derivation is true of them, exactly as it is for an in-place upgrade.
+  if (!Array.isArray(snapshot.movements) || snapshot.movements.length === 0) {
+    await _kvSet(STORES.META, 'ledgerOpenedAt', '');
+    await _seedOpeningBalances();
+  }
+
   const legacyPersonData = {
     cadets:   (await _all(STORES.CADETS)).length,
     loans:    (snapshot.loans || []).filter((l) => l && (l.borrowerName || l.borrowerSvc)).length,
@@ -1739,6 +1994,10 @@ export async function wipe({ keepMeta = true, keepUsers = true } = {}) {
     STORES.SETTINGS, STORES.COUNTERS, STORES.ITEMS, STORES.PHOTOS,
     STORES.CADETS, STORES.STAFF, STORES.LOANS, STORES.AUDIT, STORES.REQUESTS,
     STORES.STOCKTAKE, STORES.KITS, STORES.SUPPLY_ORDERS,
+    // Cleared with the items it describes. A ledger left behind after a wipe
+    // would derive stock for items that no longer exist and, on the next
+    // recompute, resurrect them.
+    STORES.MOVEMENTS,
   ];
   if (!keepUsers) targets.push(STORES.USERS);
   if (!keepMeta)  targets.push(STORES.META);
