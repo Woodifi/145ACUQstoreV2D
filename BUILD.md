@@ -56,6 +56,61 @@ npm run watch
 Output is written to `dist/qstore.html`. Expect roughly 250–350 KB for a
 production build.
 
+## Issuing a build to a unit
+
+```
+node build.js --defence --dist --recipient="145 ACU Moranbah"
+```
+
+`--defence` compiles cloud sync out rather than switching it off, so the
+artefact contains no Microsoft Authentication Library, no Graph endpoints and no
+OneDrive paths. `--dist` refuses to run unless the working tree is on the
+default branch, has no uncommitted changes, and is in sync with the remote —
+so the build ID stamped into a delivered file always corresponds to a commit
+that exists.
+
+You get three things:
+
+| | |
+|---|---|
+| `<dist-dir>/<unit>/qstore-<unit>-<build-id>.html` | the artefact you hand over |
+| `<dist-dir>/<unit>/SHA256SUMS` | written with it, so the file can be checked |
+| `DIST_LOG.md` | one line recording what went to whom |
+
+### Where it is written
+
+`<dist-dir>` defaults to `dist/` inside the checkout. Point it elsewhere when
+the delivered copy needs to outlive the tree it was built from — builds made in
+a git worktree vanish when that worktree is cleaned up:
+
+```
+node build.js --defence --dist --recipient="..." --dist-dir=/home/you/IMSDISTRO
+```
+
+or, once per machine, in your shell profile:
+
+```
+export QSTORE_DIST_DIR=/home/you/IMSDISTRO
+```
+
+The flag wins over the environment variable. A relative path resolves against
+the checkout. `DIST_LOG.md` always stays in the repository — the log is the
+record and belongs in version control; the artefacts are bulk and do not.
+
+### Before handing the file over
+
+Check the file you are about to give someone, not the one you built:
+
+```
+cd <dist-dir>/<unit>
+sha256sum -c SHA256SUMS
+grep -c 'graph.microsoft.com\|msal\|login.microsoftonline' qstore-*.html   # expect 0
+```
+
+The second command is the no-egress claim in §6.1 of
+`docs/DEFENCE-CONTROLS-STATEMENT.md`, stated as something the recipient can
+verify for themselves rather than something they have to take on trust.
+
 ## Day-to-day development
 
 You don't need to build during development. Just run a static server in the

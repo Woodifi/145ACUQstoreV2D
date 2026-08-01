@@ -11,9 +11,20 @@
 //   node build.js           Production build, minified, no source map.
 //   node build.js --dev     Development build, not minified, inline source map.
 //   node build.js --watch   Watches sources, rebuilds on change (dev mode).
+//   node build.js --defence Defence/cadet variant — cloud sync compiled out.
+//   node build.js --dist    Distribution build for a named unit. Refuses to run
+//                           from a dirty, unpushed or non-default branch.
+//
+// Distribution options:
+//   --recipient="145 ACU Moranbah"   names the unit in the filename and log
+//   --dist-dir=/path/to/dir          where the artefact is written
+//   QSTORE_DIST_DIR=/path/to/dir     same, set once per machine
 //
 // Output:
-//   dist/qstore.html        Single-file artefact for shipping.
+//   dist/qstore.html                     Single-file artefact for shipping.
+//   <dist-dir>/<unit>/qstore-<unit>-<id>.html   --dist artefact
+//   <dist-dir>/<unit>/SHA256SUMS               written with it
+//   DIST_LOG.md                          one line per --dist build
 //
 // Notes on bundling:
 //   - format: 'iife' wraps everything in a function expression so the bundle
@@ -35,7 +46,7 @@
 
 import * as esbuild from 'esbuild';
 import { readFile, writeFile, mkdir, stat, readdir, unlink } from 'node:fs/promises';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
@@ -81,6 +92,31 @@ const DIST_DIR   = join(__dirname, 'dist');
 const HTML_OUT   = join(__dirname, 'dist/qstore.html');
 const PAGES_OUT  = join(__dirname, 'docs/index.html');   // GitHub Pages entry — never written by --dist
 const DIST_LOG   = join(__dirname, 'DIST_LOG.md');
+
+// Where --dist writes the artefact a unit actually receives.
+//
+// Defaults to dist/ inside the checkout, which is where it has always gone and
+// what anyone cloning this repository gets. It can be pointed elsewhere,
+// because the artefact and the checkout have different lifetimes: builds are
+// produced inside git worktrees that are cleaned up when the work is done, and
+// a file that has been issued to a unit should not live somewhere that
+// disappears. Set it to a directory kept outside the tree and the delivered
+// copy survives the branch it was built from.
+//
+//   --dist-dir=/path/to/dir     for one build
+//   QSTORE_DIST_DIR=/path/...   for a machine, set once in a shell profile
+//
+// The flag wins over the environment. A relative path resolves against the
+// checkout, so --dist-dir=out behaves the way you would expect.
+//
+// DIST_LOG.md is deliberately NOT moved with it. The log is the record of what
+// was issued to whom and belongs in version control with the source it
+// describes; the artefacts are bulk and do not.
+const distDirArg = process.argv.find(a => a.startsWith('--dist-dir='));
+const DIST_OUT_DIR = resolve(__dirname,
+  (distDirArg ? distDirArg.slice('--dist-dir='.length).trim() : '')
+  || (process.env.QSTORE_DIST_DIR || '').trim()
+  || DIST_DIR);
 
 // Unique per-build fingerprint — stamped into the JS bundle and HTML meta tags.
 // Keep a log of which build ID was distributed to which unit so you can trace
@@ -187,8 +223,8 @@ async function buildOnce() {
       ? RECIPIENT.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
       : 'unit';
 
-    // Each recipient gets its own subdirectory under dist/.
-    const unitDir = join(DIST_DIR, slug);
+    // Each recipient gets its own subdirectory under the distribution root.
+    const unitDir = join(DIST_OUT_DIR, slug);
     await mkdir(unitDir, { recursive: true });
 
     // Remove any previous dist builds for this recipient before writing the new one.
@@ -203,11 +239,13 @@ async function buildOnce() {
 
     const distFile = join(unitDir, `qstore-${slug}-${BUILD_ID}.html`);
     await writeFile(distFile, html);
+    const digest = await _writeChecksums(unitDir);
     await _appendDistLog(distFile, slug);
     console.log(`✓ ${distFile}`);
     console.log(`  full path: ${resolve(distFile)}`);
     console.log(`  build ID: ${BUILD_ID}  (${BUILD_TS})`);
     if (RECIPIENT) console.log(`  recipient: ${RECIPIENT}`);
+    if (digest) console.log(`  sha256: ${digest}`);
     console.log('  GitHub Pages copy: NOT updated (--dist mode)');
   } else if (writesPages) {
     // Normal build — update both dist/qstore.html and docs/ (GitHub Pages).
@@ -264,6 +302,41 @@ async function buildOnce() {
     if (isDefence) console.log('  variant: DEFENCE — cloud sync compiled out');
   }
   return { sizeBytes: html.length, ms };
+}
+
+/**
+ * Write SHA256SUMS beside the artefacts in a unit's directory.
+ *
+ * Whoever receives the file needs to be able to check that what reached them is
+ * what left here, and the person handing it over needs the same check before
+ * they do. Generating it with the build means the two cannot drift, which they
+ * do the moment it is a manual step somebody sometimes remembers.
+ *
+ * Format matches coreutils, so `sha256sum -c SHA256SUMS` works with no
+ * explanation needed.
+ *
+ * @param {string} unitDir
+ * @returns {Promise<string|null>} the new artefact's digest, for the build log
+ */
+async function _writeChecksums(unitDir) {
+  let files;
+  try {
+    files = (await readdir(unitDir)).filter(f => f.endsWith('.html')).sort();
+  } catch {
+    return null;
+  }
+  if (!files.length) return null;
+
+  const lines = [];
+  let newest = null;
+  for (const f of files) {
+    const buf = await readFile(join(unitDir, f));
+    const digest = createHash('sha256').update(buf).digest('hex');
+    lines.push(`${digest}  ${f}`);
+    if (f.includes(BUILD_ID)) newest = digest;
+  }
+  await writeFile(join(unitDir, 'SHA256SUMS'), lines.join('\n') + '\n', 'utf8');
+  return newest;
 }
 
 // -----------------------------------------------------------------------------
