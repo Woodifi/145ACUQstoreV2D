@@ -39,6 +39,7 @@ import { requireEdit } from './license.js';
 import { inferPersonType } from './ranks.js';
 import { tokenFromInstallId } from './device.js';
 import * as Ledger from './ledger.js';
+import * as Merge  from './merge.js';
 
 // V2L sandbox: use a separate DB so learning data never touches production IDB.
 const DEFAULT_DB_NAME = (typeof __V2L_DB_NAME__ !== 'undefined') ? __V2L_DB_NAME__ : 'qstore';
@@ -1989,6 +1990,127 @@ export async function importAll(snapshot) {
  * to drop the install identity (which will break verifiability of any
  * exports made before this call).
  */
+/**
+ * Everything a merge needs to reason about, in the shape merge.plan() expects.
+ * Loans are decrypted so refs and contents can be compared.
+ */
+async function _mergeLocalState() {
+  return {
+    items:     await _all(STORES.ITEMS),
+    loans:     await PII.decryptAll(await _all(STORES.LOANS), PII.PII_FIELDS_LOANS),
+    staff:     await PII.decryptAll(await _all(STORES.STAFF), PII.PII_FIELDS_STAFF),
+    kits:      await _all(STORES.KITS),
+    orders:    await _all(STORES.SUPPLY_ORDERS),
+    photos:    await _all(STORES.PHOTOS),
+    movements: await _all(STORES.MOVEMENTS),
+  };
+}
+
+/**
+ * What a merge would do. Writes nothing.
+ *
+ * Always run before mergeAll — a merge that silently resolved an ambiguous loan
+ * reference would produce a stock figure that looks authoritative and is wrong,
+ * which is worse than refusing.
+ *
+ * @param {object} snapshot  from exportAll() on the other device
+ */
+export async function mergePreview(snapshot) {
+  return Merge.plan(await _mergeLocalState(), snapshot);
+}
+
+/**
+ * Merge another device's data into this one.
+ *
+ * Nothing is replaced wholesale and nothing is wiped. Movements are unioned,
+ * records are taken where they are newer, and the stock figures are then
+ * recomputed from the merged ledger — which is what makes two concurrent
+ * issues both land instead of one overwriting the other.
+ *
+ * @param {object} snapshot
+ * @param {object} [opts]
+ * @param {boolean} [opts.force]  proceed despite conflicts, leaving each
+ *   conflicted record as this device already had it. The conflicts are still
+ *   reported and audited; nothing is guessed.
+ * @returns {Promise<{plan:object, recomputed:object}>}
+ */
+export async function mergeAll(snapshot, { force = false } = {}) {
+  const p = Merge.plan(await _mergeLocalState(), snapshot);
+
+  if (p.hasConflicts && !force) {
+    const err = new Error(
+      `Merge stopped: ${p.conflicts.length} conflict(s) need a decision. `
+      + 'Nothing has been changed.');
+    err.plan = p;
+    err.conflicts = p.conflicts;
+    throw err;
+  }
+
+  // Movements first. They are append-only and carry no encryption, so they can
+  // all go in one transaction.
+  if (p.movements.add.length) {
+    const tx = _db.transaction(STORES.MOVEMENTS, 'readwrite');
+    const store = tx.objectStore(STORES.MOVEMENTS);
+    for (const m of p.movements.add) store.put(m);
+    await _txDone(tx);
+  }
+
+  // Records. Written straight to the stores, NOT through the put() helpers:
+  // going through them would re-stamp every row with this device and this
+  // moment, erasing the provenance that says where the record came from and
+  // when it was actually written.
+  const writes = [
+    [STORES.ITEMS,         'items'],
+    [STORES.KITS,          'kits'],
+    [STORES.SUPPLY_ORDERS, 'orders'],
+    [STORES.PHOTOS,        'photos'],
+  ];
+  for (const [storeName, key] of writes) {
+    const bucket = p.records[key];
+    if (!bucket || (!bucket.add.length && !bucket.update.length)) continue;
+    const tx = _db.transaction(storeName, 'readwrite');
+    const store = tx.objectStore(storeName);
+    for (const row of [...bucket.add, ...bucket.update]) store.put(row);
+    await _txDone(tx);
+  }
+
+  // Loans and staff carry encrypted fields and must be re-encrypted with THIS
+  // device's key before they are stored.
+  for (const [storeName, key, fields] of [
+    [STORES.LOANS, 'loans', PII.PII_FIELDS_LOANS],
+    [STORES.STAFF, 'staff', PII.PII_FIELDS_STAFF],
+  ]) {
+    const bucket = p.records[key];
+    if (!bucket || (!bucket.add.length && !bucket.update.length)) continue;
+    const rows = await Promise.all(
+      [...bucket.add, ...bucket.update].map(r => PII.encryptRecord(r, fields)));
+    const tx = _db.transaction(storeName, 'readwrite');
+    const store = tx.objectStore(storeName);
+    for (const row of rows) store.put(row);
+    await _txDone(tx);
+  }
+
+  // The point of the exercise: stock figures come from the merged ledger, not
+  // from either side's stored numbers.
+  const recomputed = await movements.recomputeAll();
+
+  // Recorded in THIS device's audit chain. The other device's chain is not
+  // imported and is not merged — see merge.js.
+  try {
+    const lines = Merge.describe(p);
+    await audit.append({
+      action: 'merge',
+      user:   'system',
+      desc:   `Merged data from device ${String(p.sourceDevice || 'unknown').slice(0, 8)}. `
+            + lines.join('; ') + '. '
+            + `Stock recomputed from the merged ledger: ${recomputed.updated} item(s) changed.`
+            + (p.hasConflicts ? ` ${p.conflicts.length} conflict(s) left unresolved.` : ''),
+    });
+  } catch (_) { /* never fail a merge on the audit write */ }
+
+  return { plan: p, recomputed };
+}
+
 export async function wipe({ keepMeta = true, keepUsers = true } = {}) {
   const targets = [
     STORES.SETTINGS, STORES.COUNTERS, STORES.ITEMS, STORES.PHOTOS,
