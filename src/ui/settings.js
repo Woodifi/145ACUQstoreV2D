@@ -1313,10 +1313,10 @@ function _loanSettingsSectionHtml(settings) {
 // -----------------------------------------------------------------------------
 
 function _appearanceSectionHtml(settings) {
-  const current = settings['ui.theme'] || 'dark';
+  const current = settings['ui.theme'] || 'light';
   const opts = [
-    { value: 'dark',   label: 'Dark (default)' },
-    { value: 'light',  label: 'Light' },
+    { value: 'light',  label: 'Light (default)' },
+    { value: 'dark',   label: 'Dark' },
     { value: 'system', label: 'Follow system preference' },
   ].map(({ value, label }) =>
     `<option value="${value}"${value === current ? ' selected' : ''}>${esc(label)}</option>`
