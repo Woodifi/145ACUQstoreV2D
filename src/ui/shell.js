@@ -66,6 +66,9 @@ let _root             = null;
 let _session          = null;
 let _currentPage      = null;
 let _currentUnmount   = null;
+// Set when the shell mounts; lets navigation close the drawer without each
+// caller needing a handle on the sidebar element.
+let _setNav           = null;
 
 // -----------------------------------------------------------------------------
 // Auto-lock (idle timeout)
@@ -542,6 +545,8 @@ async function _renderShell() {
         <main class="shell__main" data-target="page-content">
           <div class="shell__loading">Loading…</div>
         </main>
+
+        ${_bottomNavHtml(initialPage)}
       </div>
     </div>
   `);
@@ -556,29 +561,42 @@ async function _renderShell() {
   const nav       = $('.shell__nav', _root);
   const sidebar   = $('.shell__sidebar', _root);
   const scrim     = $('.shell__scrim', _root);
-  const hamburger = $('.shell__hamburger', _root);
+  const bottomNav = $('.shell__bottomnav', _root);
   if (nav) nav.addEventListener('click', _onNavClick);
 
-  // Hamburger toggle — slides the sidebar in as a drawer below the tablet
-  // breakpoint. The open state lives on .shell__sidebar (not .shell__nav) so
-  // the brand and account block travel with the links.
-  if (hamburger && sidebar) {
+  // Drawer toggle — slides the sidebar in below the tablet breakpoint. The open
+  // state lives on .shell__sidebar (not .shell__nav) so the brand and account
+  // block travel with the links.
+  //
+  // Two controls open it: the topbar hamburger on tablet, and "More" on the
+  // phone bottom bar. Both carry data-action="toggle-nav", so the handler is
+  // bound to that rather than to one element.
+  if (sidebar) {
+    const togglers = () => _root ? [..._root.querySelectorAll('[data-action="toggle-nav"]')] : [];
+
     const setNav = (open) => {
       sidebar.classList.toggle('is-open', open);
       if (scrim) scrim.hidden = !open;
       // Stop the page behind the drawer scrolling under the user's finger.
       document.body.classList.toggle('is-nav-open', open);
-      hamburger.setAttribute('aria-expanded', String(open));
-      hamburger.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+      togglers().forEach((t) => {
+        t.setAttribute('aria-expanded', String(open));
+        if (t.classList.contains('shell__hamburger')) {
+          t.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+        }
+      });
     };
+    _setNav = setNav;
 
-    hamburger.addEventListener('click', () => {
-      setNav(!sidebar.classList.contains('is-open'));
+    _root.addEventListener('click', (e) => {
+      if (e.target.closest('[data-action="toggle-nav"]')) {
+        setNav(!sidebar.classList.contains('is-open'));
+      }
     });
 
     // Tapping the scrim, or choosing a destination, closes the drawer.
     scrim?.addEventListener('click', () => setNav(false));
-    nav.addEventListener('click', (e) => {
+    nav?.addEventListener('click', (e) => {
       if (e.target.closest('.shell__nav-link')) setNav(false);
     });
 
@@ -593,6 +611,16 @@ async function _renderShell() {
     const _mq = window.matchMedia('(min-width: 1024px)');
     const _onMq = (e) => { if (e.matches) setNav(false); };
     _mq.addEventListener?.('change', _onMq);
+  }
+
+  // Bottom bar: destinations navigate, Scan defers to Inventory's own control.
+  if (bottomNav) {
+    bottomNav.addEventListener('click', (e) => {
+      const scanBtn = e.target.closest('[data-action="scan"]');
+      if (scanBtn) { _openScannerFromNav(); return; }
+      const dest = e.target.closest('[data-page]');
+      if (dest) _navigateTo(dest.dataset.page);
+    });
   }
 
   // Dashboard quick-action tiles dispatch a custom event to navigate.
@@ -680,6 +708,96 @@ function _hasAccessTo(pageDef) {
   return true;
 }
 
+// -----------------------------------------------------------------------------
+// Bottom navigation (phone)
+// -----------------------------------------------------------------------------
+// The design guide's phone mock is a five-slot bottom bar. This build has
+// twelve role-filtered pages, so the bar carries the destinations a Q-Store is
+// actually operated from and hands the rest to "More", which opens the same
+// drawer the sidebar collapses into. Nothing here is a second source of truth:
+// slots are drawn from PAGES and filtered through _hasAccessTo, so a storeman
+// who cannot see Users never gets a tab for it.
+//
+// Scan is an action rather than a destination — the app has no scanner page.
+// It routes to Inventory and triggers that page's existing scan-qr control,
+// which is already permission-gated behind AUTH.can('qr').
+
+// Preference order for the bar. The first entries the user can reach are used.
+const BOTTOM_NAV_PAGES = ['dashboard', 'inventory', 'loans', 'stocktake', 'orders'];
+
+// Five slots total, as in the guide. "More" always takes one; Scan takes
+// another when the user holds the permission, so the number of destinations
+// flexes to keep the row at five rather than letting it grow to six.
+const BOTTOM_NAV_SLOTS = 5;
+
+/**
+ * Which pages get a slot on the bottom bar, in order.
+ * @param {boolean} withScan  whether Scan is claiming a slot
+ * @returns {string[]} page keys
+ */
+function _bottomNavKeys(withScan) {
+  const room = BOTTOM_NAV_SLOTS - 1 - (withScan ? 1 : 0);
+  return BOTTOM_NAV_PAGES
+    .filter((key) => PAGES[key] && _hasAccessTo(PAGES[key]))
+    .slice(0, room);
+}
+
+function _bottomNavHtml(activePage) {
+  const canScan = AUTH.can('qr');
+  const keys = _bottomNavKeys(canScan);
+  if (!keys.length) return '';
+
+  // Scan sits in the middle, as it does in the guide. With four destinations
+  // plus More that is index 2 — the centre of five slots.
+  const destinations = keys.map((key) => `
+    <button type="button"
+            class="shell__bottomnav-item ${key === activePage ? 'is-active' : ''}"
+            data-page="${esc(key)}"
+            ${key === activePage ? 'aria-current="page"' : ''}>
+      <span class="shell__bottomnav-icon" aria-hidden="true"></span>
+      <span class="shell__bottomnav-label">${esc(PAGES[key].label)}</span>
+    </button>`);
+
+  const scan = canScan ? `
+    <button type="button" class="shell__bottomnav-item shell__bottomnav-item--scan"
+            data-action="scan" aria-label="Scan a QR label">
+      <span class="shell__bottomnav-icon" aria-hidden="true"></span>
+      <span class="shell__bottomnav-label">Scan</span>
+    </button>` : '';
+
+  if (scan) destinations.splice(Math.ceil(destinations.length / 2), 0, scan);
+
+  const more = `
+    <button type="button" class="shell__bottomnav-item shell__bottomnav-item--more"
+            data-action="toggle-nav" aria-expanded="false" aria-label="More destinations">
+      <span class="shell__bottomnav-icon" aria-hidden="true"></span>
+      <span class="shell__bottomnav-label">More</span>
+    </button>`;
+
+  return `
+    <nav class="shell__bottomnav" aria-label="Primary">
+      ${destinations.join('')}
+      ${more}
+    </nav>`;
+}
+
+/**
+ * Open the QR scanner from the bottom bar.
+ *
+ * Inventory owns the scan flow (find the item, open its edit modal), so rather
+ * than duplicating that here we navigate there and trigger its own control.
+ * The button only exists when the user holds the 'qr' permission, so the
+ * permission check is not restated.
+ */
+async function _openScannerFromNav() {
+  await _navigateTo('inventory');
+  // _navigateTo returns once the page has mounted, but give the render a frame
+  // to land before reaching into it.
+  await new Promise((r) => requestAnimationFrame(() => r()));
+  const btn = _root?.querySelector('[data-action="scan-qr"]');
+  if (btn) btn.click();
+}
+
 /**
  * Initials for the sidebar account avatar — first letter of the first and last
  * word, e.g. "Sean Scales" → "SS", "Administrator (CO)" → "AC".
@@ -731,8 +849,31 @@ async function _navigateTo(page) {
   const links = _root.querySelectorAll('.shell__nav-link');
   links.forEach(a => a.classList.toggle('is-active', a.dataset.page === page));
   _setTopbarPage(page);
+  _syncBottomNav(page);
+  // Any navigation closes the drawer, however it was triggered — a quick action
+  // or an in-page link should not leave it hanging open over the new page.
+  _setNav?.(false);
 
   await _mountPage(page);
+}
+
+/**
+ * Mirror the active destination onto the phone bottom bar.
+ *
+ * A page reached from somewhere other than the bar — a dashboard quick action,
+ * a "Go to Stocktake" link — still has to light up its tab, otherwise the bar
+ * shows the user somewhere they no longer are.
+ *
+ * @param {string} page  key into PAGES
+ */
+function _syncBottomNav(page) {
+  if (!_root) return;
+  _root.querySelectorAll('.shell__bottomnav-item[data-page]').forEach((el) => {
+    const on = el.dataset.page === page;
+    el.classList.toggle('is-active', on);
+    if (on) el.setAttribute('aria-current', 'page');
+    else el.removeAttribute('aria-current');
+  });
 }
 
 /**

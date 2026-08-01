@@ -4758,3 +4758,219 @@ input, select, textarea {
     min-height: 44px;
   }
 }
+
+/* =============================================================================
+ * BOTTOM NAVIGATION (phone)
+ * =============================================================================
+ * The design guide's phone mock is a five-slot bottom bar. This build has
+ * twelve role-filtered pages, so the bar carries the destinations a Q-Store is
+ * operated from and hands the rest to "More", which opens the same drawer the
+ * sidebar collapses into.
+ *
+ * Breakpoints stack rather than compete:
+ *   ≥1024px   persistent sidebar, no bar, no hamburger
+ *   641–1023  drawer opened by the topbar hamburger, no bar
+ *   ≤640px    bottom bar; "More" opens the drawer, hamburger stands down
+ * ============================================================================= */
+
+.shell__bottomnav { display: none; }
+
+@media (max-width: 640px) {
+  .shell__bottomnav {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    align-items: stretch;
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 45;              /* under the drawer (50) and its scrim (40)… */
+    background: var(--bg-panel);
+    border-top: 1px solid var(--border);
+    /* Clears the home indicator on notched handsets. */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    box-shadow: 0 -1px 3px rgba(16, 24, 40, 0.06);
+  }
+
+  /* …but above the scrim would trap the eye, so it dims with the page. */
+  body.is-nav-open .shell__bottomnav { pointer-events: none; }
+
+  .shell__bottomnav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    min-height: 56px;
+    padding: var(--sp-2) var(--sp-1);
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-family: var(--font-sans);
+    font-size: 10px;
+    font-weight: var(--fw-medium);
+    letter-spacing: 0.01em;
+    line-height: 1.2;
+    transition: color 120ms ease;
+  }
+
+  .shell__bottomnav-item.is-active { color: var(--brand); font-weight: var(--fw-semibold); }
+
+  .shell__bottomnav-icon {
+    width: 22px;
+    height: 22px;
+    background-color: currentColor;
+    -webkit-mask: var(--nav-icon) center / 22px 22px no-repeat;
+            mask: var(--nav-icon) center / 22px 22px no-repeat;
+  }
+
+  .shell__bottomnav-label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Active destination gets a short rail on the top edge, echoing the way the
+   * sidebar marks the current page. */
+  .shell__bottomnav-item.is-active::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    width: 28px;
+    height: 2px;
+    border-radius: 0 0 2px 2px;
+    background: var(--brand);
+  }
+
+  .shell__bottomnav-item { position: relative; }
+
+  /* Scan is the primary action on a phone in a store room: a filled brand disc
+   * lifted above the bar, as in the guide. */
+  .shell__bottomnav-item--scan .shell__bottomnav-icon {
+    width: 46px;
+    height: 46px;
+    margin-top: -18px;
+    border-radius: var(--radius-pill);
+    background-color: var(--brand);
+    box-shadow: 0 2px 8px rgba(27, 79, 154, 0.35);
+    -webkit-mask: none;
+            mask: none;
+    position: relative;
+  }
+
+  /* The glyph is drawn inside the disc by a second layer, so the disc stays a
+   * solid fill rather than being punched through by the mask. */
+  .shell__bottomnav-item--scan .shell__bottomnav-icon::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-color: #FFFFFF;
+    -webkit-mask: var(--nav-icon) center / 24px 24px no-repeat;
+            mask: var(--nav-icon) center / 24px 24px no-repeat;
+  }
+
+  .shell__bottomnav-item--scan { color: var(--text-muted); }
+  .shell__bottomnav-item--scan:active .shell__bottomnav-icon { transform: scale(0.96); }
+
+  /* "More" reflects the drawer's state. */
+  .shell__bottomnav-item--more[aria-expanded="true"] { color: var(--brand); }
+
+  /* The bar sits over the page, so the page has to end above it. */
+  .shell__main {
+    padding-bottom: calc(56px + var(--sp-6) + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* One control for the drawer at a time: on a phone that is "More". */
+  .shell__hamburger { display: none; }
+
+  /* Without the hamburger the topbar's leading slot is empty, so the page name
+   * takes it. */
+  .shell__topbar { padding-left: var(--sp-4); }
+}
+
+/* Icons for the bottom bar, reusing the sidebar's set. Scan is bar-only. */
+.shell__bottomnav-item[data-page="dashboard"] { --nav-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 10.5 12 3l9 7.5'/%3E%3Cpath d='M5 9.5V20h5v-6h4v6h5V9.5'/%3E%3C/svg%3E"); }
+.shell__bottomnav-item[data-page="inventory"] { --nav-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 8.5 12 3.5 3 8.5l9 5 9-5Z'/%3E%3Cpath d='M3 8.5v7l9 5 9-5v-7'/%3E%3Cpath d='M12 13.5v7'/%3E%3C/svg%3E"); }
+.shell__bottomnav-item[data-page="loans"] { --nav-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='5' y='4' width='14' height='17' rx='2'/%3E%3Cpath d='M9 3h6v3H9z'/%3E%3Cpath d='M9 11h6M9 15h4'/%3E%3C/svg%3E"); }
+.shell__bottomnav-item[data-page="stocktake"] { --nav-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 4h6v3H9z'/%3E%3Crect x='5' y='4' width='14' height='17' rx='2'/%3E%3Cpath d='m8.5 13 2 2 4-4'/%3E%3C/svg%3E"); }
+.shell__bottomnav-item[data-page="orders"] { --nav-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 5h2l2.2 10.2a2 2 0 0 0 2 1.6h7.2a2 2 0 0 0 2-1.5L20 8H6'/%3E%3Ccircle cx='10' cy='20' r='1.3'/%3E%3Ccircle cx='17' cy='20' r='1.3'/%3E%3C/svg%3E"); }
+
+/* Scan: a QR frame with a sweep line. */
+.shell__bottomnav-item--scan { --nav-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 8.5V6a2 2 0 0 1 2-2h2.5'/%3E%3Cpath d='M15.5 4H18a2 2 0 0 1 2 2v2.5'/%3E%3Cpath d='M20 15.5V18a2 2 0 0 1-2 2h-2.5'/%3E%3Cpath d='M8.5 20H6a2 2 0 0 1-2-2v-2.5'/%3E%3Cpath d='M4 12h16'/%3E%3C/svg%3E"); }
+
+/* More: a stack of lines, matching the hamburger it replaces. */
+.shell__bottomnav-item--more { --nav-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.9' stroke-linecap='round'%3E%3Cpath d='M4 7h16M4 12h16M4 17h16'/%3E%3C/svg%3E"); }
+
+/* =============================================================================
+ * HELP — disclosure sections
+ * =============================================================================
+ * <summary> defaults to display:list-item, so the marker, the icon and the
+ * title each claimed their own line once the title picked up heading sizing.
+ * A flex row puts them back on one line and gives the whole strip a sensible
+ * tap target. */
+
+.help__section {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  margin-bottom: var(--sp-3);
+  overflow: hidden;
+  /* The summary and body carry their own padding. Without this the generic
+   * card retrofit adds a second layer and the collapsed rows go double-height. */
+  padding: 0;
+}
+
+.help__section-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 52px;
+  padding: var(--sp-3) var(--sp-4);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+/* Replace the default triangle with a chevron that turns on open. */
+.help__section-summary::-webkit-details-marker { display: none; }
+.help__section-summary::marker { content: ''; }
+
+.help__section-summary::after {
+  content: '';
+  margin-left: auto;
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  background-color: var(--text-muted);
+  -webkit-mask: var(--chevron) center / 16px 16px no-repeat;
+          mask: var(--chevron) center / 16px 16px no-repeat;
+  transition: transform 160ms ease;
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m8 5 8 7-8 7'/%3E%3C/svg%3E");
+}
+
+.help__section[open] > .help__section-summary::after { transform: rotate(90deg); }
+
+.help__section-summary:hover { background: var(--bg-subtle); }
+
+.help__section-icon { font-size: var(--fs-h3); line-height: 1; flex: 0 0 auto; }
+
+.help__section-title {
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  letter-spacing: -0.005em;
+  min-width: 0;
+}
+
+.help__section-body {
+  padding: 0 var(--sp-4) var(--sp-4);
+  border-top: 1px solid var(--border);
+  padding-top: var(--sp-4);
+  font-size: var(--fs-sm);
+  color: var(--text-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .help__section-summary::after { transition: none; }
+}
