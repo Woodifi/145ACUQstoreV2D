@@ -25,6 +25,7 @@
 import * as Storage   from '../storage.js';
 import * as AUTH      from '../auth.js';
 import * as Sync      from '../sync.js';
+import * as Device    from '../device.js';
 import { getProvider } from '../cloud.js';
 import { openModal }   from './modal.js';
 import { esc, $, $$, render, fmtDate } from './util.js';
@@ -97,6 +98,15 @@ async function _render() {
   const totpUser       = sess?.userId ? await Storage.users.get(sess.userId) : null;
   const unitStructure  = await Structure.load();
   const licenseState   = getLicenseState();
+  // Identity of this install, so two devices in a unit can be told apart when
+  // their data is compared.
+  const deviceInfo     = {
+    token:        await Device.getDeviceToken(Storage),
+    installId:    await Device.getInstallId(Storage),
+    name:         settings['device.name'] || '',
+    importedFrom: await Storage.meta.get('importedFromInstallId'),
+    importedAt:   await Storage.meta.get('importedAt'),
+  };
   // Stored categories — null means "use defaults".
   const storedCats     = await Storage.settings.get('categories');
   const activeCats     = Array.isArray(storedCats) && storedCats.length > 0
@@ -117,6 +127,7 @@ async function _render() {
         ${_cloudSectionHtml(settings, status)}
         ${_legacySectionHtml(_legacySummary)}
         ${_syncCryptoSectionHtml(settings)}
+        ${_deviceSectionHtml(deviceInfo)}
         ${_dataSectionHtml(settings)}
         ${_subscriptionSectionHtml(licenseState)}
         ${_aboutSectionHtml()}
@@ -1332,6 +1343,69 @@ function _appearanceSectionHtml(settings) {
   `;
 }
 
+/**
+ * This device — identity and provenance.
+ *
+ * A unit may run several installs: the Q-Store terminal, a laptop taken to the
+ * store room, a tablet used on a stocktake. Each is a full, independent copy of
+ * the database, and when two of them are compared somebody has to be able to
+ * say which is which. The token shown here is the one that appears in the
+ * middle of every reference this device mints, so a reference on a printed form
+ * can be traced back to the machine that raised it.
+ */
+function _deviceSectionHtml(d) {
+  const imported = d.importedFrom
+    ? `
+      <div class="form__row form__row--align-center">
+        <span class="form__label">Last restored from</span>
+        <span class="settings__device-value">
+          <code>${esc(String(d.importedFrom).slice(0, 8))}</code>
+          ${d.importedAt ? `<span class="settings__device-meta">on ${esc(String(d.importedAt).slice(0, 10))}</span>` : ''}
+        </span>
+      </div>`
+    : '';
+
+  return `
+    <section class="settings__section" data-section="device">
+      <header class="settings__section-header">
+        <h2 class="settings__section-title">This device</h2>
+        <p class="settings__section-hint">
+          Every loan reference and issue number raised here carries this
+          device's tag, so records created on different devices can never be
+          confused with one another. Give the device a name you would recognise
+          on a report.
+        </p>
+      </header>
+
+      <div class="form__row form__row--align-center">
+        <span class="form__label">Device tag</span>
+        <span class="settings__device-value">
+          <code class="settings__device-token">${esc(d.token)}</code>
+          <span class="settings__device-meta">appears in references as
+            LN-${esc(d.token)}-1000</span>
+        </span>
+      </div>
+
+      <div class="form__row form__row--align-center">
+        <label class="form__label" for="device-name">Device name</label>
+        <input id="device-name" type="text" class="form__input settings__device-name"
+               maxlength="40" placeholder="e.g. Q-Store terminal"
+               value="${esc(d.name)}" data-action="save-device-name">
+      </div>
+
+      <div class="form__row form__row--align-center">
+        <span class="form__label">Install ID</span>
+        <span class="settings__device-value">
+          <code>${esc(String(d.installId).slice(0, 8))}</code>
+          <span class="settings__device-meta">kept when a backup is restored, so
+            this machine stays itself</span>
+        </span>
+      </div>
+      ${imported}
+    </section>
+  `;
+}
+
 function _securitySectionHtml(settings) {
   const stored = parseInt(settings['security.idleTimeoutMinutes'], 10);
   // Enforce minimum 5 min — 0 (disabled) is not permitted on security grounds.
@@ -1442,9 +1516,18 @@ function _dataSectionHtml(settings) {
       <div class="form__actions">
         <button type="button" class="btn btn--primary"
                 data-action="export-data">Download backup file</button>
+        <button type="button" class="btn btn--outline"
+                data-action="merge-data">Merge from another device&hellip;</button>
         <button type="button" class="btn btn--danger"
                 data-action="import-data">Restore from backup file&hellip;</button>
       </div>
+
+      <p class="settings__section-hint">
+        <strong>Merge</strong> brings another device's work into this one and keeps
+        both. Stock is recalculated from the movements of both devices, so issues
+        made on each are all counted. <strong>Restore</strong> replaces everything
+        here with the backup — use it to rebuild a device, not to combine two.
+      </p>
 
       <details class="settings__details">
         <summary>Import data from a v1 backup file</summary>
@@ -1633,6 +1716,32 @@ function _wireEventListeners() {
 
   const themeSelect = $('[data-action="save-theme"]', _root);
   if (themeSelect) themeSelect.addEventListener('change', _onThemeChange);
+
+  // Saved on blur rather than per keystroke — this is a label, not a search box.
+  const deviceName = $('[data-action="save-device-name"]', _root);
+  if (deviceName) deviceName.addEventListener('change', _onDeviceNameChange);
+}
+
+async function _onDeviceNameChange(e) {
+  const input = e.target;
+  const name  = input.value.trim();
+  input.disabled = true;
+  try {
+    await Device.setDeviceName(Storage, name);
+    await Storage.audit.append({
+      action: 'settings_change',
+      user:   AUTH.getSession()?.name || '',
+      desc:   name
+        ? `Device name set to "${name}".`
+        : 'Device name cleared.',
+    });
+    showToast(name ? `This device is now "${name}".` : 'Device name cleared.', 'success');
+  } catch (err) {
+    console.error('Device name save failed', err);
+    showToast('Could not save the device name.', 'error');
+  } finally {
+    input.disabled = false;
+  }
 }
 
 async function _onDefaultDueDaysChange(e) {
@@ -1877,6 +1986,7 @@ async function _onRootClick(e) {
     case 'reset-auth-state':  await _doResetAuthState();   break;
     case 'export-data':     await _doExportData(e.target.closest('button')); break;
     case 'import-data':     await _doImportData(e.target.closest('button')); break;
+    case 'merge-data':      await _doMergeData(e.target.closest('button')); break;
     case 'import-v1':       await _doImportV1(e.target.closest('button')); break;
     case 'import-items-csv':  CsvUi.openItemsCsvImport();  break;
     case 'recovery-generate':    await _doGenerateRecovery(e.target.closest('button')); break;
@@ -2235,6 +2345,155 @@ async function _doExportData(btn) {
   } finally {
     if (btn) btn.disabled = false;
   }
+}
+
+// -----------------------------------------------------------------------------
+// Merge from another device
+// -----------------------------------------------------------------------------
+// Unlike Restore, this is not destructive, so it is not behind a typed
+// confirmation. It is behind something more useful: a dry run. The operator
+// picks a file, sees exactly what would change and what cannot be resolved
+// automatically, and only then decides.
+//
+// The order matters. A merge that showed its report afterwards would be telling
+// somebody what had already happened to their stock records.
+
+async function _doMergeData(btn) {
+  const fileInput = $('input[data-target="import-file"]', _root);
+  if (!fileInput) {
+    showToast('Something went wrong — please reload the page and try again.', 'error');
+    return;
+  }
+
+  const onChange = async () => {
+    fileInput.removeEventListener('change', onChange);
+    const file = fileInput.files && fileInput.files[0];
+    fileInput.value = '';
+    if (!file) return;
+
+    if (btn) { btn.disabled = true; btn.textContent = 'Reading…'; }
+    let snapshot;
+    try {
+      snapshot = JSON.parse(await file.text());
+    } catch (err) {
+      showToast('That file could not be read as a QStore backup.', 'error');
+      return;
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Merge from another device…'; }
+    }
+
+    let plan;
+    try {
+      plan = await Storage.mergePreview(snapshot);
+    } catch (err) {
+      showToast(err.message || 'That backup could not be read.', 'error');
+      return;
+    }
+    _openMergePreviewModal(snapshot, plan);
+  };
+
+  fileInput.addEventListener('change', onChange);
+  fileInput.click();
+}
+
+function _mergePreviewHtml(plan) {
+  const rows = [];
+  if (plan.movements.add.length) {
+    rows.push(`<tr><th scope="row">Stock movements</th><td>${plan.movements.add.length} new</td></tr>`);
+  }
+  for (const [store, b] of Object.entries(plan.records)) {
+    if (!b.add.length && !b.update.length) continue;
+    const bits = [];
+    if (b.add.length)    bits.push(`${b.add.length} added`);
+    if (b.update.length) bits.push(`${b.update.length} updated`);
+    rows.push(`<tr><th scope="row">${esc(store)}</th><td>${esc(bits.join(', '))}</td></tr>`);
+  }
+
+  const notMerged = plan.skipped.map(s =>
+    `<li><strong>${esc(s.store)}</strong>${s.count ? ` (${s.count} in the file)` : ''} — ${esc(s.reason)}</li>`
+  ).join('');
+
+  const conflicts = plan.conflicts.length ? `
+    <div class="modal__warn">
+      <strong>${plan.conflicts.length} conflict(s) need a decision.</strong>
+      These cannot be resolved automatically without risking the loss of a record.
+    </div>
+    <ul class="settings__merge-conflicts">
+      ${plan.conflicts.map(c => `
+        <li>
+          <strong>${esc(c.ref || c.kind)}</strong> — ${esc(c.message)}
+          ${c.local ? `<br><span class="settings__merge-side">Here: ${esc(c.local.itemName)} × ${esc(String(c.local.qty))} (${esc(c.local.location)})</span>` : ''}
+          ${c.incoming ? `<br><span class="settings__merge-side">Incoming: ${esc(c.incoming.itemName)} × ${esc(String(c.incoming.qty))} (${esc(c.incoming.location)})</span>` : ''}
+        </li>`).join('')}
+    </ul>` : '';
+
+  const warnings = plan.warnings.length ? `
+    <ul class="settings__merge-warnings">
+      ${plan.warnings.map(w => `<li>${esc(w.message)}</li>`).join('')}
+    </ul>` : '';
+
+  return `
+    ${conflicts}
+    ${plan.willChange ? '' : '<p>This file contains nothing this device does not already have.</p>'}
+    ${rows.length ? `<table class="settings__merge-table"><tbody>${rows.join('')}</tbody></table>` : ''}
+    ${warnings}
+    <details class="settings__details">
+      <summary>What a merge does not touch</summary>
+      <div class="settings__details-body">
+        <ul class="settings__merge-skipped">${notMerged}</ul>
+      </div>
+    </details>
+    <p class="settings__section-hint">
+      Stock figures are recalculated from the movements of both devices once the
+      merge completes, so issues made on each are all counted.
+    </p>
+  `;
+}
+
+function _openMergePreviewModal(snapshot, plan) {
+  const blocked = plan.hasConflicts;
+
+  openModal({
+    titleHtml: 'Merge from another device — preview',
+    size: 'md',
+    bodyHtml: `
+      ${_mergePreviewHtml(plan)}
+      <div class="form__error" role="alert"></div>
+      <div class="form__actions">
+        <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
+        ${blocked
+          ? `<button type="button" class="btn btn--danger-ghost" data-action="merge-force">
+               Merge anyway, keeping this device's version
+             </button>`
+          : `<button type="button" class="btn btn--primary" data-action="merge-apply"
+                     ${plan.willChange ? '' : 'disabled'}>Merge</button>`}
+      </div>
+    `,
+    onMount(panel, close) {
+      const run = async (force) => {
+        const errEl = $('.form__error', panel);
+        const buttons = $$('button', panel);
+        buttons.forEach(b => { b.disabled = true; });
+        try {
+          const { plan: applied, recomputed } = await Storage.mergeAll(snapshot, { force });
+          close();
+          const bits = [`${applied.movements.add.length} movement(s) merged`];
+          if (recomputed.updated) bits.push(`${recomputed.updated} stock figure(s) recalculated`);
+          if (applied.conflicts.length) bits.push(`${applied.conflicts.length} conflict(s) left as they were`);
+          showToast(bits.join(' · '), applied.conflicts.length ? 'warn' : 'success');
+          Sync.notifyChanged();
+          await _render();
+        } catch (err) {
+          console.error('Merge failed', err);
+          errEl.textContent = err.message || 'The merge could not be completed.';
+          buttons.forEach(b => { b.disabled = false; });
+        }
+      };
+
+      $('[data-action="merge-apply"]', panel)?.addEventListener('click', () => run(false));
+      $('[data-action="merge-force"]', panel)?.addEventListener('click', () => run(true));
+    },
+  });
 }
 
 async function _doImportData(btn) {

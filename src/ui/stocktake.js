@@ -758,7 +758,9 @@ async function _doFinalise(matches, overs, shorts, itemsById) {
   });
 
   // 3. Atomically write all updated items + clear the draft in one IDB transaction.
-  await Storage.atomic.stocktakeFinalise(updatedItems);
+  // Recorded as absolute movements — a stocktake is a recount that supersedes
+  // the book, not a change to it. See src/ledger.js.
+  await Storage.atomic.stocktakeFinalise(updatedItems, { user: userName });
   _countsByItem.clear();
 
   Sync.notifyChanged();
