@@ -22,6 +22,11 @@
 // doing it *by accident*, and it means anything odd is visible in one place in
 // Settings rather than smeared across a thousand loan rows.
 
+// Storage is passed in rather than imported by this module; Device is safe to
+// import directly because it depends on nothing and takes Storage as an
+// argument itself.
+import * as Device from './device.js';
+
 const SETTINGS_KEY = 'loans.locations';
 
 /**
@@ -91,17 +96,19 @@ export function label(location) {
 }
 
 /**
- * Next issue-document reference. Monotonic via the counters store, same
- * mechanism as loan refs, so it survives tabs and (once the counter is pulled)
- * devices. Format 'ISS-NNNN' from ISS-1000.
+ * Next issue-document reference: 'ISS-<device>-NNNN', e.g. ISS-K7M2-1000.
+ * Monotonic within a device via the counters store; namespaced by device token
+ * so two installs cannot mint the same number for different documents.
  *
- * This number is the ONLY link between an item and the person holding it. It is
+ * That uniqueness matters more here than anywhere else in the schema. This
+ * number is the ONLY link between an item and the person holding it. It is
  * written on the printed document; the document goes to CEA. Lose the document
- * and the link is gone — which is the design, not a defect.
+ * and the link is gone — which is the design, not a defect. Two documents
+ * sharing a number would point at each other's holders, and nothing in the
+ * software could tell them apart.
  */
 export async function nextIssueNo(Storage) {
-  const n = await Storage.counters.next('issue', 1000);
-  return `ISS-${n}`;
+  return Device.mintRef(Storage, 'ISS', 'issue', 1000);
 }
 
 // ---------------------------------------------------------------------------

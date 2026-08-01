@@ -8,7 +8,9 @@
 // to print one form per batch.
 //
 // LOAN RECORD SHAPE (matches v1; do not change without migration)
-//   ref            'LN-NNNN' from counters.next('loan')
+//   ref            'LN-<device>-NNNN' via Device.mintRef, e.g. LN-K7M2-1000.
+//                  Rows written before v2.4 carry the older plain 'LN-NNNN'
+//                  and are left as they are — see Device.isLegacyRef.
 //   itemId         FK to items
 //   itemName       denormalised at issue time — preserves history if the
 //                  item is later renamed
@@ -47,6 +49,7 @@
 import * as Storage from '../storage.js';
 import * as AUTH    from '../auth.js';
 import * as Sync    from '../sync.js';
+import * as Device  from '../device.js';
 import * as Locations from '../locations.js';
 import { generateIssueVoucher, generateAB189, generateBlankAB189, generateOutstandingLoansReport, downloadPdf } from '../pdf.js';
 import { openModal }                       from './modal.js';
@@ -2382,13 +2385,20 @@ function _destinationPickerHtml(context, currentLocation, locations, issueNo) {
 }
 
 /**
- * Generate the next loan reference. Uses the counters store so the value
- * is monotonic across tabs/devices (assuming sync resolves the counter on
- * pull). Format matches v1: 'LN-NNNN' starting at LN-1000.
+ * Generate the next loan reference: 'LN-<device>-NNNN', e.g. LN-K7M2-1000.
+ *
+ * The counter is local and monotonic; the device token is what stops two
+ * installs minting the same ref for different issues. It used to be plain
+ * 'LN-NNNN' from a counter starting at 1000, so the first loan raised on any
+ * device was LN-1000 — and because loans are keyed by ref, bringing two
+ * databases together would silently collapse those into a single record.
+ *
+ * Refs already in the database keep their original form. They are printed on
+ * AB189s and issue vouchers, and rewriting the stored ref would leave the paper
+ * disagreeing with the system. See Device.isLegacyRef.
  */
 async function _nextLoanRef() {
-  const n = await Storage.counters.next('loan', 1000);
-  return `LN-${n}`;
+  return Device.mintRef(Storage, 'LN', 'loan', 1000);
 }
 
 /** ISO date string (YYYY-MM-DD) for "today" in the local timezone. */

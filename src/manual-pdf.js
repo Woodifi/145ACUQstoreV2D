@@ -652,7 +652,7 @@ function _s5(b) {
     'Add any notes or remarks.',
     'Click Issue.',
   ]);
-  b.p('A loan reference number (LN-XXXX) is created automatically. Stock counts update immediately.');
+  b.p('A loan reference number is created automatically — LN-K7M2-1000, for example. The middle part identifies the device that raised the issue, so two devices in the same unit cannot give different issues the same reference. Stock counts update immediately.');
   b.callout('Load a pre-defined kit with ⊞ Load kit to fill all item lines with one click. See Section 16 — Issue Kits.', 'tip');
 
   b.h3('Initial Issue (special purpose)');
@@ -740,7 +740,7 @@ function _s7(b) {
   b.p('It is a fixed list rather than a text box on purpose. A box next to the word "issue" collects names, and a name is exactly what this system must not hold.');
 
   b.h2('Issuing to a person');
-  b.p('Choose the destination "Individual (see issue document)". The system allocates an issue number — ISS-1042, for example — and shows it on screen.');
+  b.p('Choose the destination "Individual (see issue document)". The system allocates an issue number — ISS-K7M2-1042, for example — and shows it on screen. The middle part identifies the device that allocated it, so numbers raised on different devices stay distinct.');
   b.steps([
     'Write the issue number on the printed issue document (voucher or AB189).',
     'The member completes their details on the paper and signs for the items.',

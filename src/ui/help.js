@@ -212,7 +212,10 @@ const SECTIONS = [
         <li>Add item lines (search by name or NSN, set quantity)</li>
         <li>Click <strong>Issue</strong></li>
       </ol>
-      <p>A loan reference (LN-XXXX) is assigned automatically.</p>
+      <p>A loan reference is assigned automatically — for example
+         <strong>LN-K7M2-1000</strong>. The middle part identifies the device
+         that raised it, so two devices in the same unit can never give
+         different issues the same reference.</p>
 
       <h4>Initial Issue</h4>
       <p>The <strong>Initial Issue</strong> purpose creates a long-term personal issue record. The due date is automatically set to six years from today and is locked — it cannot be changed. Initial Issue loans are never flagged as overdue regardless of age.</p>
