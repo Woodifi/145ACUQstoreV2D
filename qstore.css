@@ -2735,3 +2735,55 @@ input {
   color: var(--text-muted);
   font-size: 11px;
 }
+
+/* =============================================================================
+ * MERGE PREVIEW
+ * =============================================================================
+ * The dry run shown before another device's data is brought in. Its job is to
+ * make the consequences legible before they happen, so the conflict list is the
+ * loudest thing in it. */
+
+.settings__merge-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+  margin-bottom: var(--sp-4);
+}
+
+.settings__merge-table th[scope="row"] {
+  text-align: left;
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+  padding: var(--sp-2) var(--sp-3) var(--sp-2) 0;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.settings__merge-table td {
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-xs);
+}
+
+.settings__merge-table tr:last-child :is(th, td) { border-bottom: none; }
+
+.settings__merge-conflicts,
+.settings__merge-warnings,
+.settings__merge-skipped {
+  margin: 0 0 var(--sp-4);
+  padding-left: var(--sp-5);
+  font-size: var(--fs-xs);
+  line-height: 1.55;
+}
+
+.settings__merge-conflicts li { margin-bottom: var(--sp-3); color: var(--danger-ink); }
+.settings__merge-warnings li  { margin-bottom: var(--sp-2); color: var(--warn-ink); }
+.settings__merge-skipped  li  { margin-bottom: var(--sp-2); color: var(--text-muted); }
+
+.settings__merge-side {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-muted);
+}
