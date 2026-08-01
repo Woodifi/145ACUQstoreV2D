@@ -385,8 +385,9 @@ async function preflight() {
 }
 
 /**
- * Distribution pre-flight — verifies the working tree is on master, clean,
- * and fully in sync with the remote default branch before allowing a dist build.
+ * Distribution pre-flight — verifies the working tree is on the repository's
+ * default branch, clean, and fully in sync with its remote before allowing a
+ * dist build.
  *
  * A dist build from a dirty or unsynced tree would mean the distributed file
  * doesn't match the tracked codebase, breaking the build-ID traceability
@@ -470,7 +471,8 @@ function preflightDist() {
     );
   }
 
-  console.log(`  ✓ master @ ${localHead.slice(0, 7)} — in sync with origin/master`);
+  console.log(
+    `  ✓ ${defaultBranch} @ ${localHead.slice(0, 7)} — in sync with origin/${defaultBranch}`);
 }
 
 // -----------------------------------------------------------------------------
