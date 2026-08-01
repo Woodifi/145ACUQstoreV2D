@@ -25,6 +25,7 @@
 import * as Storage   from '../storage.js';
 import * as AUTH      from '../auth.js';
 import * as Sync      from '../sync.js';
+import * as Device    from '../device.js';
 import { getProvider } from '../cloud.js';
 import { openModal }   from './modal.js';
 import { esc, $, $$, render, fmtDate } from './util.js';
@@ -97,6 +98,15 @@ async function _render() {
   const totpUser       = sess?.userId ? await Storage.users.get(sess.userId) : null;
   const unitStructure  = await Structure.load();
   const licenseState   = getLicenseState();
+  // Identity of this install, so two devices in a unit can be told apart when
+  // their data is compared.
+  const deviceInfo     = {
+    token:        await Device.getDeviceToken(Storage),
+    installId:    await Device.getInstallId(Storage),
+    name:         settings['device.name'] || '',
+    importedFrom: await Storage.meta.get('importedFromInstallId'),
+    importedAt:   await Storage.meta.get('importedAt'),
+  };
   // Stored categories — null means "use defaults".
   const storedCats     = await Storage.settings.get('categories');
   const activeCats     = Array.isArray(storedCats) && storedCats.length > 0
@@ -117,6 +127,7 @@ async function _render() {
         ${_cloudSectionHtml(settings, status)}
         ${_legacySectionHtml(_legacySummary)}
         ${_syncCryptoSectionHtml(settings)}
+        ${_deviceSectionHtml(deviceInfo)}
         ${_dataSectionHtml(settings)}
         ${_subscriptionSectionHtml(licenseState)}
         ${_aboutSectionHtml()}
@@ -1332,6 +1343,69 @@ function _appearanceSectionHtml(settings) {
   `;
 }
 
+/**
+ * This device — identity and provenance.
+ *
+ * A unit may run several installs: the Q-Store terminal, a laptop taken to the
+ * store room, a tablet used on a stocktake. Each is a full, independent copy of
+ * the database, and when two of them are compared somebody has to be able to
+ * say which is which. The token shown here is the one that appears in the
+ * middle of every reference this device mints, so a reference on a printed form
+ * can be traced back to the machine that raised it.
+ */
+function _deviceSectionHtml(d) {
+  const imported = d.importedFrom
+    ? `
+      <div class="form__row form__row--align-center">
+        <span class="form__label">Last restored from</span>
+        <span class="settings__device-value">
+          <code>${esc(String(d.importedFrom).slice(0, 8))}</code>
+          ${d.importedAt ? `<span class="settings__device-meta">on ${esc(String(d.importedAt).slice(0, 10))}</span>` : ''}
+        </span>
+      </div>`
+    : '';
+
+  return `
+    <section class="settings__section" data-section="device">
+      <header class="settings__section-header">
+        <h2 class="settings__section-title">This device</h2>
+        <p class="settings__section-hint">
+          Every loan reference and issue number raised here carries this
+          device's tag, so records created on different devices can never be
+          confused with one another. Give the device a name you would recognise
+          on a report.
+        </p>
+      </header>
+
+      <div class="form__row form__row--align-center">
+        <span class="form__label">Device tag</span>
+        <span class="settings__device-value">
+          <code class="settings__device-token">${esc(d.token)}</code>
+          <span class="settings__device-meta">appears in references as
+            LN-${esc(d.token)}-1000</span>
+        </span>
+      </div>
+
+      <div class="form__row form__row--align-center">
+        <label class="form__label" for="device-name">Device name</label>
+        <input id="device-name" type="text" class="form__input settings__device-name"
+               maxlength="40" placeholder="e.g. Q-Store terminal"
+               value="${esc(d.name)}" data-action="save-device-name">
+      </div>
+
+      <div class="form__row form__row--align-center">
+        <span class="form__label">Install ID</span>
+        <span class="settings__device-value">
+          <code>${esc(String(d.installId).slice(0, 8))}</code>
+          <span class="settings__device-meta">kept when a backup is restored, so
+            this machine stays itself</span>
+        </span>
+      </div>
+      ${imported}
+    </section>
+  `;
+}
+
 function _securitySectionHtml(settings) {
   const stored = parseInt(settings['security.idleTimeoutMinutes'], 10);
   // Enforce minimum 5 min — 0 (disabled) is not permitted on security grounds.
@@ -1633,6 +1707,32 @@ function _wireEventListeners() {
 
   const themeSelect = $('[data-action="save-theme"]', _root);
   if (themeSelect) themeSelect.addEventListener('change', _onThemeChange);
+
+  // Saved on blur rather than per keystroke — this is a label, not a search box.
+  const deviceName = $('[data-action="save-device-name"]', _root);
+  if (deviceName) deviceName.addEventListener('change', _onDeviceNameChange);
+}
+
+async function _onDeviceNameChange(e) {
+  const input = e.target;
+  const name  = input.value.trim();
+  input.disabled = true;
+  try {
+    await Device.setDeviceName(Storage, name);
+    await Storage.audit.append({
+      action: 'settings_change',
+      user:   AUTH.getSession()?.name || '',
+      desc:   name
+        ? `Device name set to "${name}".`
+        : 'Device name cleared.',
+    });
+    showToast(name ? `This device is now "${name}".` : 'Device name cleared.', 'success');
+  } catch (err) {
+    console.error('Device name save failed', err);
+    showToast('Could not save the device name.', 'error');
+  } finally {
+    input.disabled = false;
+  }
 }
 
 async function _onDefaultDueDaysChange(e) {

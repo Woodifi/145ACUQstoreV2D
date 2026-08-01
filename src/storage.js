@@ -37,6 +37,7 @@
 import * as PII from './pii.js';
 import { requireEdit } from './license.js';
 import { inferPersonType } from './ranks.js';
+import { tokenFromInstallId } from './device.js';
 
 // V2L sandbox: use a separate DB so learning data never touches production IDB.
 const DEFAULT_DB_NAME = (typeof __V2L_DB_NAME__ !== 'undefined') ? __V2L_DB_NAME__ : 'qstore';
@@ -95,6 +96,9 @@ export async function init({ dbName } = {}) {
   if (dbName && dbName !== _dbName) {
     if (_db) { _db.close(); _db = null; }
     _auditKey = null;
+    // A different database is a different install, so the cached device token
+    // no longer applies. Tests swap databases within one process.
+    _deviceTokenCache = null;
     _initPromise = null;
     _dbName = dbName;
   }
@@ -105,6 +109,7 @@ export async function init({ dbName } = {}) {
     await _ensureMeta();
     _auditKey = await _loadAuditKey();
     await _loadOrGenPiiKey();
+    await _markRefNamespaceStart();
     return _db;
   })();
   try {
@@ -206,6 +211,61 @@ async function _ensureMeta() {
   store.put({ key: 'piiKey',        value: piiKeyB64 });
   store.put({ key: 'createdAt',     value: new Date().toISOString() });
   await _txDone(tx);
+}
+
+// -----------------------------------------------------------------------------
+// Record provenance
+// -----------------------------------------------------------------------------
+// Every write records when it happened and which device made it. Without this
+// there is nothing to compare when the same record exists on two installs, and
+// no way to tell a stale copy from a current one.
+//
+// Deliberately NOT applied on the importAll path: rows arriving in a snapshot
+// are written straight to the object stores and keep the stamps of the device
+// that made them. Re-stamping on arrival would erase the only evidence of where
+// a record came from and make every imported row look locally authored.
+//
+// The stamp is not sufficient to merge a quantity — see the note at the head of
+// device.js. It resolves which edit was last, not what concurrent edits did.
+
+/**
+ * Record the point from which this install mints namespaced references.
+ *
+ * Written once, on the first boot after upgrading, and never rewritten. Refs
+ * created before it are plain 'LN-1000' / 'ISS-1000' and can collide with
+ * another device's — those are the ones a merge has to check by hand rather
+ * than treat as identity. Refs created after it carry a device token and are
+ * safe to compare directly.
+ *
+ * Existing refs are deliberately NOT rewritten. They are printed on AB189s and
+ * issue vouchers already in members' CEA documents; changing the stored value
+ * would leave the paper and the database disagreeing about which issue is
+ * which, which is a worse accountability problem than the collision risk it
+ * would remove.
+ *
+ * Absent on a database that has never run this build, which a merge should read
+ * as "every ref in here is legacy".
+ */
+async function _markRefNamespaceStart() {
+  const existing = await _kvGet(STORES.META, 'refNamespaceFrom');
+  if (existing) return;
+  await _kvSet(STORES.META, 'refNamespaceFrom', new Date().toISOString());
+}
+
+let _deviceTokenCache = null;
+
+async function _deviceToken() {
+  if (_deviceTokenCache) return _deviceTokenCache;
+  _deviceTokenCache = tokenFromInstallId(await _kvGet(STORES.META, 'installId'));
+  return _deviceTokenCache;
+}
+
+async function _stamp(record) {
+  return {
+    ...record,
+    updatedAt: new Date().toISOString(),
+    updatedBy: await _deviceToken(),
+  };
 }
 
 async function _loadAuditKey() {
@@ -547,8 +607,9 @@ export const items = {
   async put(item) {
     requireEdit();
     if (!item?.id) throw new Error('Item.id required');
+    const row = await _stamp(item);
     const tx = _db.transaction(STORES.ITEMS, 'readwrite');
-    tx.objectStore(STORES.ITEMS).put(item);
+    tx.objectStore(STORES.ITEMS).put(row);
     await _txDone(tx);
   },
 
@@ -749,7 +810,8 @@ export const loans = {
         + 'records location + issueNo only — see docs/IDENTIFIER-FREE-DESIGN.md.'
       );
     }
-    const enc = await PII.encryptRecord(loan, PII.PII_FIELDS_LOANS);
+    // Stamped after encryption so the provenance lands on the row as stored.
+    const enc = await _stamp(await PII.encryptRecord(loan, PII.PII_FIELDS_LOANS));
     const tx  = _db.transaction(STORES.LOANS, 'readwrite');
     tx.objectStore(STORES.LOANS).put(enc);
     await _txDone(tx);
@@ -827,7 +889,8 @@ export const staff = {
   async put(member) {
     requireEdit();
     if (!member?.svcNo) throw new Error('Staff.svcNo required');
-    const enc = await PII.encryptRecord(member, PII.PII_FIELDS_STAFF);
+    // Stamped after encryption so the provenance lands on the row as stored.
+    const enc = await _stamp(await PII.encryptRecord(member, PII.PII_FIELDS_STAFF));
     const tx  = _db.transaction(STORES.STAFF, 'readwrite');
     tx.objectStore(STORES.STAFF).put(enc);
     await _txDone(tx);
@@ -963,8 +1026,9 @@ export const kits = {
 
   async put(kit) {
     if (!kit?.id) throw new Error('Kit.id required');
+    const row = await _stamp(kit);
     const tx = _db.transaction(STORES.KITS, 'readwrite');
-    tx.objectStore(STORES.KITS).put(kit);
+    tx.objectStore(STORES.KITS).put(row);
     await _txDone(tx);
   },
 
@@ -1014,8 +1078,9 @@ export const orders = {
 
   async put(order) {
     if (!order?.id) throw new Error('Order.id required');
+    const row = await _stamp(order);
     const tx = _db.transaction(STORES.SUPPLY_ORDERS, 'readwrite');
-    tx.objectStore(STORES.SUPPLY_ORDERS).put(order);
+    tx.objectStore(STORES.SUPPLY_ORDERS).put(row);
     await _txDone(tx);
   },
 
@@ -1542,6 +1607,11 @@ export async function importAll(snapshot) {
     throw new Error('Backup is from a newer version of QStore (v' + snapshot.schemaVersion
       + '). Update the app before restoring.');
   }
+
+  // Read before the wipe: this machine keeps its own identity across a restore.
+  // See the meta handling below for why.
+  const localInstallId = await _kvGet(STORES.META, 'installId');
+
   await wipe({ keepMeta: true });
 
   const stores = [
@@ -1555,10 +1625,29 @@ export async function importAll(snapshot) {
     for (const r of rows || []) s.put(r);
   };
   // Meta first — overwrites the local audit key with the snapshot's so
-  // subsequent audit chain verification succeeds. The local install ID is
-  // also replaced; this is fine because installId is informational only.
+  // subsequent audit chain verification succeeds.
+  //
+  // installId is the exception, and is held back. It used to be replaced along
+  // with everything else, on the reasoning that it was informational only. It
+  // is not: it is this machine's identity, it namespaces the references this
+  // machine mints, and it is how an operator tells two devices apart when
+  // reconciling them. Adopting the sender's identity meant that after a restore
+  // two machines claimed to be the same one, and every ref they minted from
+  // then on collided by construction.
+  //
+  // The snapshot's own installId is kept as `importedFromInstallId` so the
+  // database still records where the data came from.
   if (snapshot.meta && Array.isArray(snapshot.meta)) {
-    put(STORES.META, snapshot.meta);
+    const incoming = snapshot.meta.filter(r => r.key !== 'installId');
+    put(STORES.META, incoming);
+
+    const sourceId = snapshot.meta.find(r => r.key === 'installId')?.value;
+    const metaStore = tx.objectStore(STORES.META);
+    if (localInstallId) metaStore.put({ key: 'installId', value: localInstallId });
+    if (sourceId) {
+      metaStore.put({ key: 'importedFromInstallId', value: sourceId });
+      metaStore.put({ key: 'importedAt', value: new Date().toISOString() });
+    }
   }
   put(STORES.SETTINGS,  snapshot.settings);
   put(STORES.COUNTERS,  snapshot.counters);
