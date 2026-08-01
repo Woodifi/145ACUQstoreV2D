@@ -916,7 +916,14 @@ async function _doApprove(order, nsnMap, newItemCat, notes, qtyMap = new Map()) 
     if (existing) {
       const updated = { ...existing, onHand: (existing.onHand || 0) + qty, updatedAt: now };
       if (updated.qtyServiceable != null) updated.qtyServiceable = (updated.qtyServiceable || 0) + qty;
-      await Storage.items.put(updated);
+      // Stock in against the order — a delta, and the ledger records which
+      // order it came from.
+      await Storage.items.put(updated, {
+        kind:   'receipt',
+        ref:    order?.id || '',
+        user:   AUTH.getSession()?.name || '',
+        reason: 'Received against order.',
+      });
     } else {
       await Storage.items.put({
         id:               `item-${_uuid()}`,
