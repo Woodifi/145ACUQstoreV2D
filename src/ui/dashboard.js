@@ -5,7 +5,7 @@
 //   • Quick-stat tiles: total items, active loans, overdue loans
 //   • Stocktake status: draft in progress, or date of last finalised stocktake
 //   • Quick-action links for the most common workflows
-//   • Recent audit activity (last 5 entries)
+//   • Recent audit activity (last 5 entries) — OC and QM only
 //
 // Intentionally lightweight — all data comes from Storage in a single pass,
 // no live polling. The user can refresh manually via the nav or by clicking
@@ -14,6 +14,7 @@
 
 import * as Storage from '../storage.js';
 import * as AUTH    from '../auth.js';
+import * as AuditView from '../audit-view.js';
 import { esc, $, render } from './util.js';
 
 let _root = null;
@@ -44,22 +45,17 @@ async function _render() {
     activeLoans,
     stkRows,
     settings,
-    recentAudit,
   ] = await Promise.all([
     Storage.items.list(),
     Storage.loans.listActive(),
     Storage.stocktake.list(),
     Storage.settings.getAll(),
-    Storage.audit.list({ limit: 5, order: 'desc' }),
   ]);
 
   const today     = new Date().toISOString().slice(0, 10);
   const overdue   = activeLoans.filter(l => l.dueDate && l.dueDate < today);
   const hasDraft  = stkRows.length > 0;
 
-  // Last stocktake finalisation — look in the audit log.
-  const lastStocktake = await Storage.audit.list({ action: 'stocktake_finalise', limit: 1, order: 'desc' });
-  const lastStkEntry  = lastStocktake[0] || null;
 
   const totalItems  = items.length;
   const totalUnsvc  = items.reduce((n, i) => n + (i.unsvc || 0), 0);
@@ -68,6 +64,13 @@ async function _render() {
 
   const canEdit     = AUTH.can('editItem');
   const canAudit    = AUTH.can('audit');
+
+  // Everything the dashboard shows from the audit log comes through
+  // AuditView: the activity feed is audit content and is empty for a role
+  // without that permission, and the name beside the last stocktake is masked
+  // unless it is a known adult's. The log itself is never altered.
+  const { recent: recentAudit, lastStocktake: lastStkEntry } =
+    await AuditView.forDashboard(Storage, canAudit);
   const isCO        = AUTH.isCO();
   const session     = AUTH.getSession();
   const unitName    = settings.unitName || 'QStore IMS';
