@@ -215,5 +215,100 @@ const r = await Pdf.generateStockReport(itemsSample, { unit: evilUnit });
 expect(!r.filename.includes('/') && !r.filename.includes('\\') && !r.filename.includes('..'),
   `unit slug is sanitised (got ${r.filename})`);
 
+// =============================================================================
+// Blank forms
+// =============================================================================
+// jsPDF writes text uncompressed in these documents, so a string search of the
+// bytes is a real check of what is printed.
+
+const { readFileSync } = await import('node:fs');
+const pdfText = async (r) => Buffer.from(await r.blob.arrayBuffer()).toString('latin1');
+// The strings actually drawn on the page — the operands of the Tj operator —
+// as opposed to the PDF's own structure, which legitimately contains "null".
+const drawn = (txt) => [...txt.matchAll(/\(((?:[^()\\]|\\.)*)\) Tj/g)].map((m) => m[1]);
+
+console.log('\n[17] Blank forms: the registry');
+const blankIds = Pdf.BLANK_FORMS.map((f) => f.id);
+eq(blankIds, ['request', 'issue-voucher', 'board-of-survey', 'stocktake-worksheet'],
+  'BLANK_FORMS offers the request, issue voucher, Board of Survey and stocktake sheet');
+expect(new Set(Pdf.BLANK_FORMS.map((f) => f.audit)).size === blankIds.length,
+  'every blank form has its own audit action');
+
+console.log('\n[18] Blank forms: each one is a valid single-page PDF with nothing filled in');
+// A unit carrying every setting a form could prefill. Only branding may print.
+const fullUnit = { ...sampleUnit, qmName: 'ZZQMNAME', qmRank: 'ZZQMRANK', coName: 'ZZCONAME' };
+const titles = {
+  'request':             'EQUIPMENT REQUEST',
+  'issue-voucher':       'ISSUE VOUCHER',
+  'board-of-survey':     'BOARD OF SURVEY',
+  'stocktake-worksheet': 'STOCKTAKE WORKSHEET',
+};
+for (const form of Pdf.BLANK_FORMS) {
+  const res = await Pdf.generateBlankForm(form.id, { unit: fullUnit });
+  const txt = await pdfText(res);
+  expect(txt.startsWith('%PDF-') && txt.trimEnd().endsWith('%%EOF'), `${form.id}: valid PDF (${res.bytes} bytes)`);
+  expect((txt.match(/\/Type \/Page\b/g) || []).length === 1, `${form.id}: one page`);
+  expect(txt.includes(titles[form.id]), `${form.id}: carries its title "${titles[form.id]}"`);
+  expect(/_Blank_\d{4}-\d{2}-\d{2}\.pdf$/.test(res.filename), `${form.id}: filename marks it blank (${res.filename})`);
+  expect(txt.includes('145 ACU Brisbane'), `${form.id}: prints the unit name`);
+  const words = drawn(txt);
+  expect(words.length > 10, `${form.id}: text was found to inspect (${words.length} strings)`);
+  expect(!words.some((w) => /undefined|null|NaN/.test(w)),
+    `${form.id}: no "undefined" / "null" / "NaN" printed`);
+}
+
+console.log('\n[19] Blank forms: generated from no record, so none can appear');
+// The blank generators take { unit, rows } and nothing else. Passing records
+// anyway must not print them — this is what makes a blank form safe for every role.
+for (const form of Pdf.BLANK_FORMS) {
+  const res = await Pdf.generateBlankForm(form.id, {
+    unit: sampleUnit,
+    cadet: { svcNo: 'ZZSVC999', surname: 'ZZSURNAME', given: 'ZZGIVEN' },
+    loans: [{ ...baseLoan, itemName: 'ZZITEMNAME', borrowerName: 'ZZBORROWER' }],
+    items: [{ nsn: 'ZZNSN', name: 'ZZITEMNAME' }],
+  });
+  const txt = await pdfText(res);
+  expect(!/ZZ(SVC999|SURNAME|GIVEN|ITEMNAME|BORROWER|NSN)/.test(txt), `${form.id}: prints no record data`);
+}
+// Signature prefill: the blank voucher and Board of Survey are completed by
+// whoever is present, so they must not carry the QM or CO from settings.
+for (const id of ['issue-voucher', 'board-of-survey', 'stocktake-worksheet']) {
+  const txt = await pdfText(await Pdf.generateBlankForm(id, { unit: fullUnit }));
+  expect(!/ZZ(QMNAME|QMRANK|CONAME)/.test(txt), `${id}: no staff name prefilled`);
+}
+
+console.log('\n[20] Blank forms: rows are bounded, unknown ids are refused');
+const few  = await pdfText(await Pdf.generateBlankIssueVoucher({ rows: 3 }));
+const many = await pdfText(await Pdf.generateBlankIssueVoucher({ rows: 500 }));
+expect(many.length > few.length, 'more rows requested → more rows drawn');
+expect(drawn(many).includes('20') && !drawn(many).includes('21'), 'an absurd row count is clamped to 20 rows');
+expect(drawn(few).includes('3') && !drawn(few).includes('4'), 'three rows requested → three rows drawn');
+let refused = false;
+try { await Pdf.generateBlankForm('nominal-roll'); } catch { refused = true; }
+expect(refused, 'generateBlankForm refuses an id that is not in BLANK_FORMS');
+
+console.log('\n[21] Board of Survey no longer prints under the voucher title');
+const bos = await pdfText(await Pdf.generateBoardOfSurvey(
+  [{ nsn: 'X1', name: 'Tent', qtyWrittenOff: 1, notes: 'Torn' }], { unit: sampleUnit }));
+expect(!bos.includes('ISSUE VOUCHER'), 'filled AB174 does not say ISSUE VOUCHER');
+const bosBlank = await pdfText(await Pdf.generateBlankForm('board-of-survey', { unit: sampleUnit }));
+expect(!bosBlank.includes('ISSUE VOUCHER'), 'blank AB174 does not say ISSUE VOUCHER');
+
+console.log('\n[22] Blank forms are offered in the app');
+// Source checks: the page renders from the registry, and both entry points exist.
+const uiBlank   = readFileSync(new URL('./src/ui/blank-forms.js', import.meta.url), 'utf8');
+const uiReports = readFileSync(new URL('./src/ui/ims-reports.js', import.meta.url), 'utf8');
+const uiLoans   = readFileSync(new URL('./src/ui/loans.js', import.meta.url), 'utf8');
+expect(/BLANK_FORMS\.map\(/.test(uiBlank), 'the Blank forms list is rendered from BLANK_FORMS, not a second list');
+expect(/id: 'blankforms'/.test(uiReports) && /blankFormsHtml\(\)/.test(uiReports) && /wireBlankForms\(root\)/.test(uiReports),
+  'Reports has a Blank forms tab that renders and wires the list');
+expect(/data-blank-form="issue-voucher"/.test(uiLoans) && /wireBlankForms\(body\)/.test(uiLoans),
+  'Loans → Issue offers the blank voucher and wires it');
+expect(/print-blank-ab189/.test(uiLoans) && /downloadBlankForm\('request'\)/.test(uiLoans),
+  'Loans → Issue still offers the blank AB189');
+for (const m of uiLoans.matchAll(/data-blank-form="([a-z-]+)"/g)) {
+  expect(blankIds.includes(m[1]), `button for "${m[1]}" points at a real blank form`);
+}
+
 console.log(`\nResults: ${pass} passed, ${fail} failed.`);
 process.exit(fail === 0 ? 0 : 1);

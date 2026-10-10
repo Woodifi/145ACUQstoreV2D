@@ -51,7 +51,8 @@ import * as AUTH    from '../auth.js';
 import * as Sync    from '../sync.js';
 import * as Device  from '../device.js';
 import * as Locations from '../locations.js';
-import { generateIssueVoucher, generateAB189, generateBlankAB189, generateOutstandingLoansReport, downloadPdf } from '../pdf.js';
+import { generateIssueVoucher, generateAB189, generateOutstandingLoansReport, downloadPdf } from '../pdf.js';
+import { downloadBlankForm, wireBlankForms } from './blank-forms.js';
 import { openModal }                       from './modal.js';
 import { showToast }                       from './toast.js';
 import { openKitPicker }                   from './kits.js';
@@ -264,6 +265,9 @@ async function _renderIssueTab(body) {
           <button type="button" class="btn btn--ghost btn--sm"
                   data-action="print-blank-ab189"
                   title="Print a blank AB189 for a member to complete by hand">⎙ Blank AB189</button>
+          <button type="button" class="btn btn--ghost btn--sm"
+                  data-blank-form="issue-voucher"
+                  title="Print a blank issue voucher to complete by hand">⎙ Blank voucher</button>
         </h3>
         ${_issueLinesHtml(_issueState.lines, allItemsWithAvail)}
 
@@ -521,19 +525,10 @@ function _wireIssueTab(body, locations, allItems) {
   // the form in by hand and it is filed to their CEA documents. The print path
   // had to move here — it lived on the Requests page, and deleting that module
   // would have taken the replacement workflow with it.
-  $('[data-action="print-blank-ab189"]', body)?.addEventListener('click', async () => {
-    try {
-      const unit = await Storage.settings.getAll();
-      downloadPdf(await generateBlankAB189({ unit }));
-      await Storage.audit.append({
-        action: 'pdf_ab189_blank',
-        user:   AUTH.getSession()?.name || 'unknown',
-        desc:   'Blank AB189 printed for hand completion.',
-      });
-    } catch (err) {
-      showToast('Could not print blank AB189: ' + (err.message || err), 'error');
-    }
-  });
+  // Every blank form, these two included, is also under Reports → Blank forms.
+  $('[data-action="print-blank-ab189"]', body)
+    ?.addEventListener('click', () => downloadBlankForm('request'));
+  wireBlankForms(body);
 
   const destSelect = $('select[data-destination="issue"]', body);
   destSelect?.addEventListener('change', async () => {

@@ -9,6 +9,8 @@
 //   3. Issue history        — all loans in a date range (CSV/print)
 //   4. Kit allocation       — Initial Issue items per cadet (summary)
 //
+// Plus a fifth tab that is not a report: Blank forms (see blank-forms.js).
+//
 // All reports are rendered inline and printable via Ctrl+P.
 // CSV export downloads the data as a spreadsheet-friendly file.
 // =============================================================================
@@ -17,6 +19,7 @@ import * as Storage  from '../storage.js';
 import * as AUTH     from '../auth.js';
 import { esc, $, render } from './util.js';
 import { showToast }      from './toast.js';
+import { blankFormsHtml, wireBlankForms } from './blank-forms.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -358,6 +361,7 @@ export function mount(root) {
     { id: 'writtenoff',  label: 'Written-off items'  },
     { id: 'history',     label: 'Issue history'       },
     { id: 'kit',         label: 'Kit allocation'      },
+    { id: 'blankforms',  label: 'Blank forms'         },
   ];
 
   function _render() {
@@ -429,6 +433,8 @@ export function mount(root) {
             </div>
             ${_renderKitAllocation(_loans)}
           ` : ''}
+
+          ${_activeReport === 'blankforms' ? blankFormsHtml() : ''}
         </div>
       </div>
     `);
@@ -462,6 +468,8 @@ export function mount(root) {
     root.querySelectorAll('[data-action="print"]').forEach((btn) => {
       btn.addEventListener('click', () => window.print());
     });
+
+    wireBlankForms(root);
 
     $('[data-action="export-outstanding"]', root)?.addEventListener('click', () => {
       try {
