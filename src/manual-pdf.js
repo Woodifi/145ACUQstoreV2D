@@ -723,11 +723,14 @@ function _s6(b) {
 
   b.h2('How it works');
   b.steps([
-    'Go to Loans → Issue and click "Blank AB189".',
+    'Go to Loans → Issue and click "Blank AB189" (or Reports → Blank forms).',
     'Give the printed form to the member. They complete their own details by hand.',
     'Process the request from the paper as a normal issue.',
     'Scan or save the completed AB189 and upload it to that member\'s CEA documents.',
   ]);
+
+  b.h2('Other blank forms');
+  b.p('Reports → Blank forms has a printable blank copy of every hand-completed form: the equipment request (AB189), the issue voucher, the Board of Survey (AB174) and a stocktake counting sheet. Use them when the device is not to hand. A blank form contains no records.');
   b.callout('The CEA document is the record of who requested and received the equipment. This system records only that the items went out, against an issue number.', 'note');
 }
 

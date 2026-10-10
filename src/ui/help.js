@@ -257,7 +257,8 @@ const SECTIONS = [
 
       <h4>How it works</h4>
       <ol>
-        <li>Go to <strong>Loans → Issue</strong> and click <strong>⎙ Blank AB189</strong></li>
+        <li>Go to <strong>Loans → Issue</strong> and click <strong>⎙ Blank AB189</strong>
+            (or <strong>Reports → Blank forms</strong>)</li>
         <li>Give the printed form to the member — they complete their own details by hand</li>
         <li>Process the request from the paper as a normal issue</li>
         <li>Scan or save the completed AB189 and upload it to that member's
@@ -266,6 +267,12 @@ const SECTIONS = [
       <p class="help__note">The CEA document is the record of who requested and
       received the equipment. This system records only that the items went out,
       against an issue number.</p>
+
+      <h4>Other blank forms</h4>
+      <p><strong>Reports → Blank forms</strong> has a printable blank copy of every
+      hand-completed form: the equipment request (AB189), the issue voucher, the
+      Board of Survey (AB174) and a stocktake counting sheet. Use them when the
+      device is not to hand. A blank form contains no records.</p>
     `,
   },
   {

@@ -157,14 +157,14 @@ export function downloadPdf({ filename, blob }) {
 // Drawing helpers — each takes (doc, y, ...) and returns the new y cursor.
 // -----------------------------------------------------------------------------
 
-function _drawHeader(doc, y, unit) {
+function _drawHeader(doc, y, unit, title = 'ISSUE VOUCHER') {
   // Army-green header bar with the document title in tan, subtitle below.
   doc.setFillColor(...COL.armyGreen);
   doc.rect(PAGE.MARGIN, y, PAGE.CW, 16, 'F');
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(16);
   doc.setTextColor(...COL.tan);
-  doc.text('ISSUE VOUCHER', PAGE.MARGIN + 4, y + 7);
+  doc.text(title, PAGE.MARGIN + 4, y + 7);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
@@ -783,9 +783,12 @@ export async function generateStocktakeWorksheet(items, opts = {}) {
   const FOOTER_RESERVE = REPORT_FOOTER_RESERVE;
   const usableBottom   = PAGE.H - PAGE.MARGIN - FOOTER_RESERVE;
 
-  const subtitle = `${items.length} item${items.length === 1 ? '' : 's'}` +
-    (category ? ` · category: ${category}` : ' · all categories') +
-    ' · COUNTING WORKSHEET — do not file; transfer totals to QStore IMS';
+  // opts._blank: no items pre-listed — see generateBlankStocktakeWorksheet.
+  const subtitle = (opts._blank
+    ? 'Blank counting sheet — write in each item, then enter the totals'
+    : `${items.length} item${items.length === 1 ? '' : 's'}` +
+      (category ? ` · category: ${category}` : ' · all categories') +
+      ' · COUNTING WORKSHEET — do not file; transfer totals to QStore IMS');
 
   // ── draw helpers ────────────────────────────────────────────────────────────
 
@@ -817,7 +820,7 @@ export async function generateStocktakeWorksheet(items, opts = {}) {
 
   function drawRow(y, item, rowIdx) {
     // Wrap item name across multiple lines if needed.
-    const nameLines = doc.splitTextToSize(item.name || '—', COLS[2].w - 2);
+    const nameLines = item._blank ? [] : doc.splitTextToSize(item.name || '—', COLS[2].w - 2);
     const LINE_H    = 3.8; // mm per line at 7.5pt
     const rowH      = Math.max(ROW_H, nameLines.length * LINE_H + 3);
 
@@ -835,21 +838,23 @@ export async function generateStocktakeWorksheet(items, opts = {}) {
     // # (row number, 1-based)
     doc.text(String(rowIdx + 1), COLS[0].x + COLS[0].w - 1, y + 5, { align: 'right' });
 
-    // NSN
-    doc.text(_fitText(doc, item.nsn || '—', COLS[1].w - 2), COLS[1].x + 1, y + 5);
+    if (!item._blank) {
+      // NSN
+      doc.text(_fitText(doc, item.nsn || '—', COLS[1].w - 2), COLS[1].x + 1, y + 5);
 
-    // Item name — wrapped
-    doc.setFont('helvetica', 'bold');
-    doc.text(nameLines, COLS[2].x + 1, y + 5);
-    doc.setFont('helvetica', 'normal');
+      // Item name — wrapped
+      doc.setFont('helvetica', 'bold');
+      doc.text(nameLines, COLS[2].x + 1, y + 5);
+      doc.setFont('helvetica', 'normal');
 
-    // Sys qty
-    doc.setTextColor(...COL.txtMuted);
-    doc.text(
-      String(item.onHand ?? 0),
-      COLS[3].x + COLS[3].w - 1, y + 5, { align: 'right' }
-    );
-    doc.setTextColor(...COL.txtDark);
+      // Sys qty
+      doc.setTextColor(...COL.txtMuted);
+      doc.text(
+        String(item.onHand ?? 0),
+        COLS[3].x + COLS[3].w - 1, y + 5, { align: 'right' }
+      );
+      doc.setTextColor(...COL.txtDark);
+    }
 
     // Blank boxes for count columns — expand with row height.
     const boxPad = 1;
@@ -1138,6 +1143,282 @@ function _blankLine(doc, x, y, width) {
   doc.setDrawColor(120, 115, 105);
   doc.setLineWidth(0.3);
   doc.line(x, y + 0.5, x + width, y + 0.5);
+}
+
+// =============================================================================
+// BLANK FORMS — every hand-completed form, printable with nothing filled in
+// =============================================================================
+// A unit must be able to keep working from paper when the device is flat, the
+// store is away on camp, or the person doing the job has no login. So every
+// form this build produces from a record can also be produced from nothing.
+//
+// These take NO record — no loan, no item, no member. A blank form cannot leak
+// what it was never given, which is why they are safe to offer to every role.
+// The only stored values printed are unit branding (name, code).
+//
+// BLANK_FORMS below is the single list. The Blank forms tab renders from it and
+// test-pdf.mjs walks it, so a form added here is offered and tested without
+// touching either.
+
+/**
+ * Generate a blank Issue Voucher for hand completion.
+ *
+ * @param {Object} [opts]
+ * @param {Object} [opts.unit]     Unit branding settings.
+ * @param {number} [opts.rows=8]   Number of blank item rows (3–20).
+ * @returns {Promise<{filename: string, blob: Blob, bytes: number}>}
+ */
+export async function generateBlankIssueVoucher(opts = {}) {
+  const unit = opts.unit || {};
+  const rows = _blankRowCount(opts.rows, 8);
+  const doc  = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+  let y = PAGE.MARGIN;
+  y = _drawHeader(doc, y, unit);
+
+  // ---- Reference row ----
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(...COL.txtMuted);
+  doc.text('Voucher reference:', PAGE.MARGIN, y);
+  _blankLine(doc, PAGE.MARGIN + 32, y, 49);
+  if (unit.unitCode) doc.text(`Unit code: ${unit.unitCode}`, PAGE.MARGIN + 90, y);
+  doc.text('Issue date:', PAGE.MARGIN, y + 6);
+  _blankLine(doc, PAGE.MARGIN + 32, y + 6, 49);
+  doc.setFontSize(8);
+  doc.setTextColor(...COL.txtSub);
+  doc.text(`Blank form generated: ${_nowFmt()}`, PAGE.MARGIN + 90, y + 6);
+  doc.setDrawColor(...COL.tan);
+  doc.setLineWidth(0.5);
+  doc.line(PAGE.MARGIN, y + 9, PAGE.MARGIN + PAGE.CW, y + 9);
+  y += 15;
+
+  // ---- Recipient ----
+  y = _drawSectionBand(doc, y, 'Issued to — complete by hand');
+  y = _blankLabelRow(doc, y, 'Issue No. / Destination', 80);
+  y = _blankLabelRow(doc, y, 'Rank / Name', 100);
+  y = _blankLabelRow(doc, y, 'Service No.', 80);
+  y += 2;
+
+  // ---- Items ----
+  y = _drawSectionBand(doc, y, 'Items issued');
+  y = _drawBlankItemRows(doc, y, rows, [
+    { x: PAGE.MARGIN + 2,   label: '#',            w: 8  },
+    { x: PAGE.MARGIN + 12,  label: 'NSN',          w: 42 },
+    { x: PAGE.MARGIN + 56,  label: 'Nomenclature', w: 78 },
+    { x: PAGE.MARGIN + 136, label: 'Qty',          w: 14 },
+    { x: PAGE.MARGIN + 152, label: 'Condition',    w: 18 },
+  ]);
+
+  // ---- Details ----
+  y = _drawSectionBand(doc, y, 'Issue details');
+  y = _blankLabelRow(doc, y, 'Purpose', 100);
+  y = _blankLabelRow(doc, y, 'Due back (date)', 60);
+  y = _blankLabelRow(doc, y, 'Remarks', 120);
+  y += 2;
+
+  // Issued-by is left empty too: a blank voucher is completed by whoever is
+  // at the counter, which need not be the QM named in settings.
+  _drawSignatureBlocks(doc, y, {}, '');
+  _drawFooter(doc);
+
+  return _packageResult(doc, `IssueVoucher_Blank_${_todayIsoDate()}.pdf`);
+}
+
+/**
+ * Generate a blank AB174 Board of Survey (write-off) form for hand completion.
+ *
+ * @param {Object} [opts]
+ * @param {Object} [opts.unit]     Unit branding settings.
+ * @param {number} [opts.rows=8]   Number of blank item rows (3–20).
+ * @returns {Promise<{filename: string, blob: Blob, bytes: number}>}
+ */
+export async function generateBlankBoardOfSurvey(opts = {}) {
+  const unit = opts.unit || {};
+  const rows = _blankRowCount(opts.rows, 8);
+  const doc  = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+  let y = PAGE.MARGIN;
+  y = _drawHeader(doc, y, unit, 'WRITE-OFF');
+
+  // ---- Title band ----
+  doc.setFillColor(...COL.bandFill);
+  doc.rect(PAGE.MARGIN, y, PAGE.CW, 9, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(...COL.armyGreen);
+  doc.text('BOARD OF SURVEY — AB174', PAGE.MARGIN + 2, y + 6);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...COL.txtMuted);
+  doc.text('Date:', PAGE.MARGIN + PAGE.CW - 42, y + 6);
+  _blankLine(doc, PAGE.MARGIN + PAGE.CW - 32, y + 6, 30);
+  y += 12;
+
+  // ---- Preamble ----
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...COL.txtDark);
+  const unitRef = unit.unitName
+    ? `${unit.unitName}${unit.unitCode ? ` (${unit.unitCode})` : ''}`
+    : 'the unit';
+  doc.text(
+    `A Board of Survey was convened to examine the following items of ${unitRef} ` +
+    `which have been assessed as beyond economic repair or otherwise requiring formal write-off action.`,
+    PAGE.MARGIN, y, { maxWidth: PAGE.CW });
+  y += 10;
+
+  // ---- Items ----
+  y = _drawBlankItemRows(doc, y, rows, [
+    { x: PAGE.MARGIN + 2,   label: '#',            w: 8  },
+    { x: PAGE.MARGIN + 12,  label: 'NSN',          w: 36 },
+    { x: PAGE.MARGIN + 50,  label: 'Nomenclature', w: 52 },
+    { x: PAGE.MARGIN + 104, label: 'Qty W/O',      w: 16 },
+    { x: PAGE.MARGIN + 122, label: 'Reason',       w: 48 },
+  ]);
+
+  // ---- Findings ----
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(...COL.armyGreen);
+  doc.text('BOARD FINDINGS AND RECOMMENDATION', PAGE.MARGIN, y);
+  y += 3;
+  for (let i = 0; i < 3; i++) {
+    _blankLine(doc, PAGE.MARGIN, y + 6, PAGE.CW);
+    y += 7;
+  }
+  y += 6;
+
+  // ---- Board members ----
+  const SIG_W = (PAGE.CW - 6) / 3;
+  for (let s = 0; s < 3; s++) {
+    const sx = PAGE.MARGIN + s * (SIG_W + 3);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...COL.txtDark);
+    doc.text(`BOARD MEMBER ${s + 1}`, sx, y);
+    doc.setDrawColor(...COL.tan);
+    doc.setLineWidth(0.4);
+    doc.line(sx, y + 12, sx + SIG_W - 2, y + 12);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    doc.setTextColor(...COL.txtMuted);
+    doc.text('Rank / Name / Signature / Date', sx, y + 15);
+  }
+  y += 22;
+
+  // ---- CO authority ----
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(...COL.armyGreen);
+  doc.text('COMMANDING OFFICER AUTHORITY', PAGE.MARGIN, y);
+  y += 5;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...COL.txtDark);
+  doc.text('I approve the write-off of the items listed above in accordance with unit regulations.',
+    PAGE.MARGIN, y, { maxWidth: PAGE.CW });
+  doc.setDrawColor(...COL.tan);
+  doc.setLineWidth(0.5);
+  doc.line(PAGE.MARGIN, y + 20, PAGE.MARGIN + PAGE.CW / 2 - 5, y + 20);
+  doc.setFontSize(7);
+  doc.setTextColor(...COL.txtMuted);
+  doc.text('Commanding Officer — Rank / Name / Signature / Date', PAGE.MARGIN, y + 23);
+
+  _drawFooter(doc);
+
+  return _packageResult(doc, `AB174_BoardOfSurvey_Blank_${_todayIsoDate()}.pdf`);
+}
+
+/**
+ * Generate a stocktake counting sheet with no items pre-listed — for counting
+ * a store that is not in the system yet, or when the list cannot be printed.
+ *
+ * @param {Object} [opts]
+ * @param {Object} [opts.unit]      Unit branding settings.
+ * @param {number} [opts.rows=20]   Number of blank counting rows (3–60);
+ *                                  the default fills exactly one page.
+ * @returns {Promise<{filename: string, blob: Blob, bytes: number}>}
+ */
+export async function generateBlankStocktakeWorksheet(opts = {}) {
+  const rows = _blankRowCount(opts.rows, 20, 60);
+  const result = await generateStocktakeWorksheet(
+    Array.from({ length: rows }, () => ({ _blank: true })),
+    { unit: opts.unit, _blank: true });
+  return { ...result, filename: `Stocktake_Worksheet_Blank_${_todayIsoDate()}.pdf` };
+}
+
+/**
+ * The blank forms this build offers. `audit` is the audit-log action recorded
+ * when one is downloaded.
+ */
+export const BLANK_FORMS = Object.freeze([
+  Object.freeze({
+    id: 'request', label: 'Equipment request (AB189)', audit: 'pdf_ab189_blank',
+    desc: 'A member completes it by hand to ask for equipment.',
+    generate: generateBlankAB189,
+  }),
+  Object.freeze({
+    id: 'issue-voucher', label: 'Issue voucher', audit: 'pdf_voucher_blank',
+    desc: 'Records what was handed over and who signed for it.',
+    generate: generateBlankIssueVoucher,
+  }),
+  Object.freeze({
+    id: 'board-of-survey', label: 'Board of Survey (AB174)', audit: 'pdf_ab174_blank',
+    desc: 'Write-off of items beyond economic repair.',
+    generate: generateBlankBoardOfSurvey,
+  }),
+  Object.freeze({
+    id: 'stocktake-worksheet', label: 'Stocktake counting sheet', audit: 'pdf_stocktake_worksheet_blank',
+    desc: 'Counting sheet with no items pre-listed.',
+    generate: generateBlankStocktakeWorksheet,
+  }),
+]);
+
+/**
+ * Generate one blank form by its BLANK_FORMS id.
+ *
+ * @param {string} id
+ * @param {Object} [opts]  Passed to the form's generator ({ unit, rows }).
+ * @returns {Promise<{filename: string, blob: Blob, bytes: number}>}
+ */
+export async function generateBlankForm(id, opts = {}) {
+  const form = BLANK_FORMS.find((f) => f.id === id);
+  if (!form) throw new Error(`Unknown blank form: ${id}`);
+  return form.generate(opts);
+}
+
+// Blank form helpers -----------------------------------------------------------
+
+function _blankRowCount(rows, dflt, max = 20) {
+  return Math.max(3, Math.min(max, Number(rows) || dflt));
+}
+
+/** Column header band plus `rows` numbered write-in rows. Returns the new y. */
+function _drawBlankItemRows(doc, y, rows, cols) {
+  doc.setFillColor(180, 175, 165);
+  doc.rect(PAGE.MARGIN, y, PAGE.CW, 6, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(50, 50, 40);
+  for (const c of cols) doc.text(c.label, c.x, y + 4.5);
+  y += 7;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  for (let i = 0; i < rows; i++) {
+    if (i % 2 === 1) {
+      doc.setFillColor(...COL.rowFillEven);
+      doc.rect(PAGE.MARGIN, y - 1, PAGE.CW, 7, 'F');
+    }
+    doc.setTextColor(...COL.txtDark);
+    doc.text(String(i + 1), cols[0].x, y + 4);
+    doc.setDrawColor(150, 145, 135);
+    doc.setLineWidth(0.3);
+    for (const c of cols.slice(1)) doc.line(c.x, y + 4.5, c.x + c.w - 2, y + 4.5);
+    y += 7;
+  }
+  return y + 4;
 }
 
 // AB189 drawing helpers -------------------------------------------------------
@@ -1559,7 +1840,7 @@ export async function generateBoardOfSurvey(items, opts = {}) {
   let y = PAGE.MARGIN;
 
   // ── Army-green header ──
-  y = _drawHeader(doc, y, unit);
+  y = _drawHeader(doc, y, unit, 'WRITE-OFF');
 
   // ── Title band ──
   doc.setFillColor(...COL.bandFill);
