@@ -260,6 +260,10 @@ ReferenceError — so whoever fixes that failure will hit a confusing "does not
 store cadet records" error instead. It should be deleted or rewritten to assert
 the refusal. **Not done — flagged rather than silently left.**
 
+*Resolved 10 October 2026: deleted. The refusal it would have been rewritten to
+assert is already asserted by `test-cadet-minimisation.mjs`, the borrower
+refusal by `test-identifier-free.mjs`, and its rank cases by `test-ranks.mjs`.*
+
 **My dangling-call checker gives false positives** on object methods and named
 function expressions (`_legacyPutDisabled`, `_cloudSectionHtmlImpl`). It caught
 the real loans.js breakage, but do not trust its clean runs as proof.
@@ -405,6 +409,12 @@ worked**. Import should report what it did not recognise.
 Masked by the pre-existing `localStorage` failure, so it looks like one of the
 six. Whoever fixes that failure will hit a confusing "does not store cadet
 records" error instead. Delete it or rewrite it to assert the refusal.
+
+*Resolved 10 October 2026: deleted, and the `localStorage` failure fixed in the
+other five. Three of those were masking the same thing one layer down —
+`test-loans` put a borrower on every loan, `test-csv-import` called the removed
+cadet importer, `test-export-import` expected schema version 1 — and were
+re-pointed at what the build does now.*
 
 ### Adults: `staff`, users, orders requestor, `countedBy`
 

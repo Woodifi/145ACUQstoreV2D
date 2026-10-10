@@ -30,6 +30,19 @@ if (!globalThis.FileReader) {
   };
 }
 
+// localStorage stub. Every storage write passes through License.requireEdit(),
+// which reads the licence key and trial start from localStorage. Node has none,
+// so without this the first put() dies with a ReferenceError before the code
+// under test runs. An empty store means a fresh trial, in which edits are allowed.
+if (!globalThis.localStorage) {
+  const _ls = new Map();
+  globalThis.localStorage = {
+    getItem(k)    { return _ls.has(k) ? _ls.get(k) : null; },
+    setItem(k, v) { _ls.set(k, String(v)); },
+    removeItem(k) { _ls.delete(k); },
+  };
+}
+
 const Storage = await import('./src/storage.js');
 
 // ---------- helpers ----------
@@ -70,7 +83,14 @@ expect(v1.ok, `chain valid pre-export (count=${v1.count})`);
 
 console.log('\n[3] Export builds a complete snapshot');
 const snapshot = await Storage.exportAll();
-eq(snapshot.schemaVersion, 1, 'schemaVersion');
+// The snapshot is stamped with the database schema it was written from. Read
+// the number from the source rather than repeating it here: this assertion sat
+// at 1 while the schema went to 5, and nobody was told.
+const { readFileSync } = await import('node:fs');
+const DB_VERSION = Number(/const DB_VERSION = (\d+);/.exec(
+  readFileSync(new URL('./src/storage.js', import.meta.url), 'utf8'))?.[1]);
+expect(Number.isInteger(DB_VERSION) && DB_VERSION >= 5, `DB_VERSION read from storage.js (${DB_VERSION})`);
+eq(snapshot.schemaVersion, DB_VERSION, 'schemaVersion is the current DB_VERSION');
 expect(typeof snapshot.exportedAt === 'string' && snapshot.exportedAt.includes('T'),
   'exportedAt is ISO');
 expect(snapshot.items.length === 1, 'items present');
@@ -114,14 +134,18 @@ expect(appended.seq > 0, `appended seq=${appended.seq}`);
 const v3 = await Storage.audit.verify();
 expect(v3.ok, `chain valid after appending (count=${v3.count}; brokenAt=${v3.brokenAt || 'n/a'})`);
 
-console.log('\n[8] Schema-mismatch import is rejected');
-let threw = false;
-try {
-  await Storage.importAll({ schemaVersion: 999 });
-} catch (err) {
-  threw = err.message.includes('schema mismatch');
-}
-expect(threw, 'importAll rejects bad schemaVersion');
+console.log('\n[8] A backup this build cannot read is rejected');
+// An OLDER backup is accepted and upgraded; only a newer one, or one with no
+// version at all, is refused.
+const refusal = async (snap) => {
+  try { await Storage.importAll(snap); return null; } catch (err) { return err.message; }
+};
+expect(/newer version/i.test(await refusal({ schemaVersion: 999 }) || ''),
+  'importAll rejects a backup from a newer schema');
+expect(/missing schemaVersion/i.test(await refusal({ items: [] }) || ''),
+  'importAll rejects a file with no schemaVersion');
+expect((await Storage.items.list()).length === 1,
+  'a refused import leaves the existing data in place');
 
 console.log('\n[9] Filename helper produces a safe slug');
 const settings = await Storage.settings.getAll();
