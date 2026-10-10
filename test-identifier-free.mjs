@@ -109,5 +109,41 @@ ok('listForIssue does not bleed across issues',
 // --- active/list still work (the tool must remain useful) ------------------
 ok('listActive still works', (await Storage.loans.listActive()).length === 2);
 
+// --- the cadet store has no write path ---------------------------------------
+// put() refusing is not enough if the same body is reachable under another name,
+// which is exactly what _legacyPutDisabled was. Pin the surface, and prove the
+// one writer left on it refuses.
+console.log('\n=== cadet store: no way to write a record ===');
+ok('Storage.cadets exposes list, get, put, delete and nothing else',
+  JSON.stringify(Object.keys(Storage.cadets).sort()) === JSON.stringify(['delete', 'get', 'list', 'put']));
+await throws('cadets.put() refuses',
+  () => Storage.cadets.put({ svcNo: '8012345', surname: 'Smith' }),
+  /does not store cadet records/i);
+ok('nothing was written to the cadet store', (await Storage.cadets.list()).length === 0);
+{
+  // Source ratchet over the whole of src/. The cadet store is opened for
+  // writing at a known, counted set of sites, every one of which removes,
+  // migrates or strips EXISTING legacy rows:
+  //   storage.js  _migrateStaffOutOfCadets-style move to staff, contact-field
+  //               strip, plaintext→encrypted migration, cadets.delete(), purge
+  // A sixth site, or any site outside storage.js, is a new way in and must be
+  // looked at by a person before this number moves.
+  const { readFileSync, readdirSync } = await import('node:fs');
+  const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory() ? walk(`${d}/${e.name}`) : e.name.endsWith('.js') ? [`${d}/${e.name}`] : []);
+  const root = new URL('./src', import.meta.url).pathname;
+  const opens = {};
+  let namedLikeDisabled = false;
+  for (const f of walk(root)) {
+    const src = readFileSync(f, 'utf8');
+    const n = (src.match(/transaction\([^)]*STORES\.CADETS[^)]*'readwrite'/g) || []).length;
+    if (n) opens[f.slice(root.length + 1)] = n;
+    if (/_legacyPut\w*\s*\(/.test(src.replace(/\/\/.*$/gm, ''))) namedLikeDisabled = true;
+  }
+  ok(`the cadet store is opened for writing at exactly 5 known sites, all in storage.js (found ${JSON.stringify(opens)})`,
+    JSON.stringify(opens) === JSON.stringify({ 'storage.js': 5 }));
+  ok('no "disabled" cadet writer is left in src/ under another name', !namedLikeDisabled);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

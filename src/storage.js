@@ -937,14 +937,10 @@ export const cadets = {
     );
   },
 
-  async _legacyPutDisabled(cadet) {
-    requireEdit();
-    if (!cadet?.svcNo) throw new Error('Cadet.svcNo required');
-    const enc = await PII.encryptRecord(cadet, PII.PII_FIELDS_CADETS);
-    const tx  = _db.transaction(STORES.CADETS, 'readwrite');
-    tx.objectStore(STORES.CADETS).put(enc);
-    await _txDone(tx);
-  },
+  // The old put() body used to sit here under another name (_legacyPutDisabled).
+  // Nothing called it, but "disabled" was only its name: it was an exported,
+  // working way to write a cadet record, and it shipped in every artefact.
+  // Removed. test-identifier-free.mjs pins what this object may expose.
 
   async delete(svcNo) {
     requireEdit();
