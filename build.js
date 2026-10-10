@@ -14,6 +14,10 @@
 //   node build.js --defence Defence/cadet variant — cloud sync compiled out.
 //   node build.js --dist    Distribution build for a named unit. Refuses to run
 //                           from a dirty, unpushed or non-default branch.
+//   node build.js --out=/path/to/file.html
+//                           Write the artefact THERE and nowhere else: not
+//                           dist/qstore.html, not docs/. For tests and
+//                           throwaway builds that must not touch tracked files.
 //
 // Distribution options:
 //   --recipient="145 ACU Moranbah"   names the unit in the filename and log
@@ -79,7 +83,10 @@ const isDefence = process.argv.includes('--defence');
 // swap what every non-Defence user downloads, and the next standard build would
 // silently swap it back — a Pages copy whose identity depends on whoever built
 // last. --defence therefore never writes PAGES_OUT.
-const writesPages = !isDist && !isDefence;
+//
+// Nor does --out: a build sent somewhere else is by definition not the published one.
+const outArg = process.argv.find(a => a.startsWith('--out='));
+const writesPages = !isDist && !isDefence && !outArg;
 
 // --recipient="Unit Name" embeds the unit name in the filename and dist log.
 const recipientArg = process.argv.find(a => a.startsWith('--recipient='));
@@ -89,7 +96,12 @@ const ENTRY      = join(__dirname, 'src/ui/shell.js');
 const CSS_FILE   = join(__dirname, 'qstore.css');
 const HTML_IN    = join(__dirname, 'index.html');
 const DIST_DIR   = join(__dirname, 'dist');
-const HTML_OUT   = join(__dirname, 'dist/qstore.html');
+// dist/qstore.html is tracked. Anything that builds as a side effect — a test,
+// a preview — passes --out so the tracked artefact changes only when someone
+// means to change it. A relative path resolves against the checkout.
+const HTML_OUT   = outArg
+  ? resolve(__dirname, outArg.slice('--out='.length).trim())
+  : join(__dirname, 'dist/qstore.html');
 const PAGES_OUT  = join(__dirname, 'docs/index.html');   // GitHub Pages entry — never written by --dist
 const DIST_LOG   = join(__dirname, 'DIST_LOG.md');
 
@@ -215,7 +227,7 @@ async function buildOnce() {
 
   const html = inlineIntoHtml(indexHtml, cssSource, jsBundle, BUILD_ID, BUILD_TS);
 
-  await mkdir(DIST_DIR, { recursive: true });
+  await mkdir(outArg ? dirname(HTML_OUT) : DIST_DIR, { recursive: true });
 
   if (isDist) {
     // Distribution build — write to dist/<unit-slug>/, never touch docs/.

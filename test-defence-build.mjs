@@ -15,12 +15,19 @@
 // Driver: Defence Youth Manual Pt 2 S4 Ch4 para 4.4.5(c).
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DIST = join(__dirname, 'dist/qstore.html');
+// Build into a temp directory, never into the tree. This suite used to build
+// to dist/qstore.html — a tracked file — so every run left the checkout dirty
+// with an artefact nobody had asked for, stamped with a fresh build id.
+const OUT_DIR = mkdtempSync(join(tmpdir(), 'qstore-defence-build-'));
+const OUT     = join(OUT_DIR, 'qstore.html');
+const TRACKED = join(__dirname, 'dist/qstore.html');
+const trackedBefore = existsSync(TRACKED) ? readFileSync(TRACKED, 'utf8') : null;
 
 let pass = 0, fail = 0;
 function ok(name, cond) {
@@ -29,11 +36,12 @@ function ok(name, cond) {
 }
 
 function build(args) {
-  execFileSync('node', [join(__dirname, 'build.js'), ...args], {
+  rmSync(OUT, { force: true });
+  execFileSync('node', [join(__dirname, 'build.js'), ...args, `--out=${OUT}`], {
     cwd: __dirname, stdio: 'pipe',
   });
-  if (!existsSync(DIST)) throw new Error('build produced no dist/qstore.html');
-  return readFileSync(DIST, 'utf8');
+  if (!existsSync(OUT)) throw new Error(`build produced no ${OUT}`);
+  return readFileSync(OUT, 'utf8');
 }
 
 console.log('=== defence build variant ===');
@@ -70,9 +78,23 @@ ok('defence build is materially smaller than standard', def.length < std.length)
 console.log(`       standard ${(std.length / 1024).toFixed(0)} KB  →  defence ${(def.length / 1024).toFixed(0)} KB`
   + `  (−${((1 - def.length / std.length) * 100).toFixed(1)}%)`);
 
-// Leave the tree holding a standard build so a stray --defence artefact can't
-// be mistaken for the normal one.
-build([]);
+// --- no suite builds into the tree ------------------------------------------
+// Two suites did (this one and test-defence-licence), and fixing only the one
+// that was noticed left the other still dirtying the checkout. So check them
+// all: any test that runs build.js must send the output elsewhere.
+{
+  const here = readdirSync(__dirname).filter((f) => /^test-.*\.mjs$/.test(f));
+  const builders = here.filter((f) => /['"`]build\.js['"`]/.test(readFileSync(join(__dirname, f), 'utf8')));
+  ok(`control: the suites that run build.js were found (${builders.join(', ')})`, builders.length >= 2);
+  const intoTree = builders.filter((f) => !/--out=/.test(readFileSync(join(__dirname, f), 'utf8')));
+  if (intoTree.length) console.error('       builds into the tree: ' + intoTree.join(', '));
+  ok('every suite that runs build.js passes --out', intoTree.length === 0);
+}
+
+// --- the suite leaves the tree as it found it ------------------------------
+rmSync(OUT_DIR, { recursive: true, force: true });
+const trackedAfter = existsSync(TRACKED) ? readFileSync(TRACKED, 'utf8') : null;
+ok('building for this test did not touch the tracked dist/qstore.html', trackedAfter === trackedBefore);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
