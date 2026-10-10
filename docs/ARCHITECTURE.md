@@ -573,9 +573,8 @@ need human verification before each release.
 Running all suites:
 
 ```bash
-for t in test-ranks test-unit-branding test-export-import \
-         test-recovery test-cadets test-loans; do
-  node ${t}.mjs
+for t in test-*.mjs; do
+  node "$t" || echo "FAILED: $t"
 done
 ```
 

@@ -24,6 +24,19 @@ if (!globalThis.sessionStorage) {
   };
 }
 
+// localStorage stub. Every storage write passes through License.requireEdit(),
+// which reads the licence key and trial start from localStorage. Node has none,
+// so without this the first put() dies with a ReferenceError before the code
+// under test runs. An empty store means a fresh trial, in which edits are allowed.
+if (!globalThis.localStorage) {
+  const _ls = new Map();
+  globalThis.localStorage = {
+    getItem(k)    { return _ls.has(k) ? _ls.get(k) : null; },
+    setItem(k, v) { _ls.set(k, String(v)); },
+    removeItem(k) { _ls.delete(k); },
+  };
+}
+
 const Storage = await import('./src/storage.js');
 
 let pass = 0, fail = 0;

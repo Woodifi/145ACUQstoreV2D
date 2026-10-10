@@ -13,19 +13,26 @@
 // days because the module it guarded was never bundled.
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DIST = join(__dirname, 'dist/qstore.html');
+// Build into a temp directory, never into the tree: dist/qstore.html is tracked,
+// and a test run must not leave the checkout holding an artefact nobody asked for.
+const OUT_DIR = mkdtempSync(join(tmpdir(), 'qstore-defence-licence-'));
+const OUT     = join(OUT_DIR, 'qstore.html');
+const TRACKED = join(__dirname, 'dist/qstore.html');
+const trackedBefore = existsSync(TRACKED) ? readFileSync(TRACKED, 'utf8') : null;
 
 let pass = 0, fail = 0;
 const ok = (n, c) => c ? (pass++, console.log(`  ok   ${n}`)) : (fail++, console.error(`  FAIL ${n}`));
 
 const build = (args) => {
-  execFileSync('node', [join(__dirname, 'build.js'), ...args], { cwd: __dirname, stdio: 'pipe' });
-  return readFileSync(DIST, 'utf8');
+  rmSync(OUT, { force: true });
+  execFileSync('node', [join(__dirname, 'build.js'), ...args, `--out=${OUT}`], { cwd: __dirname, stdio: 'pipe' });
+  return readFileSync(OUT, 'utf8');
 };
 
 console.log('=== defence licence ===');
@@ -49,7 +56,9 @@ ok('defence build renders no key entry form',    !/<form class="form sub__key-fo
 ok('defence build has no licence-key input',     !/sub__key-input|Enter your licence key/i.test(def));
 ok('defence build keeps the app',                /QStore/.test(def));
 
-build([]);   // leave a standard artefact behind
+rmSync(OUT_DIR, { recursive: true, force: true });
+ok('building for this test did not touch the tracked dist/qstore.html',
+  (existsSync(TRACKED) ? readFileSync(TRACKED, 'utf8') : null) === trackedBefore);
 
 // --- BEHAVIOUR, not claims --------------------------------------------------
 // The artefact greps above assert what the UI SAYS. They are not enough, and

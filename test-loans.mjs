@@ -7,7 +7,7 @@
 //   - Return path: item.onLoan decrements, item.unsvc bumped on bad condition,
 //     loan.active flipped, returnDate/returnCondition/returnRemarks set
 //   - Listing/filtering: active vs returned vs overdue
-//   - listForCadet returns historical loans (active + returned)
+//   - listForIssue returns historical loans (active + returned)
 //   - Audit chain stays valid through batch issue and batch return
 //
 // Page DOM is not exercised here — pure logic only.
@@ -23,6 +23,19 @@ if (!globalThis.sessionStorage) {
     setItem(k, v) { _store.set(k, String(v)); },
     removeItem(k) { _store.delete(k); },
     clear()       { _store.clear(); },
+  };
+}
+
+// localStorage stub. Every storage write passes through License.requireEdit(),
+// which reads the licence key and trial start from localStorage. Node has none,
+// so without this the first put() dies with a ReferenceError before the code
+// under test runs. An empty store means a fresh trial, in which edits are allowed.
+if (!globalThis.localStorage) {
+  const _ls = new Map();
+  globalThis.localStorage = {
+    getItem(k)    { return _ls.has(k) ? _ls.get(k) : null; },
+    setItem(k, v) { _ls.set(k, String(v)); },
+    removeItem(k) { _ls.delete(k); },
   };
 }
 
@@ -56,8 +69,8 @@ const loan1 = {
   itemName:     'Slouch hat',
   nsn:          '8470-66-001-0001',
   qty:          1,
-  borrowerSvc:  '8512345',
-  borrowerName: 'CDT SMITH',
+  location:     'individual',
+  issueNo:      'ISS-1001',
   purpose:      'Initial Issue',
   issueDate:    '2026-05-01',
   dueDate:      '2026-12-31',
@@ -68,7 +81,9 @@ const loan1 = {
 await Storage.loans.put(loan1);
 const got = await Storage.loans.get('LN-2000');
 eq(got?.ref, 'LN-2000',    'ref round-trips');
-eq(got?.borrowerName, 'CDT SMITH', 'denormalised borrower name preserved');
+eq(got?.issueNo, 'ISS-1001',  'issue number round-trips');
+eq(got?.location, 'individual', 'destination round-trips');
+expect(!('borrowerName' in got) && !('borrowerSvc' in got), 'no person is stored on the loan');
 eq(got?.itemName, 'Slouch hat',    'denormalised item name preserved');
 eq(got?.active, true,             'active true');
 
@@ -92,7 +107,7 @@ await Storage.items.put(fresh);
 const ref = `LN-${await Storage.counters.next('loan', 1000)}`;
 await Storage.loans.put({
   ref, itemId: 'I-100', itemName: 'Webbing belt', nsn: '8465-66-001-0002',
-  qty: 3, borrowerSvc: '8512345', borrowerName: 'CDT SMITH',
+  qty: 3, location: 'individual', issueNo: 'ISS-1001',
   purpose: 'Annual Camp', issueDate: '2026-05-06', dueDate: '2026-05-20',
   condition: 'serviceable', remarks: '', active: true,
 });
@@ -140,7 +155,7 @@ await Storage.items.put(item3);
 const ref3 = `LN-${await Storage.counters.next('loan', 1000)}`;
 await Storage.loans.put({
   ref: ref3, itemId: 'I-100', itemName: 'Webbing belt', nsn: '8465-66-001-0002',
-  qty: 2, borrowerSvc: '8512345', borrowerName: 'CDT SMITH',
+  qty: 2, location: 'individual', issueNo: 'ISS-1001',
   purpose: 'Annual Camp', issueDate: '2026-05-22', dueDate: '2026-05-29',
   condition: 'serviceable', remarks: '', active: true,
 });
@@ -169,7 +184,7 @@ await Storage.items.put(item5);
 const ref5 = `LN-${await Storage.counters.next('loan', 1000)}`;
 await Storage.loans.put({
   ref: ref5, itemId: 'I-100', itemName: 'Webbing belt', nsn: '8465-66-001-0002',
-  qty: 1, borrowerSvc: '8512345', borrowerName: 'CDT SMITH',
+  qty: 1, location: 'individual', issueNo: 'ISS-1001',
   purpose: 'Annual Camp', issueDate: '2026-05-31', dueDate: '2026-06-07',
   condition: 'serviceable', remarks: '', active: true,
 });
@@ -190,9 +205,10 @@ eq(item6After.unsvc, 3, 'unsvc bumped further to 3 by write-off');
 eq(item6After.condition, 'unserviceable', 'item condition flipped to unserviceable');
 
 // -----------------------------------------------------------------------------
-console.log('\n[8] listForCadet returns active + returned loans');
-const all = await Storage.loans.listForCadet('8512345');
-expect(all.length >= 4, `cadet 8512345 has ≥4 loan records (got ${all.length})`);
+console.log('\n[8] listForIssue returns active + returned loans');
+const all = await Storage.loans.listForIssue('ISS-1001');
+expect(all.length >= 4, `issue ISS-1001 has ≥4 loan records (got ${all.length})`);
+eq((await Storage.loans.listForIssue('ISS-9999')).length, 0, 'another issue number returns none of them');
 const active = all.filter((l) => l.active === true);
 const returned = all.filter((l) => l.active === false);
 // Section [2] left LN-2000 active (we never returned it). Sections [3-7]
@@ -222,14 +238,14 @@ for (let i = 0; i < 3; i++) {
   await Storage.audit.append({
     action: 'issue',
     user:   'test',
-    desc:   `LN-${3000 + i}: Item × 1 issued to CDT SMITH for Annual Camp`,
+    desc:   `LN-${3000 + i}: Item × 1 issued against ISS-1001 for Annual Camp`,
   });
 }
 for (let i = 0; i < 3; i++) {
   await Storage.audit.append({
     action: 'return',
     user:   'test',
-    desc:   `LN-${3000 + i}: Item × 1 returned by CDT SMITH — serviceable`,
+    desc:   `LN-${3000 + i}: Item × 1 returned against ISS-1001 — serviceable`,
   });
 }
 const verify = await Storage.audit.verify();

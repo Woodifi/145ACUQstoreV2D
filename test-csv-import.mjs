@@ -2,9 +2,9 @@
 //
 // Covers:
 //   - Header alias mapping (variant column names normalise to canonical)
-//   - Required-field validation (missing name/cat/svcNo/surname)
+//   - Required-field validation (missing name/cat)
 //   - Row-level warnings (bad numerics, unknown condition, NSN format)
-//   - new vs update detection (by id, by NSN, by svcNo)
+//   - new vs update detection (by id, by NSN)
 //   - Commit merge behaviour (existing fields preserved on update)
 //   - PapaParse handles Excel-style quoted fields with embedded newlines
 
@@ -17,6 +17,19 @@ if (!globalThis.sessionStorage) {
     getItem(k)    { return _store.has(k) ? _store.get(k) : null; },
     setItem(k, v) { _store.set(k, String(v)); },
     removeItem(k) { _store.delete(k); },
+  };
+}
+
+// localStorage stub. Every storage write passes through License.requireEdit(),
+// which reads the licence key and trial start from localStorage. Node has none,
+// so without this the first put() dies with a ReferenceError before the code
+// under test runs. An empty store means a fresh trial, in which edits are allowed.
+if (!globalThis.localStorage) {
+  const _ls = new Map();
+  globalThis.localStorage = {
+    getItem(k)    { return _ls.has(k) ? _ls.get(k) : null; },
+    setItem(k, v) { _ls.set(k, String(v)); },
+    removeItem(k) { _ls.delete(k); },
   };
 }
 
@@ -186,83 +199,23 @@ i-merge,Renamed,Test,99,100`;
 }
 
 // =============================================================================
-// CADETS
+// CADETS — no importer, by design
 // =============================================================================
+// Sections [11]–[15] exercised parseCadetsCsv. This build does not collect cadet
+// records (docs/IDENTIFIER-FREE-DESIGN.md), so the cadet importer was removed
+// and those sections went with it. What remains to assert is the absence: a
+// bulk importer for people is the fastest way to put PII back.
 
-console.log('\n[11] parseCadetsCsv: canonical headers');
+console.log('\n[11] There is no cadet CSV importer');
 {
-  const csv = `svcNo,surname,given,rank,plt,active
-8512345,SMITH,John,CDT,1,true
-8512346,JONES,Mary,CDTLCPL,2,true`;
-  const result = await Csv.parseCadetsCsv(csv);
-  eq(result.errors.length, 0, 'no errors');
-  eq(result.rows.length, 2, '2 rows');
-  eq(result.rows[0].surname, 'SMITH', 'surname parsed');
-  eq(result.rows[0].rank,    'CDT',   'rank kept');
-  eq(result.rows[0].personType, 'cadet', 'CDT → cadet');
+  const cadetExports = Object.keys(Csv).filter((k) => /cadet|member|person/i.test(k));
+  eq(cadetExports, [], 'csv-import.js exports nothing for importing people');
+  expect(typeof Csv.parseItemsCsv === 'function' && typeof Csv.commitItems === 'function',
+    'control: the items importer is what the module exports');
 }
 
 // -----------------------------------------------------------------------------
-console.log('\n[12] parseCadetsCsv: rank canonicalisation + personType inference');
-{
-  const csv = `svcNo,surname,given,rank
-8512347,BROWN,Sarah,Cdt
-8512348,GREY,Tim,Captain
-8512349,WHITE,Sue,WO2`;
-  const result = await Csv.parseCadetsCsv(csv);
-  eq(result.rows[0].rank, 'CDT',  'lowercase Cdt canonicalised to CDT');
-  eq(result.rows[0].personType, 'cadet', 'CDT → cadet');
-  expect(result.rows[1].personType === 'staff' || result.rows[2].personType === 'staff',
-    'at least one row inferred as staff');
-}
-
-// -----------------------------------------------------------------------------
-console.log('\n[13] parseCadetsCsv: missing required columns');
-{
-  const csv = `surname,given
-SMITH,John`;
-  const result = await Csv.parseCadetsCsv(csv);
-  expect(result.errors.length >= 1, 'errors reported');
-  expect(result.errors.some(e => /svcNo/i.test(e)), 'errors mention svcNo');
-}
-
-// -----------------------------------------------------------------------------
-console.log('\n[14] parseCadetsCsv: active flag accepts variants');
-{
-  const csv = `svcNo,surname,active
-8512360,A,TRUE
-8512361,B,yes
-8512362,C,no
-8512363,D,0
-8512364,E,1
-8512365,F,maybe
-8512366,G,`;
-  const result = await Csv.parseCadetsCsv(csv);
-  eq(result.rows[0].active, true,  'TRUE → true');
-  eq(result.rows[1].active, true,  'yes → true');
-  eq(result.rows[2].active, false, 'no → false');
-  eq(result.rows[3].active, false, '0 → false');
-  eq(result.rows[4].active, true,  '1 → true');
-  eq(result.rows[5].active, true,  'maybe → defaults true with warning');
-  eq(result.rows[6].active, true,  'blank → defaults true');
-  expect(result.rows[5]._warnings.length > 0, 'unrecognised "maybe" warned');
-}
-
-// -----------------------------------------------------------------------------
-console.log('\n[15] parseCadetsCsv: existing svcNo → update');
-{
-  await Storage.cadets.put({
-    svcNo: '8512370', surname: 'OLD', given: 'Name',
-    rank: 'CDT', plt: '1', personType: 'cadet', active: true,
-  });
-  const csv = `svcNo,surname,given,rank
-8512370,NEW,Name,CDTLCPL`;
-  const result = await Csv.parseCadetsCsv(csv);
-  eq(result.rows[0]._status, 'update', 'matched svcNo → update');
-}
-
-// -----------------------------------------------------------------------------
-console.log('\n[16] PapaParse handles Excel quoted fields with commas inside');
+console.log('\n[12] PapaParse handles Excel quoted fields with commas inside');
 {
   const csv = `name,cat,notes
 "Pack, Field","Equipment","With, embedded, commas"`;
@@ -273,7 +226,7 @@ console.log('\n[16] PapaParse handles Excel quoted fields with commas inside');
 }
 
 // -----------------------------------------------------------------------------
-console.log('\n[17] Unrecognised columns surface in preview');
+console.log('\n[13] Unrecognised columns surface in preview');
 {
   const csv = `name,cat,SomeWeirdField,Custom Excel Column
 Test,Test,abc,def`;
