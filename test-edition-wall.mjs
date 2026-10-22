@@ -12,8 +12,8 @@
 //       not opened, not upgraded, not written — whatever shape the change took;
 //       another edition's database name is never opened
 //   [1] a session this database did not issue is never honoured, though every
-//       edition creates `usr-default-co` and the May 2026 Itemora unit builds
-//       write this edition's own sessionStorage key
+//       edition creates `usr-default-co` and another build sharing this key
+//       (a V2L build made without its override) wrote a session it would honour
 //   [2] a cloud file this edition did not write is never imported and never
 //       replaced; this edition's own files are tagged
 //   [3] sessionScope never travels in a backup
@@ -129,7 +129,7 @@ console.log('\n[1] a session this database did not issue is never honoured');
 // -----------------------------------------------------------------------------
 {
   const KEY = 'qstore_session';
-  // Exactly what the May 2026 Itemora unit builds leave in this key.
+  // A session as another build sharing this key writes it: no scope.
   const foreign = JSON.stringify({ userId: 'usr-default-co', username: 'admin', role: 'co', loginAt: new Date().toISOString() });
   sessionStorage.setItem(KEY, foreign);
   const fresh = await import('./src/auth.js?wall=1');

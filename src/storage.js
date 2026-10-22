@@ -298,10 +298,11 @@ function _runSchemaMigrations(db, oldVersion) {
 
 /**
  * EDITION WALL — the value that ties a sign-in to THIS database. auth.js stamps
- * it into every session and refuses a stored session without it. Both this
- * edition and the Itemora builds create the default admin `usr-default-co`, and
- * the May 2026 Itemora unit builds write a session under this edition's own
- * sessionStorage key, so a matching user id and role prove nothing.
+ * it into every session and refuses a stored session without it. Every edition
+ * creates the default admin `usr-default-co`, and any build sharing this
+ * edition's session key (a V2L build made without its override, before this
+ * change) left a session it would have honoured — so a matching user id and
+ * role prove nothing.
  * Device-own: never exported, never adopted from a restore. META is writable
  * while the licence is restricted, so creating it never blocks sign-in.
  */

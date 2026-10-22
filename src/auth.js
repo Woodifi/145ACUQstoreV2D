@@ -82,8 +82,9 @@ export const PERMS = Object.freeze({
 // V2L sandbox: separate session key prevents login state bleed — storageKey()
 // gives a sandbox build its own name even without the __V2L_SESSION_KEY__ override.
 // EDITION WALL: a stored session also counts only when it carries THIS
-// database's `scope` (_restoreSession) — the May 2026 Itemora unit builds write
-// this very key, and every edition creates the default admin `usr-default-co`.
+// database's `scope` (_restoreSession). Every edition creates the default admin
+// `usr-default-co`, and before this change a V2L build made without the
+// override wrote this very key — so a matching user id and role proved nothing.
 const SESSION_STORAGE_KEY    = (typeof __V2L_SESSION_KEY__ !== 'undefined') ? __V2L_SESSION_KEY__ : storageKey('qstore_session');
 const SETTING_INVALIDATED_AT = 'session.invalidatedAt';
 
