@@ -45,6 +45,42 @@ import * as Storage from './storage.js';
 import { getProvider, handlePopupAuth } from './cloud.js';
 import { sealEnvelope, openWithBlobKey, isEnvelope } from './backup-crypto.js';
 import * as Keyring from './sync-keyring.js';
+import { storageKey, EDITION } from './edition.js';
+
+// -----------------------------------------------------------------------------
+// EDITION WALL — whose cloud file is this?
+// -----------------------------------------------------------------------------
+// Itemora defaults to the same file name (`qstore_data.json`) and differs only
+// in a folder setting anyone can change. Pointed at the same folder, this
+// edition used to IMPORT an Itemora journal as a "legacy unsealed snapshot" —
+// it has a schemaVersion — wiping the cadet database for it, and to OVERWRITE
+// Itemora's file on every push without reading it. A file is now read or
+// replaced only when it is this edition's own; anything else is refused and
+// left exactly as found (test-edition-wall.mjs).
+
+export class ForeignCloudFileError extends Error {
+  constructor() {
+    super('This cloud file was not written by the cadet edition. It has been left untouched — '
+      + 'choose a different cloud folder for the cadet edition in Settings.');
+    this.name = 'ForeignCloudFileError';
+  }
+}
+
+/**
+ * 'self'    — this edition's sealed envelope, or an unsealed cadet snapshot
+ *             written before sealing (schemaVersion, no `format`).
+ * 'other'   — anything tagged with another edition, or carrying a `format`
+ *             (Itemora's journal is `format: 'v3events'`).
+ * 'unknown' — anything else.
+ */
+export function cloudFileOwner(blob) {
+  if (!blob || typeof blob !== 'object') return 'unknown';
+  if (blob.edition !== undefined) return blob.edition === EDITION ? 'self' : 'other';
+  if (blob.qstoreEnvelope === true) return 'self';
+  if (blob.format !== undefined) return 'other';
+  if (typeof blob.schemaVersion === 'number' && blob.schemaVersion <= Storage.DB_VERSION) return 'self';
+  return 'unknown';
+}
 
 // Re-export so shell.js can call Sync.handlePopupAuth() without importing cloud.js directly.
 export { handlePopupAuth };
@@ -136,6 +172,9 @@ export async function loadFromCloud({ secret } = {}) {
     if (!raw) {
       return { ok: true, imported: false };
     }
+    // Before any decrypt, wipe or import: a file this edition did not write is
+    // refused (EDITION WALL above).
+    if (cloudFileOwner(raw) !== 'self') throw new ForeignCloudFileError();
 
     let snapshot;
     let legacy = false;
@@ -169,12 +208,14 @@ export async function loadFromCloud({ secret } = {}) {
     if (typeof snapshot !== 'object' || !snapshot.schemaVersion) {
       throw new Error('Cloud blob is not a valid QStore snapshot.');
     }
+    // The decrypted contents must be ours too — an envelope is only a wrapper.
+    if (cloudFileOwner(snapshot) !== 'self') throw new ForeignCloudFileError();
     await Storage.importAll(snapshot);
     // Mirror logo to localStorage so splash shows it on the caller's reload.
     try {
       const ls = await Storage.settings.getAll();
-      if (ls.unitLogo) localStorage.setItem('qstore2_logo', ls.unitLogo);
-      else localStorage.removeItem('qstore2_logo');
+      if (ls.unitLogo) localStorage.setItem(storageKey('qstore2_logo'), ls.unitLogo);
+      else localStorage.removeItem(storageKey('qstore2_logo'));
     } catch (_) {}
     await Storage.audit.append({
       action: 'data_imported',
@@ -266,14 +307,22 @@ async function _push() {
           + 'Settings before syncing.',
         );
       }
+      // Never replace a file this edition did not write (EDITION WALL above).
+      const existing = await provider.read();
+      if (existing && cloudFileOwner(existing) !== 'self') throw new ForeignCloudFileError();
+
       const snapshot = await Storage.exportAll();
+      snapshot.edition = EDITION;
       // Annotate the snapshot with sync metadata so we can show it in the
       // settings UI of any device that downloads.
       snapshot.cloudSync = {
         pushedAt: new Date().toISOString(),
         pushedBy: provider.getAccount()?.username || 'unknown',
       };
-      await provider.write(await sealEnvelope(snapshot, blobKey, Keyring.getSlots()));
+      const sealed = await sealEnvelope(snapshot, blobKey, Keyring.getSlots());
+      // The tag is outside the ciphertext too, so another edition can recognise
+      // this file without decrypting it.
+      await provider.write({ ...sealed, edition: EDITION });
     } catch (err) {
       _lastError = err.message || String(err);
       throw err;

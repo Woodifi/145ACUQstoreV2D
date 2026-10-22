@@ -30,6 +30,7 @@
 // =============================================================================
 
 import { ed25519 } from '@noble/curves/ed25519.js';
+import { storageKey } from './edition.js';
 
 // -----------------------------------------------------------------------------
 // Configuration
@@ -37,9 +38,9 @@ import { ed25519 } from '@noble/curves/ed25519.js';
 
 const TRIAL_DAYS        = 30;
 const GRACE_DAYS        = 14;
-const TRIAL_START_KEY   = 'qstore_v2_trial_start';   // localStorage
-const LICENSE_KEY_STORE = 'qstore_v2_license';        // localStorage
-const CHECKIN_KEY       = 'qstore_v2_checkin';        // localStorage
+const TRIAL_START_KEY   = storageKey('qstore_v2_trial_start');   // localStorage
+const LICENSE_KEY_STORE = storageKey('qstore_v2_license');        // localStorage
+const CHECKIN_KEY       = storageKey('qstore_v2_checkin');        // localStorage
 
 // Ed25519 public key (32 bytes, hex-encoded).
 // Generated 2026-05-29. Matching private key stored in keys/private.key (gitignored).
@@ -389,7 +390,7 @@ function _base32ToBytes(str) {
 // -----------------------------------------------------------------------------
 
 const _PC_DEVICE_BASE = 'https://api.itemora.com.au/api/v1/devices';
-const DEVICE_ID_KEY   = 'qstore_v2_device_id';
+const DEVICE_ID_KEY   = storageKey('qstore_v2_device_id');
 
 function _getDeviceId() {
   let id = localStorage.getItem(DEVICE_ID_KEY);

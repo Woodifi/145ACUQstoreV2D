@@ -40,10 +40,11 @@ import {
   normalizeRank,
   inferPersonType,
 } from './ranks.js';
+import { storageKey } from './edition.js';
 
-const V1_DATA_KEY    = 'qstore_data';
-const V1_OD_CFG_KEY  = 'qstore_od_cfg';
-const V1_INVALIDATED = 'qstore_session_invalidated_at';
+const V1_DATA_KEY    = storageKey('qstore_data');
+const V1_OD_CFG_KEY  = storageKey('qstore_od_cfg');
+const V1_INVALIDATED = storageKey('qstore_session_invalidated_at');
 
 const MIGRATION_FLAG = 'migrationFromV1';
 

@@ -49,6 +49,7 @@
 import * as msal from '@azure/msal-browser';
 import { broadcastResponseToMainFrame } from '@azure/msal-browser/redirect-bridge';
 import * as Storage from './storage.js';
+import { storageKey } from './edition.js';
 
 // -----------------------------------------------------------------------------
 // CloudProvider interface (documentation; not enforced at runtime)
@@ -239,7 +240,7 @@ export class OneDriveProvider {
     // handleRedirectPromise() — which broadcasts the token to the main window
     // via BroadcastChannel so loginPopup() can resolve. window.opener alone
     // is insufficient because cross-origin redirects null it out in modern browsers.
-    localStorage.setItem('qstore_popup_in_progress', this._clientId);
+    localStorage.setItem(storageKey('qstore_popup_in_progress'), this._clientId);
     try {
       const resp = await this._msal.loginPopup(request);
       this._account = resp.account;
@@ -249,7 +250,7 @@ export class OneDriveProvider {
       const code = err.errorCode || '';
       // Popup blocked or user closed it — fall back to redirect.
       if (code === 'popup_window_error' || code === 'user_cancelled') {
-        localStorage.removeItem('qstore_popup_in_progress');
+        localStorage.removeItem(storageKey('qstore_popup_in_progress'));
         await this._msal.loginRedirect(request);
         return;
       }
@@ -259,7 +260,7 @@ export class OneDriveProvider {
       // to reset the state and then retry with redirect — which is more
       // resilient than popup for recovery situations.
       if (code === 'interaction_in_progress') {
-        localStorage.removeItem('qstore_popup_in_progress');
+        localStorage.removeItem(storageKey('qstore_popup_in_progress'));
         try { await this._msal.clearCache(); } catch (_) {}
         // Re-initialise MSAL after clearing so the new login starts clean.
         await this._msal.initialize();
@@ -269,7 +270,7 @@ export class OneDriveProvider {
       this._lastError = err.message || String(err);
       throw err;
     } finally {
-      localStorage.removeItem('qstore_popup_in_progress');
+      localStorage.removeItem(storageKey('qstore_popup_in_progress'));
     }
   }
 
@@ -492,22 +493,22 @@ export class OneDriveProvider {
       // Need interactive auth. On mobile, that means redirect (page
       // navigates away). On desktop, popup with redirect fallback.
       if (this._useRedirect()) {
-        sessionStorage.setItem('qstore_cloud_token_refresh', '1');
+        sessionStorage.setItem(storageKey('qstore_cloud_token_refresh'), '1');
         await this._msal.acquireTokenRedirect({ ...request, redirectUri: this._getRedirectUri() });
         // Page navigates away — code after this never executes
         throw new Error('Redirecting to refresh token. Please wait...');
       }
-      localStorage.setItem('qstore_popup_in_progress', this._clientId);
+      localStorage.setItem(storageKey('qstore_popup_in_progress'), this._clientId);
       try {
         const resp = await this._msal.acquireTokenPopup(request);
         return resp.accessToken;
       } catch (popupErr) {
         // Popup blocked — fall back to redirect
-        sessionStorage.setItem('qstore_cloud_token_refresh', '1');
+        sessionStorage.setItem(storageKey('qstore_cloud_token_refresh'), '1');
         await this._msal.acquireTokenRedirect({ ...request, redirectUri: this._getRedirectUri() });
         throw new Error('Redirecting to refresh token. Please wait...');
       } finally {
-        localStorage.removeItem('qstore_popup_in_progress');
+        localStorage.removeItem(storageKey('qstore_popup_in_progress'));
       }
     }
   }
@@ -591,7 +592,7 @@ export async function handlePopupAuth() {
     // hanging for the full 60-second bridge timeout.
     setTimeout(() => { try { window.close(); } catch (_) {} }, 500);
   } finally {
-    localStorage.removeItem('qstore_popup_in_progress');
+    localStorage.removeItem(storageKey('qstore_popup_in_progress'));
   }
   return true;
 }

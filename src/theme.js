@@ -19,7 +19,9 @@
 // of the wrong surface.
 // =============================================================================
 
-const LS_KEY = (typeof __V2L_THEME_KEY__ !== 'undefined') ? __V2L_THEME_KEY__ : 'qstore2_theme';
+import { storageKey } from './edition.js';
+
+const LS_KEY = (typeof __V2L_THEME_KEY__ !== 'undefined') ? __V2L_THEME_KEY__ : storageKey('qstore2_theme');
 
 const THEMES = ['light', 'dark', 'system'];
 const DEFAULT_THEME = 'light';

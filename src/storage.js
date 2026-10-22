@@ -42,8 +42,53 @@ import * as Ledger from './ledger.js';
 import * as Merge  from './merge.js';
 
 // V2L sandbox: use a separate DB so learning data never touches production IDB.
-const DEFAULT_DB_NAME = (typeof __V2L_DB_NAME__ !== 'undefined') ? __V2L_DB_NAME__ : 'qstore';
+// EDITION WALL: a sandbox build NEVER resolves to the cadet database, even
+// when built without a __V2L_DB_NAME__ override (the fallback was 'qstore').
+const _SANDBOX = (typeof __V2L_SANDBOX__ !== 'undefined') && !!__V2L_SANDBOX__;
+const _CONFIGURED_DB_NAME = (typeof __V2L_DB_NAME__ !== 'undefined') ? __V2L_DB_NAME__ : 'qstore';
+const DEFAULT_DB_NAME = (_SANDBOX && _CONFIGURED_DB_NAME === 'qstore') ? 'qstore_v2l' : _CONFIGURED_DB_NAME;
 const DB_VERSION = 5;
+export { DB_VERSION };
+
+/**
+ * EDITION WALL. Every edition opened from disk shares one browser storage area
+ * (file:// is one origin in Chromium and Firefox), so the cadet database is
+ * reachable by any other Itemora edition. This edition cannot stop another
+ * app opening it, but it refuses to open one another app has written to, and
+ * never opens another edition's database by name.
+ *
+ * Measured, not hypothetical: the May 2026 Itemora unit builds (145 ACU,
+ * 422 ACU) open THIS database name, `qstore`, and add their own stores.
+ */
+export function isOtherEditionDbName(name) {
+  return String(name || '').toLowerCase().startsWith('itemora');
+}
+
+/**
+ * Names of OTHER editions' databases in this browser — read from the database
+ * list only; none is opened. The shell warns when there are any: this edition
+ * keeps to its own data, but only a separate browser profile is a wall that
+ * does not depend on every other build behaving.
+ */
+export async function otherEditionDatabases() {
+  try {
+    if (typeof indexedDB.databases !== 'function') return [];
+    const names = (await indexedDB.databases()).map((d) => d.name).filter(Boolean);
+    return names.filter((n) => n !== _dbName
+      && (isOtherEditionDbName(n) || n === 'qstore' || n.startsWith('qstore_v2l')));
+  } catch {
+    return [];
+  }
+}
+
+export class ForeignDatabaseError extends Error {
+  constructor(name, reason) {
+    super(`The cadet database "${name}" in this browser has been changed by another application ` +
+      `(${reason}). The cadet edition will not open it, so nothing more is written to it. ` +
+      'Open the cadet edition in its own browser profile, or restore it there from a backup.');
+    this.name = 'ForeignDatabaseError';
+  }
+}
 
 let _dbName = DEFAULT_DB_NAME;
 
@@ -96,6 +141,10 @@ export function getDbName() {
  *   subsequent operations use this name until dropDatabase() is called.
  */
 export async function init({ dbName } = {}) {
+  if (isOtherEditionDbName(dbName ?? _dbName)) {
+    throw new Error(`The database "${dbName ?? _dbName}" belongs to another Itemora edition. ` +
+      'The cadet edition never opens it.');
+  }
   if (dbName && dbName !== _dbName) {
     if (_db) { _db.close(); _db = null; }
     _auditKey = null;
@@ -124,13 +173,52 @@ export async function init({ dbName } = {}) {
   }
 }
 
+/**
+ * EDITION WALL — a store this edition has never created means another
+ * application has written to the database. This edition has never deleted a
+ * store, so its own databases only ever hold names from STORES; anything else
+ * (an Itemora build adds `events`, `accounts`, `syncMeta`, …) is foreign. The
+ * check runs INSIDE the real open: a separate probe would create an empty
+ * version-1 database when none exists, and the version-1 upgrade block would
+ * then be skipped for good.
+ */
+function _foreignStores(db) {
+  const own = new Set(Object.values(STORES));
+  return Array.from(db.objectStoreNames).filter((n) => !own.has(n));
+}
+
 function _openDB() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(_dbName, DB_VERSION);
-    req.onupgradeneeded = (e) => _runSchemaMigrations(req.result, e.oldVersion);
-    req.onsuccess       = () => resolve(req.result);
-    req.onerror         = () => reject(new Error('IndexedDB open failed: ' + (req.error?.message || 'unknown')));
-    req.onblocked       = () => reject(new Error('IndexedDB blocked — close other QStore tabs and reload.'));
+    let refused = null;
+    req.onupgradeneeded = (e) => {
+      // An existing database — check it BEFORE this edition writes anything.
+      const foreign = e.oldVersion > 0 ? _foreignStores(req.result) : [];
+      if (foreign.length) {
+        refused = new ForeignDatabaseError(_dbName, `it holds ${foreign.join(', ')}`);
+        req.transaction.abort();
+        return;
+      }
+      _runSchemaMigrations(req.result, e.oldVersion);
+    };
+    req.onsuccess = () => {
+      const foreign = _foreignStores(req.result);
+      if (foreign.length) {
+        req.result.close();
+        reject(new ForeignDatabaseError(_dbName, `it holds ${foreign.join(', ')}`));
+        return;
+      }
+      resolve(req.result);
+    };
+    req.onerror = () => {
+      if (refused) return reject(refused);
+      // A higher version than this edition ever writes: another app upgraded it.
+      if (req.error?.name === 'VersionError') {
+        return reject(new ForeignDatabaseError(_dbName, `it is at a newer version than this edition writes (${DB_VERSION})`));
+      }
+      reject(new Error('IndexedDB open failed: ' + (req.error?.message || 'unknown')));
+    };
+    req.onblocked = () => reject(new Error('IndexedDB blocked — close other QStore tabs and reload.'));
   });
 }
 
@@ -206,6 +294,25 @@ function _runSchemaMigrations(db, oldVersion) {
   // Future schema upgrades go here. Bump DB_VERSION above and add a new
   // `if (oldVersion < N)` block. NEVER remove old blocks — users on older
   // versions still need to walk the full upgrade path.
+}
+
+/**
+ * EDITION WALL — the value that ties a sign-in to THIS database. auth.js stamps
+ * it into every session and refuses a stored session without it. Both this
+ * edition and the Itemora builds create the default admin `usr-default-co`, and
+ * the May 2026 Itemora unit builds write a session under this edition's own
+ * sessionStorage key, so a matching user id and role prove nothing.
+ * Device-own: never exported, never adopted from a restore. META is writable
+ * while the licence is restricted, so creating it never blocks sign-in.
+ */
+export async function getSessionScope() {
+  await init();
+  let scope = await _kvGet(STORES.META, 'sessionScope');
+  if (!scope) {
+    scope = _uuid();
+    await _kvSet(STORES.META, 'sessionScope', scope);
+  }
+  return scope;
 }
 
 async function _ensureMeta() {
@@ -1750,7 +1857,8 @@ export async function exportAll() {
   const out = {
     schemaVersion: DB_VERSION,
     exportedAt:    new Date().toISOString(),
-    meta:            await _all(STORES.META),
+    // sessionScope is this database's own (edition wall) — never in a backup.
+    meta:            (await _all(STORES.META)).filter((r) => r.key !== 'sessionScope'),
     settings:        await _all(STORES.SETTINGS),
     counters:        await _all(STORES.COUNTERS),
     items:           await _all(STORES.ITEMS),
@@ -1876,7 +1984,8 @@ export async function importAll(snapshot) {
   // The snapshot's own installId is kept as `importedFromInstallId` so the
   // database still records where the data came from.
   if (snapshot.meta && Array.isArray(snapshot.meta)) {
-    const incoming = snapshot.meta.filter(r => r.key !== 'installId');
+    // sessionScope, like installId, is this machine's own (edition wall).
+    const incoming = snapshot.meta.filter(r => r.key !== 'installId' && r.key !== 'sessionScope');
     put(STORES.META, incoming);
 
     const sourceId = snapshot.meta.find(r => r.key === 'installId')?.value;

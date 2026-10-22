@@ -33,8 +33,9 @@
 
 import { newBlobKey, wrapKey, openEnvelope, b64, fromB64, SLOT_PASSPHRASE, SLOT_RECOVERY } from './backup-crypto.js';
 import * as Recovery from './recovery.js';
+import { storageKey } from './edition.js';
 
-const LS_KEY = 'qstore2_sync_keyring';
+const LS_KEY = storageKey('qstore2_sync_keyring');
 
 /**
  * localStorage is absent in the headless test environment and in some

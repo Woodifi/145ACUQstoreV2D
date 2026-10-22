@@ -43,6 +43,7 @@ import * as Structure  from '../structure.js';
 import { CATEGORIES as DEFAULT_CATEGORIES } from './inventory.js';
 import { INITIAL_ISSUE } from './loans.js';
 import { applyTheme }   from '../theme.js';
+import { storageKey } from '../edition.js';
 
 let _root           = null;
 let _controller     = null;  // AbortController — cleaned up on unmount
@@ -2645,8 +2646,8 @@ async function _performImport(file, btn) {
     // Mirror logo to localStorage so splash shows it on the forced reload below.
     try {
       const ls = await Storage.settings.getAll();
-      if (ls.unitLogo) localStorage.setItem('qstore2_logo', ls.unitLogo);
-      else localStorage.removeItem('qstore2_logo');
+      if (ls.unitLogo) localStorage.setItem(storageKey('qstore2_logo'), ls.unitLogo);
+      else localStorage.removeItem(storageKey('qstore2_logo'));
     } catch (_) {}
 
     await Storage.audit.append({
@@ -3354,7 +3355,7 @@ async function _onLogoFileChange(e) {
     await Storage.settings.set('unitLogo', dataUrl);
     // Mirror to localStorage so the logo survives an HTML file upgrade at the
     // same origin/path (GitHub Pages updates, same-path file replacement).
-    try { localStorage.setItem('qstore2_logo', dataUrl); } catch (_) {}
+    try { localStorage.setItem(storageKey('qstore2_logo'), dataUrl); } catch (_) {}
     _softUpdateHeaderLogo(dataUrl);
     await _render();
     _flashSuccess('Logo updated.');
@@ -3366,7 +3367,7 @@ async function _onLogoFileChange(e) {
 async function _doRemoveLogo() {
   await Storage.settings.set('unitLogo', null);
   // Clear the localStorage mirror as well.
-  try { localStorage.removeItem('qstore2_logo'); } catch (_) {}
+  try { localStorage.removeItem(storageKey('qstore2_logo')); } catch (_) {}
   _softUpdateHeaderLogo(null);
   await _render();
   _flashSuccess('Logo removed.');
@@ -3791,7 +3792,7 @@ async function _onActivateKey(e) {
     const deviceResult = await deviceActivate();
     if (deviceResult && !deviceResult.success && deviceResult.errorCode === 'MAX_DEVICES_REACHED') {
       errEl.textContent = `Device limit reached — this key is active on ${deviceResult.activeDevices} of ${deviceResult.maxDevices} allowed devices. Remove a device in Settings → Subscription to continue, or purchase an additional device seat.`;
-      localStorage.removeItem('qstore_v2_license');
+      localStorage.removeItem(storageKey('qstore_v2_license'));
       return;
     }
 
