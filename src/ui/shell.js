@@ -44,6 +44,7 @@ import { esc, $, render } from './util.js';
 import { applyStoredTheme, applyTheme } from '../theme.js';
 import { getLicenseState, deviceActivate } from '../license.js';
 import * as Shortcuts from './shortcuts.js';
+import { storageKey } from '../edition.js';
 
 const PAGES = {
   dashboard:  { label: 'Home',      perm: 'view',         mount: Dashboard.mount  },
@@ -64,6 +65,7 @@ const DEFAULT_PAGE = 'dashboard';
 
 let _root             = null;
 let _session          = null;
+let _otherEditions    = [];   // other editions' database names (edition wall)
 let _currentPage      = null;
 let _currentUnmount   = null;
 // Set when the shell mounts; lets navigation close the drawer without each
@@ -385,7 +387,7 @@ export async function boot(rootEl) {
   // Pre-seed localStorage from embedded unit config so the logo shows on splash
   // immediately when opening a "unit copy" distribution on a fresh device.
   if (window.__UNIT_CONFIG__?.logo) {
-    try { localStorage.setItem('qstore2_logo', window.__UNIT_CONFIG__.logo); } catch (_) {}
+    try { localStorage.setItem(storageKey('qstore2_logo'), window.__UNIT_CONFIG__.logo); } catch (_) {}
   }
 
   // Show splash immediately — runs for at least 5 seconds in parallel with boot.
@@ -394,6 +396,8 @@ export async function boot(rootEl) {
   try {
     await Storage.init();
     await Storage.requestPersistence();
+    // Names only — no other edition's database is opened (edition wall).
+    _otherEditions = await Storage.otherEditionDatabases();
 
     // V2L sandbox: seed sample data on very first launch.
     if (typeof __V2L_SANDBOX__ !== 'undefined' && __V2L_SANDBOX__) {
@@ -406,7 +410,7 @@ export async function boot(rootEl) {
     try {
       const existingLogo = await Storage.settings.get('unitLogo');
       if (!existingLogo) {
-        const mirror = localStorage.getItem('qstore2_logo');
+        const mirror = localStorage.getItem(storageKey('qstore2_logo'));
         if (mirror) {
           await Storage.settings.set('unitLogo', mirror);
           console.info('[QStore IMS] Logo restored from local mirror.');
@@ -539,6 +543,7 @@ async function _renderShell() {
         </header>
 
         ${(typeof __V2L_SANDBOX__ !== 'undefined' && __V2L_SANDBOX__) ? _v2lSandboxBannerHtml() : ''}
+        ${_otherEditions.length ? _otherEditionBannerHtml() : ''}
         ${showBanner ? _defaultPinBannerHtml() : ''}
         ${_licenseBannerHtml(licenseState)}
 
@@ -960,6 +965,24 @@ async function _teardownCurrentPage() {
 // V2L Sandbox — banner + seed data injection
 // -----------------------------------------------------------------------------
 
+// -----------------------------------------------------------------------------
+// Edition wall — another Itemora edition in this browser
+// -----------------------------------------------------------------------------
+// Every edition opened from disk shares one browser storage area. This edition
+// keeps to its own data (src/edition.js), but the only wall that does not rely
+// on every other build doing the same is a separate browser profile — so say so.
+// (_otherEditions is declared with the module state at the top of this file.)
+
+function _otherEditionBannerHtml() {
+  return `
+    <div class="shell__banner" style="background:rgba(255,196,0,0.10);border-bottom:2px solid var(--warn, #c90);" role="status">
+      <strong>Another Itemora edition is installed in this browser.</strong>
+      &nbsp;The cadet edition keeps its data separate and never reads the other edition's.
+      For complete separation, open the cadet edition in its own browser profile.
+    </div>
+  `;
+}
+
 function _v2lSandboxBannerHtml() {
   return `
     <div class="shell__banner" style="background:rgba(107,176,255,0.12);border-bottom:2px solid var(--info);color:var(--info);" role="alert">
@@ -1229,6 +1252,17 @@ async function _onLogout() {
 // -----------------------------------------------------------------------------
 
 function _renderFatalError(err) {
+  // Edition wall: another application changed the cadet database. A refresh
+  // will not help, and the message says what will.
+  if (err?.name === 'ForeignDatabaseError') {
+    render(_root, `
+      <div class="fatal">
+        <h1>The cadet edition will not open this browser's data</h1>
+        <p>${esc(err.message)}</p>
+      </div>
+    `);
+    return;
+  }
   render(_root, `
     <div class="fatal">
       <h1>Something went wrong</h1>

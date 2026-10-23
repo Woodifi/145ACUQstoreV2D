@@ -51,6 +51,7 @@
 import * as Storage from './storage.js';
 import { argon2id, argon2Verify } from 'hash-wasm';
 import * as Recovery from './recovery.js';
+import { storageKey } from './edition.js';
 
 // -----------------------------------------------------------------------------
 // Constants — exported so other modules can reference role labels and the
@@ -78,8 +79,13 @@ export const PERMS = Object.freeze({
   ro:    ['view', 'reports'],
 });
 
-// V2L sandbox: separate session key prevents login state bleed.
-const SESSION_STORAGE_KEY    = (typeof __V2L_SESSION_KEY__ !== 'undefined') ? __V2L_SESSION_KEY__ : 'qstore_session';
+// V2L sandbox: separate session key prevents login state bleed — storageKey()
+// gives a sandbox build its own name even without the __V2L_SESSION_KEY__ override.
+// EDITION WALL: a stored session also counts only when it carries THIS
+// database's `scope` (_restoreSession). Every edition creates the default admin
+// `usr-default-co`, and before this change a V2L build made without the
+// override wrote this very key — so a matching user id and role proved nothing.
+const SESSION_STORAGE_KEY    = (typeof __V2L_SESSION_KEY__ !== 'undefined') ? __V2L_SESSION_KEY__ : storageKey('qstore_session');
 const SETTING_INVALIDATED_AT = 'session.invalidatedAt';
 
 const ARGON_PARAMS = {
@@ -105,7 +111,7 @@ const ARGON_PARAMS = {
 // localStorage key: qstore_lockout_<userId>
 
 const LOCKOUT_THRESHOLD = 5;
-const LOCKOUT_KEY_PREFIX = 'qstore_lockout_';
+const LOCKOUT_KEY_PREFIX = storageKey('qstore_lockout_');
 
 function _lockoutKey(userId) { return LOCKOUT_KEY_PREFIX + userId; }
 
@@ -334,6 +340,7 @@ export async function login(userId, pin) {
     svcNo:         user.svcNo || null,
     loginAt:       new Date().toISOString(),
     pinIsDefault:  String(pin) === '0000',
+    scope:         await Storage.getSessionScope(),
   };
   sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(_session));
 
@@ -712,6 +719,11 @@ async function _restoreSession() {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed?.userId) return _clearStaleSession();
+
+    // Issued by THIS database, or not a session here (EDITION WALL above).
+    if (!parsed.scope || parsed.scope !== await Storage.getSessionScope()) {
+      return _clearStaleSession();
+    }
 
     // Force-invalidation check. Co sessions are exempt so the CO who issues
     // the invalidation isn't immediately locked out (they also get their
