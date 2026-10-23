@@ -498,6 +498,22 @@ input, select, textarea {
   font-size: 14px;
 }
 
+/* Footer: same side padding as the header and body, so the notice and the
+   version line sit inside the card rather than against its edge. */
+.login__privacy {
+  padding: 16px 28px 20px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.login__version {
+  margin-top: 8px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* PIN display */
 
 .login__pin-display {

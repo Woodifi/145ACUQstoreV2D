@@ -116,7 +116,7 @@ async function _renderUserPicker() {
           This system stores personnel and equipment data.
           Access is restricted to authorised unit staff only.
           All actions are audit-logged.
-          <div class="login__version" style="margin-top:8px;font-size:11px;opacity:.75">${esc(versionLabel())}</div>
+          <div class="login__version">${esc(versionLabel())}</div>
         </footer>
       </div>
     </div>
