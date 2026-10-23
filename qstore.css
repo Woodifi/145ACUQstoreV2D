@@ -345,12 +345,63 @@ input, select, textarea {
  * LOGIN
  * ============================================================================= */
 
+/* Sign-in: brand panel (emblem, unit name) on the left, the step's card on
+   the right. On narrow screens the panel becomes a banner above the card. */
 .login {
+  flex: 1;
+  display: flex;
+  align-items: stretch;
+}
+
+.login__brand {
+  flex: 0 0 42%;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 48px 32px;
+  text-align: center;
+  color: #FFFFFF;
+  background: linear-gradient(160deg, var(--brand) 0%, #0F2C57 100%);
+}
+
+.login__emblem {
+  width: 168px;
+  height: 168px;
+  border-radius: 28px;
+  margin-bottom: 14px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+
+.login__brand-name {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.login__brand-sub {
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+.login__main {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 24px;
+}
+
+@media (max-width: 800px) {
+  .login { flex-direction: column; }
+  .login__brand { flex: none; max-width: none; padding: 28px 20px; }
+  .login__emblem { width: 96px; height: 96px; border-radius: 18px; margin-bottom: 6px; }
+  .login__brand-name { font-size: 20px; }
+  .login__main { align-items: flex-start; }
 }
 
 .login__card {
@@ -496,6 +547,22 @@ input, select, textarea {
   text-align: center;
   color: var(--text-muted);
   font-size: 14px;
+}
+
+/* Footer: same side padding as the header and body, so the notice and the
+   version line sit inside the card rather than against its edge. */
+.login__privacy {
+  padding: 16px 28px 20px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.login__version {
+  margin-top: 8px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* PIN display */
@@ -1737,12 +1804,17 @@ input, select, textarea {
 }
 
 /* "Forgot PIN?" link beneath the keypad on the login screen, OC-only. */
-.login__recovery-link {
+.login__recovery-link,
+.login__forgot-row,
+.login__totp-actions {
   margin-top: 14px;
   text-align: center;
 }
 
-.login__link {
+/* "Forgot PIN?" and the backup-code toggle had no rule of their own and
+   rendered as bare browser buttons; they are the same quiet link. */
+.login__link,
+.login__forgot-link {
   background: none;
   border: none;
   color: var(--text-muted);
@@ -1753,8 +1825,33 @@ input, select, textarea {
   padding: 4px 8px;
 }
 
-.login__link:hover {
+.login__link:hover,
+.login__forgot-link:hover {
   color: var(--gold);
+}
+
+.login__totp-wrap {
+  margin: 4px 0 8px;
+}
+
+.login__totp-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 14px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 26px;
+  letter-spacing: 0.3em;
+  text-align: center;
+}
+
+.login__totp-input:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-weak);
 }
 
 .login__link:focus-visible {

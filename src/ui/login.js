@@ -44,6 +44,27 @@ let _pinBuffer      = '';
 let _pinRevealed    = false;
 let _busy           = false;
 let _lockoutTimer   = null;
+let _unit           = { name: 'QStore IMS', code: '', named: false };   // set by the user picker, shown in the brand panel
+
+// Every sign-in step (user picker, PIN, two-factor) shares one layout: the
+// brand panel on the left, the step's card on the right. The emblem is the
+// page's own touch icon — build.js inlines it as a data URI — so the panel
+// adds no second copy of the image to the artefact.
+function _layout(cardHtml) {
+  const emblem = document.querySelector('link[rel="apple-touch-icon"]')?.getAttribute('href');
+  return `
+    <div class="login">
+      <aside class="login__brand">
+        ${emblem ? `<img class="login__emblem" src="${esc(emblem)}" alt="Itemora Cadet Edition emblem">` : ''}
+        <div class="login__brand-name">${esc(_unit.name)}</div>
+        ${_unit.named ? `<div class="login__brand-sub">${_unit.code ? `${esc(_unit.code)} — ` : ''}Q-Store IMS</div>` : ''}
+      </aside>
+      <div class="login__main">
+        ${cardHtml}
+      </div>
+    </div>
+  `;
+}
 
 /**
  * Mount the login screen into a DOM container. Calls onLoggedIn(session)
@@ -72,8 +93,7 @@ export async function mount(rootEl, { onLoggedIn } = {}) {
 async function _renderUserPicker() {
   const users    = await Storage.users.list();
   const settings = await Storage.settings.getAll();
-  const unitName = settings.unitName || 'QStore IMS';
-  const unitCode = settings.unitCode || '';
+  _unit = { name: settings.unitName || 'QStore IMS', code: settings.unitCode || '', named: !!settings.unitName };
 
   // The cadet picker used to read the cadet register here to render
   // "SURNAME F." on the sign-in screen — a cadet PII read before anyone had
@@ -95,16 +115,9 @@ async function _renderUserPicker() {
     ? `<div class="login__empty">No staff accounts yet. The system needs to be initialised by an administrator.</div>`
     : visibleUsers.map(_userButtonHtml).join('');
 
-  const headerHtml = `<h1 class="login__title">${esc(unitName)}</h1>
-       ${unitCode ? `<div class="login__subtitle">${esc(unitCode)} — Q-Store IMS</div>` : ''}`;
-
-
-  render(_root, `
-    <div class="login">
+  // The unit name and code are in the brand panel, so the card starts at "Sign in".
+  render(_root, _layout(`
       <div class="login__card">
-        <header class="login__header">
-          ${headerHtml}
-        </header>
         <div class="login__body">
           <h2 class="login__heading">Sign in</h2>
           <p class="login__hint">Select your name to continue.</p>
@@ -116,11 +129,10 @@ async function _renderUserPicker() {
           This system stores personnel and equipment data.
           Access is restricted to authorised unit staff only.
           All actions are audit-logged.
-          <div class="login__version" style="margin-top:8px;font-size:11px;opacity:.75">${esc(versionLabel())}</div>
+          <div class="login__version">${esc(versionLabel())}</div>
         </footer>
       </div>
-    </div>
-  `);
+  `));
 
   // Wire user-select buttons and action buttons via event delegation.
   const card = $('.login__card', _root);
@@ -170,8 +182,7 @@ async function _renderPinKeypad() {
     return;
   }
 
-  render(_root, `
-    <div class="login">
+  render(_root, _layout(`
       <div class="login__card">
         <header class="login__header">
           <button type="button" class="login__back" aria-label="Back to user list">‹ Back</button>
@@ -203,8 +214,7 @@ async function _renderPinKeypad() {
           </div>
         </div>
       </div>
-    </div>
-  `);
+  `));
 
   const card = $('.login__card', _root);
   card.addEventListener('click', _onKeypadClick);
@@ -409,8 +419,7 @@ async function _renderTotpStep(userRecord, session) {
   let _useBackup  = false;
 
   const _render2FA = () => {
-    render(_root, `
-      <div class="login">
+    render(_root, _layout(`
         <div class="login__card">
           <header class="login__header">
             <button type="button" class="login__back" aria-label="Back to PIN entry">‹ Back</button>
@@ -446,8 +455,7 @@ async function _renderTotpStep(userRecord, session) {
             </div>
           </div>
         </div>
-      </div>
-    `);
+    `));
 
     const input = $('#login-totp-input', _root);
     if (input) {
