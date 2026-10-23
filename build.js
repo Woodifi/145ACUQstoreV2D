@@ -223,7 +223,7 @@ async function buildOnce() {
   }
 
   const cssSource = await readFile(CSS_FILE, 'utf8');
-  const indexHtml = await readFile(HTML_IN,  'utf8');
+  const indexHtml = await inlineIcons(await readFile(HTML_IN, 'utf8'));
 
   const html = inlineIntoHtml(indexHtml, cssSource, jsBundle, BUILD_ID, BUILD_TS);
 
@@ -370,6 +370,23 @@ async function _appendDistLog(filePath, slug) {
 // -----------------------------------------------------------------------------
 // Inline the bundled JS and the CSS into the HTML shell.
 // -----------------------------------------------------------------------------
+
+// The artefact is ONE self-contained file, so an icon referenced by path would
+// be missing in every downloaded copy. Every <link rel="icon"|"apple-touch-icon">
+// pointing into assets/ becomes a data URI here; a referenced file that does
+// not exist fails the build rather than shipping a broken icon.
+async function inlineIcons(html) {
+  const re = /<link\s+rel="(icon|apple-touch-icon)"([^>]*?)\shref="(assets\/[^"]+\.png)"([^>]*)>/gi;
+  const found = [...html.matchAll(re)];
+  if (!found.length) {
+    throw new Error('Expected <link rel="icon" href="assets/…png"> in index.html — the edition emblem is part of the artefact.');
+  }
+  for (const m of found) {
+    const b64 = (await readFile(join(__dirname, m[3]))).toString('base64');
+    html = html.replace(m[0], () => `<link rel="${m[1]}"${m[2]} href="data:image/png;base64,${b64}"${m[4]}>`);
+  }
+  return html;
+}
 
 function inlineIntoHtml(html, css, js, buildId, buildTs) {
   // 0) Inject copyright meta tags and a fingerprint comment into <head>.

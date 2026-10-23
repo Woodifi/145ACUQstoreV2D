@@ -395,7 +395,12 @@ export async function boot(rootEl) {
 
   try {
     await Storage.init();
-    await Storage.requestPersistence();
+    // Asked, never awaited: Firefox answers persist() only when the person
+    // responds to its permission prompt, and awaiting it held the app at the
+    // splash until then (headless Firefox: forever; measured 2026-10-23 on build
+    // 20261023-FCDC2E6A). Persistence is best-effort either way. Same fix as
+    // the Itemora edition.
+    Storage.requestPersistence().catch(() => {});
     // Names only — no other edition's database is opened (edition wall).
     _otherEditions = await Storage.otherEditionDatabases();
 
