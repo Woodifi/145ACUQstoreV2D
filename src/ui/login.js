@@ -30,6 +30,7 @@ import * as AUTH    from '../auth.js';
 import * as TOTP    from '../totp.js';
 import { openModal } from './modal.js';
 import { esc, $, $$, render, fmtDateOnly, sleep } from './util.js';
+import { versionLabel } from '../version.js';
 
 const ROLE_ORDER = ['co', 'qm', 'staff', 'ro'];
 
@@ -115,6 +116,7 @@ async function _renderUserPicker() {
           This system stores personnel and equipment data.
           Access is restricted to authorised unit staff only.
           All actions are audit-logged.
+          <div class="login__version" style="margin-top:8px;font-size:11px;opacity:.75">${esc(versionLabel())}</div>
         </footer>
       </div>
     </div>
