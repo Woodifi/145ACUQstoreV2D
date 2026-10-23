@@ -144,6 +144,9 @@ function _buildTimestamp() {
 }
 
 const BUILD_ID = isDev ? 'dev' : _generateBuildId();
+// The release version shown in the app and named in update emails. package.json
+// is the one place it is set, so the screen cannot drift from the release record.
+const APP_VERSION = JSON.parse(await readFile(join(__dirname, 'package.json'), 'utf8')).version;
 const BUILD_TS = isDev ? 'dev' : _buildTimestamp();
 
 /**
@@ -187,6 +190,7 @@ const ESBUILD_OPTS = {
   define: {
     __QSTORE_BUILD_ID__: JSON.stringify(BUILD_ID),
     __QSTORE_BUILD_TS__: JSON.stringify(BUILD_TS),
+    __QSTORE_VERSION__:  JSON.stringify(APP_VERSION),
     __QSTORE_DEFENCE__:  JSON.stringify(isDefence),
   },
 };

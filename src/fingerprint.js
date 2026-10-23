@@ -18,10 +18,12 @@ export const BUILD_TS  = (typeof __QSTORE_BUILD_TS__ !== 'undefined')
   ? __QSTORE_BUILD_TS__ : 'dev';
 /* eslint-enable no-undef */
 
+import { APP_VERSION } from './version.js';
+
 export const AUTHOR    = 'Sean Scales';
 export const CONTACT   = 'admin@seanscales.com.au';
 export const COPYRIGHT = '© 2025 Sean Scales. All rights reserved.';
-export const PRODUCT   = 'QStore IMS v2.2';
+export const PRODUCT   = `QStore IMS v${APP_VERSION}`;
 
 // Authorised deployment origins. A console warning is emitted if the app is
 // loaded from any other origin — this catches unauthorised hosting without

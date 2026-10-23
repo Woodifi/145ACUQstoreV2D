@@ -22,6 +22,7 @@ import { jsPDF }    from 'jspdf';
 // it had no importer until 2026-07-17). The gate had never once been exercised.
 // Referencing __QSTORE_DEFENCE__ directly at each site is what actually folds.
 import * as Storage from './storage.js';
+import { APP_VERSION } from './version.js';
 
 // ─── Page geometry (mm) ─────────────────────────────────────────────────────
 const PG = { W: 210, H: 297, L: 18, R: 18, T: 28, B: 22 };
@@ -76,7 +77,7 @@ class DB {
     d.setFont('helvetica', 'normal');
     d.setFontSize(7.5);
     d.setTextColor(...C.muted);
-    d.text('QStore IMS — User Manual  v2.3.0', PG.L, PG.T - 6.5);
+    d.text(`QStore IMS — User Manual  v${APP_VERSION}`, PG.L, PG.T - 6.5);
     d.text(String(this.pageNum), PG.W - PG.R, PG.T - 6.5, { align: 'right' });
     // Footer
     d.setDrawColor(...C.border);
@@ -310,7 +311,7 @@ function _cover(doc, unitName, dateStr) {
   // Version
   d.setFontSize(10);
   d.setTextColor(...C.tan);
-  d.text('Version 2.3.0', cx, 68, { align: 'center' });
+  d.text(`Version ${APP_VERSION}`, cx, 68, { align: 'center' });
 
   // Unit name
   if (unitName) {

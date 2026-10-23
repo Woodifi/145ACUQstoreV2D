@@ -37,6 +37,7 @@ import * as TotpSetup  from './totp-setup.js';
 import * as CsvUi      from './csv-import.js';
 import { getLicenseState, activateKey, deviceActivate } from '../license.js';
 import { generateLegacyQRecord, downloadPdf } from '../pdf.js';
+import { APP_VERSION, BUILD_ID } from '../version.js';
 import * as Locations from '../locations.js';
 import { showToast }   from './toast.js';
 import * as Structure  from '../structure.js';
@@ -3819,7 +3820,8 @@ function _aboutSectionHtml() {
       </header>
 
       <div class="about__block">
-        <div class="about__app-name">QStore IMS <span class="about__version">v2.3</span></div>
+        <div class="about__app-name">QStore IMS <span class="about__version">v${esc(APP_VERSION)}</span></div>
+        <p class="about__tagline">Build ${esc(BUILD_ID)}</p>
         <p class="about__tagline">Inventory Management System for Australian Army Cadet Q-Stores</p>
         <p class="about__powered">Powered by <strong>ITEMORA</strong> &mdash; <a href="https://itemora.com.au" target="_blank" rel="noopener" class="about__link">itemora.com.au</a></p>
       </div>
