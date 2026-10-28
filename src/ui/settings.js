@@ -2437,10 +2437,24 @@ function _mergePreviewHtml(plan) {
         </li>`).join('')}
     </ul>` : '';
 
-  const warnings = plan.warnings.length ? `
+  // One opening-balance warning per item made a 227-item backup render 227
+  // paragraphs and push the Merge button off the screen. The no-ledger warning
+  // already says what happened; the item names go in a collapsed list.
+  const openings = plan.warnings.filter(w => w.kind === 'synthesised-opening');
+  const otherWarnings = plan.warnings.filter(w => w.kind !== 'synthesised-opening');
+  const openingList = openings.length ? `
+    <details class="settings__details">
+      <summary>${openings.length} item(s) given an opening balance</summary>
+      <div class="settings__details-body">
+        <ul class="settings__merge-skipped">
+          ${openings.map(w => `<li>${esc(w.message.split('" arrived')[0].replace(/^"/, ''))}</li>`).join('')}
+        </ul>
+      </div>
+    </details>` : '';
+  const warnings = otherWarnings.length || openings.length ? `
     <ul class="settings__merge-warnings">
-      ${plan.warnings.map(w => `<li>${esc(w.message)}</li>`).join('')}
-    </ul>` : '';
+      ${otherWarnings.map(w => `<li>${esc(w.message)}</li>`).join('')}
+    </ul>${openingList}` : '';
 
   return `
     ${conflicts}

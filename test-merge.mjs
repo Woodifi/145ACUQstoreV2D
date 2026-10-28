@@ -266,9 +266,17 @@ console.log('\n=== merge: what it refuses to do ===');
 
   const p = await Storage.mergePreview(snap);
   ok('a ledger-less backup is flagged', p.warnings.some(w => w.kind === 'no-ledger'));
+  // It used to say every figure "will be ignored" while IT-OLD's figure was
+  // in fact carried forward as an opening balance.
+  const msg = p.warnings.find(w => w.kind === 'no-ledger').message;
+  ok('the no-ledger warning says new items are carried forward',
+     /1 item\(s\) new to this device have their figures carried forward/.test(msg));
+  ok('the no-ledger warning does not claim new items are ignored',
+     !/will be ignored/.test(msg) && !/already on this device/.test(msg));
 
   await Storage.mergeAll(snap);
   ok('its item details still merge', !!(await Storage.items.get('IT-OLD')));
+  eq('a new item\'s figure is carried forward, not ignored', (await Storage.items.get('IT-OLD')).onHand, 9);
   eq('this device\'s own stock is unharmed', (await Storage.items.get('IT-MINE')).onHand, 4);
   const res = await Storage.movements.checkIntegrity();
   ok('the ledger and cache still agree afterwards', res.ok);

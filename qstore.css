@@ -850,6 +850,10 @@ input, select, textarea {
   padding: 24px 28px;
   width: 100%;
   max-width: 420px;
+  /* A panel taller than the window was clipped top and bottom with no way to
+     reach its buttons (the merge preview, with one line per item). */
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
 }
 
 .modal__title {

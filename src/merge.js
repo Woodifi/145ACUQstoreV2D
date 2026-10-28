@@ -294,6 +294,21 @@ export function plan(local, incoming) {
                + 'from here on, but the movements that produced them are not recoverable.',
       });
     }
+
+    // The no-ledger warning was written before opening balances were
+    // synthesised, and said every figure "will be ignored". That is only true
+    // of items this device already holds; new ones were just carried forward.
+    const noLedger = out.warnings.find(w => w.kind === 'no-ledger');
+    if (noLedger) {
+      const carried = out.warnings.filter(w => w.kind === 'synthesised-opening').length;
+      const kept = (incoming.items || []).filter(i => i?.id && localItemIds.has(i.id)).length;
+      const parts = [];
+      if (carried) parts.push(`${carried} item(s) new to this device have their figures carried forward as opening balances`);
+      if (kept) parts.push(`${kept} item(s) already on this device keep this device's figures, and the backup's figures for them are ignored`);
+      noLedger.message = 'The incoming backup was written before the movement ledger existed, so it '
+        + 'carries stock figures but no record of how they were reached. '
+        + (parts.length ? parts.join('; ') + '.' : '');
+    }
   }
 
   // ── What the merged ledger will look like ────────────────────────────────
