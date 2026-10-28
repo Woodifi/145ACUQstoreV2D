@@ -314,5 +314,61 @@ console.log('\n=== merge: what it refuses to do ===');
   ok('the cache matches after competing recounts', res.ok);
 }
 
+// ---------------------------------------------------------------------------
+// Photos survive a merge as photos
+// ---------------------------------------------------------------------------
+// mergeAll() wrote the backup's base64 photo rows straight into the store, with
+// no blob. The photo never displayed, and exportAll() threw on it — so after a
+// merge "Download backup file" did nothing. Reported from 145 ACU, 2026-10-28.
+
+{
+  globalThis.FileReader ??= class {
+    readAsDataURL(blob) {
+      blob.arrayBuffer().then((buf) => {
+        this.result = `data:${blob.type};base64,${Buffer.from(buf).toString('base64')}`;
+        this.onload?.();
+      }).catch((err) => { this.error = err; this.onerror?.(); });
+    }
+  };
+  const bytes = new Uint8Array([0xff, 0xd8, 0xff, 1, 2, 3, 4, 5]);
+
+  await use('merge-photo-src');
+  await Storage.items.put({ id: 'IT-PIC', name: 'Pictured kit', onHand: 1, onLoan: 0, unsvc: 0 });
+  await Storage.photos.put('IT-PIC', new Blob([bytes], { type: 'image/jpeg' }));
+  const snap = await Storage.exportAll();
+
+  await use('merge-photo-dst');
+  await Storage.mergeAll(snap);
+  const got = await Storage.photos.get('IT-PIC');
+  ok('a merged photo is stored as a Blob', got instanceof Blob);
+  ok('a merged photo keeps its bytes',
+     got instanceof Blob && Buffer.from(await got.arrayBuffer()).equals(Buffer.from(bytes)));
+  let exported = null;
+  try { exported = await Storage.exportAll(); } catch (e) { exported = null; }
+  ok('a device that merged photos can still export', !!exported);
+  eq('the exported photo matches the original', exported?.photos?.[0]?.base64, snap.photos[0].base64);
+
+  // A device that merged on 2.4.3 already holds base64-only rows. Write one the
+  // way that build did, then reopen: init() must repair it.
+  await use('merge-photo-other');
+  await new Promise((resolve, reject) => {
+    const req = indexedDB.open('merge-photo-dst');
+    req.onerror = () => reject(req.error);
+    req.onsuccess = () => {
+      const db = req.result;
+      const tx = db.transaction('photos', 'readwrite');
+      tx.objectStore('photos').put({ ...snap.photos[0], id: 'IT-OLDPIC' });
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onerror = () => reject(tx.error);
+    };
+  });
+  await use('merge-photo-dst');
+  ok('a photo stored without a blob is repaired on start-up',
+     (await Storage.photos.get('IT-OLDPIC')) instanceof Blob);
+  let again = null;
+  try { again = await Storage.exportAll(); } catch (e) { again = null; }
+  ok('export works after the repair', again?.photos?.length === 2);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
