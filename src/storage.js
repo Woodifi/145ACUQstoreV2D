@@ -163,6 +163,7 @@ export async function init({ dbName } = {}) {
     await _loadOrGenPiiKey();
     await _markRefNamespaceStart();
     await _seedOpeningBalances();
+    await _repairPhotoRows();
     return _db;
   })();
   try {
@@ -963,7 +964,7 @@ export const photos = {
   async get(itemId) {
     const tx = _db.transaction(STORES.PHOTOS, 'readonly');
     const row = await _reqDone(tx.objectStore(STORES.PHOTOS).get(itemId));
-    return row ? row.blob : null;
+    return row ? (_photoRow(row).blob || null) : null;
   },
 
   /**
@@ -1885,7 +1886,7 @@ export async function exportAll() {
     contentType: p.contentType,
     sizeBytes:   p.sizeBytes,
     addedAt:     p.addedAt,
-    base64:      await _blobToB64(p.blob),
+    base64:      p.blob instanceof Blob ? await _blobToB64(p.blob) : (p.base64 || ''),
   })));
   return out;
 }
@@ -1902,6 +1903,36 @@ async function _blobToB64(blob) {
 function _b64ToBlob(b64, contentType) {
   const bytes = _b64ToBytes(b64);
   return new Blob([bytes], { type: contentType || 'application/octet-stream' });
+}
+
+/**
+ * A photo row as the PHOTOS store holds it: `blob`, never `base64`.
+ *
+ * Backups carry photos as base64. importAll() converted them; mergeAll() wrote
+ * them raw, so every merged photo was stored without a blob — it showed no
+ * image, and exportAll() then threw on it, so "Download backup file" failed on
+ * any device that had merged a backup with photos. Every write of an incoming
+ * photo goes through here.
+ */
+function _photoRow(p) {
+  if (!p || p.blob instanceof Blob || typeof p.base64 !== 'string') return p;
+  return {
+    id:          p.id,
+    blob:        _b64ToBlob(p.base64, p.contentType),
+    contentType: p.contentType,
+    sizeBytes:   p.sizeBytes,
+    addedAt:     p.addedAt,
+  };
+}
+
+/** Convert photo rows a 2.4.3 merge stored as base64. Idempotent. */
+async function _repairPhotoRows() {
+  const broken = (await _all(STORES.PHOTOS)).filter((p) => !(p.blob instanceof Blob) && typeof p.base64 === 'string');
+  if (!broken.length) return 0;
+  const tx = _db.transaction(STORES.PHOTOS, 'readwrite');
+  for (const p of broken) tx.objectStore(STORES.PHOTOS).put(_photoRow(p));
+  await _txDone(tx);
+  return broken.length;
 }
 
 /**
@@ -2176,7 +2207,9 @@ export async function mergeAll(snapshot, { force = false } = {}) {
     if (!bucket || (!bucket.add.length && !bucket.update.length)) continue;
     const tx = _db.transaction(storeName, 'readwrite');
     const store = tx.objectStore(storeName);
-    for (const row of [...bucket.add, ...bucket.update]) store.put(row);
+    for (const row of [...bucket.add, ...bucket.update]) {
+      store.put(storeName === STORES.PHOTOS ? _photoRow(row) : row);
+    }
     await _txDone(tx);
   }
 
