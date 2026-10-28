@@ -2384,6 +2384,14 @@ async function _doMergeData(btn) {
       if (btn) { btn.disabled = false; btn.textContent = 'Merge from another device…'; }
     }
 
+    // Every .qstore export is the encrypted wrapper. Without this the wrapper
+    // went straight to mergePreview, which has no schemaVersion to find, so the
+    // only sign of anything was a brief error toast — "it does nothing".
+    if (snapshot?.qstoreEncrypted === true) {
+      snapshot = await _promptDecrypt(snapshot, 'Decrypt & preview merge');
+      if (!snapshot) return; // user cancelled
+    }
+
     let plan;
     try {
       plan = await Storage.mergePreview(snapshot);
@@ -2564,8 +2572,9 @@ async function _doImportData(btn) {
 /**
  * Prompt the user for a decryption password when importing an encrypted backup.
  * Returns the decrypted snapshot object, or null if the user cancels.
+ * `submitLabel` names what happens next — a merge must not say "restore".
  */
-function _promptDecrypt(encObj) {
+function _promptDecrypt(encObj, submitLabel = 'Decrypt & restore') {
   return new Promise((resolve) => {
     openModal({
       titleHtml: 'Encrypted backup — enter password',
@@ -2584,7 +2593,7 @@ function _promptDecrypt(encObj) {
           <div class="form__error" role="alert"></div>
           <div class="form__actions">
             <button type="button" class="btn btn--ghost" data-action="modal-close">Cancel</button>
-            <button type="submit" class="btn btn--primary">Decrypt &amp; restore</button>
+            <button type="submit" class="btn btn--primary">${esc(submitLabel)}</button>
           </div>
         </form>
       `,
@@ -2603,7 +2612,7 @@ function _promptDecrypt(encObj) {
             resolve(snapshot);
           } catch (err) {
             errEl.textContent = err.message || 'Decryption failed.';
-            if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Decrypt & restore'; }
+            if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = submitLabel; }
           }
         });
         // If the modal is closed without submitting, resolve null so the

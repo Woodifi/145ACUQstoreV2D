@@ -128,5 +128,25 @@ ok('export no longer writes a .json branch',
 ok('import still accepts legacy plain files (old backups must restore)',
   /qstoreEncrypted === true/.test(src));
 
+// The check above passes on ANY one decrypting path, so it stayed green while
+// "Merge from another device" fed the encrypted wrapper straight to
+// mergePreview — every .qstore export failed to merge with only a toast. Pin
+// each file-reading entry point separately.
+const fnBody = (name) => {
+  const start = src.indexOf(`async function ${name}(`);
+  if (start < 0) return '';
+  const next = src.indexOf('\nasync function ', start + 1);
+  const nextSync = src.indexOf('\nfunction ', start + 1);
+  const end = Math.min(...[next, nextSync].filter((i) => i > 0), src.length);
+  return src.slice(start, end);
+};
+for (const name of ['_performImport', '_doMergeData']) {
+  const body = fnBody(name);
+  ok(`${name} decrypts .qstore files before reading them`,
+    /qstoreEncrypted === true/.test(body) && /_promptDecrypt\(/.test(body));
+}
+ok('the merge password prompt does not say "restore"',
+  /_promptDecrypt\([^)]*,\s*'Decrypt & preview merge'\)/.test(fnBody('_doMergeData')));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
